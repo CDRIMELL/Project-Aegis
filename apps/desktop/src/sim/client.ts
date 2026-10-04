@@ -1,11 +1,8 @@
 import type { SqlTransport } from '@aegis/db';
 import type { SimCommand } from '@aegis/sim';
+import { serveSqlRequest } from '../platform/sql-relay';
 import { simCommandRejected, simFailed, simViewReceived } from '../state/sim-store';
-import type { FromWorker, SqlRequest, ToWorker } from './protocol';
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+import type { FromWorker, ToWorker } from './protocol';
 
 /** A world seed only has to be unique, not secret. */
 function newSeed(): string {
@@ -30,7 +27,7 @@ class SimClient {
     this.worker = worker;
 
     worker.addEventListener('message', (event: MessageEvent<FromWorker>) => {
-      this.receive(event.data, transport);
+      this.receive(worker, event.data, transport);
     });
     worker.addEventListener('error', (event) => {
       simFailed(event.message || 'The simulation worker stopped unexpectedly.');
@@ -70,7 +67,7 @@ class SimClient {
     this.worker?.postMessage(message);
   }
 
-  private receive(message: FromWorker, transport: SqlTransport): void {
+  private receive(worker: Worker, message: FromWorker, transport: SqlTransport): void {
     switch (message.kind) {
       case 'view':
         simViewReceived(message.view);
@@ -86,20 +83,8 @@ class SimClient {
         this.flushWaiters.delete(message.id);
         break;
       case 'sql:request':
-        void this.relay(message.id, message.request, transport);
+        void serveSqlRequest(worker, message, transport);
         break;
-    }
-  }
-
-  private async relay(id: number, request: SqlRequest, transport: SqlTransport): Promise<void> {
-    try {
-      const value =
-        request.op === 'query'
-          ? await transport.query(request.statement)
-          : await transport.batch(request.statements);
-      this.post({ kind: 'sql:result', id, outcome: { ok: true, value } });
-    } catch (error) {
-      this.post({ kind: 'sql:result', id, outcome: { ok: false, error: describe(error) } });
     }
   }
 }

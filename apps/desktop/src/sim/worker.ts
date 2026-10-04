@@ -1,8 +1,9 @@
 /// Simulation worker entry point. Runs the engine off the UI thread (ADR 0002).
-import { createDb, SqliteWorldStore, type SqlResult, type SqlTransport } from '@aegis/db';
+import { createDb, SqliteWorldStore } from '@aegis/db';
 import { simInstant } from '@aegis/domain';
 import { SimulationRunner, type HostClock } from '@aegis/sim';
-import type { FromWorker, SqlRequest, ToWorker } from './protocol';
+import { createRelayTransport } from '../platform/sql-relay';
+import type { FromWorker, ToWorker } from './protocol';
 
 /** How often real elapsed time is converted into simulation steps. */
 const ADVANCE_INTERVAL_MS = 100;
@@ -15,30 +16,7 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// --- SQL relay: requests go to the UI thread, which forwards them to the native core. ---
-
-interface PendingSql {
-  resolve(value: SqlResult | SqlResult[]): void;
-  reject(error: Error): void;
-}
-
-const pendingSql = new Map<number, PendingSql>();
-let nextSqlId = 1;
-
-function sql<T extends SqlResult | SqlResult[]>(request: SqlRequest): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const id = nextSqlId++;
-    pendingSql.set(id, { resolve: resolve as PendingSql['resolve'], reject });
-    post({ kind: 'sql:request', id, request });
-  });
-}
-
-const transport: SqlTransport = {
-  query: (statement) => sql<SqlResult>({ op: 'query', statement }),
-  batch: (statements) => sql<SqlResult[]>({ op: 'batch', statements }),
-};
-
-// --- Simulation lifecycle ---
+const relay = createRelayTransport(post);
 
 const host: HostClock = {
   monotonicMs: () => performance.now(),
@@ -59,7 +37,7 @@ function fail(error: unknown): void {
 
 async function start(newWorld: { seed: string; epochMs: number }): Promise<void> {
   const opened = await SimulationRunner.open({
-    store: new SqliteWorldStore(createDb(transport)),
+    store: new SqliteWorldStore(createDb(relay.transport)),
     host,
     newWorld: () => ({ seed: newWorld.seed, epoch: simInstant(newWorld.epochMs) }),
     onView: (view) => {
@@ -97,15 +75,8 @@ self.addEventListener('message', (event: MessageEvent<ToWorker>) => {
           post({ kind: 'flushed', id: message.id });
         });
       break;
-    case 'sql:result': {
-      const pending = pendingSql.get(message.id);
-      pendingSql.delete(message.id);
-      if (message.outcome.ok) {
-        pending?.resolve(message.outcome.value);
-      } else {
-        pending?.reject(new Error(message.outcome.error));
-      }
+    case 'sql:result':
+      relay.receive(message);
       break;
-    }
   }
 });
