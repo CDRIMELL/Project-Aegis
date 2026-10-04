@@ -15,6 +15,13 @@
       "when": 1791110124222,
       "tag": "0001_reference_data",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791112354534,
+      "tag": "0002_runway_geometry_and_pack_install",
+      "breakpoints": true
     }
   ]
 }

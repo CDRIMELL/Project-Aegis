@@ -159,9 +159,32 @@ export const refRunway = sqliteTable(
     highEndIdent: text('high_end_ident'),
     lowEndHeadingDeg: real('low_end_heading_deg'),
     highEndHeadingDeg: real('high_end_heading_deg'),
+    /**
+     * Threshold positions. All four are present or all four are null: a runway is drawn only when
+     * the source gives both ends.
+     */
+    lowEndLat: real('low_end_lat'),
+    lowEndLon: real('low_end_lon'),
+    highEndLat: real('high_end_lat'),
+    highEndLon: real('high_end_lon'),
   },
   (t) => [index('ref_runway_location_idx').on(t.locationId)],
 );
+
+/**
+ * One row per reference data pack installed into this database (ADR 0013).
+ * The newest row says which pack the reference tables currently reflect.
+ */
+export const refPackInstall = sqliteTable('ref_pack_install', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** SHA-256 of the pack manifest: the identity of a pack. */
+  manifestSha256: text('manifest_sha256').notNull(),
+  formatVersion: integer('format_version').notNull(),
+  pipelineVersion: integer('pipeline_version').notNull(),
+  datasetCount: integer('dataset_count').notNull(),
+  rowCount: integer('row_count').notNull(),
+  installedWallMs: integer('installed_wall_ms').notNull(),
+});
 
 export const AIRCRAFT_CATEGORIES = [
   'fast_jet',
