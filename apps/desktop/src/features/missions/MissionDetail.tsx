@@ -48,6 +48,7 @@ import {
 import { useAsync } from '../shared/useAsync';
 import { usePlanContext } from '../shared/usePlanContext';
 import { useLastReady, useStable } from '../shared/useStable';
+import { WeatherImpact } from '../shared/weather-display';
 
 /** Words for log entries, so that history reads as events and not as command names. */
 const LOG_WORDS: Readonly<Record<string, string>> = {
@@ -67,10 +68,27 @@ const LOG_WORDS: Readonly<Record<string, string>> = {
   flightFuelExhausted: 'Flight ran out of fuel',
   missionCompleted: 'Mission completed',
   missionFailed: 'Mission failed',
+  missionAffected: 'Affected by an event',
 };
+
+const minutes = (seconds: number) => `${Math.round(Math.abs(seconds) / 60)} min`;
+
+/** What the weather cost a flight, from the figures recorded when it landed. */
+function weatherCost(payload: LogEntry['payload']): string | null {
+  const delay = payload.weatherDelayS;
+  const fuel = payload.weatherFuelKg;
+  if (typeof delay !== 'number' || typeof fuel !== 'number') return null;
+  const time = `${minutes(delay)} ${delay >= 0 ? 'longer' : 'shorter'}`;
+  const burn = `${Math.round(Math.abs(fuel)).toLocaleString('en-GB')} kg ${fuel >= 0 ? 'more' : 'less'}`;
+  return `Weather: ${time} and ${burn} than in still air.`;
+}
 
 function logDetail(entry: LogEntry): string {
   const { payload } = entry;
+  if (entry.type === 'flightCompleted') return weatherCost(payload) ?? entry.flightId ?? '';
+  if (entry.type === 'missionAffected' && typeof payload.eventId === 'string') {
+    return `${payload.eventId}: ${typeof payload.summary === 'string' ? payload.summary : ''}`;
+  }
   const text = (key: string) => (typeof payload[key] === 'string' ? payload[key] : null);
   return text('label') ?? text('summary') ?? text('title') ?? entry.flightId ?? '';
 }
@@ -437,6 +455,11 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
         </Panel>
       </div>
 
+      {evaluation?.plan?.estimate && mission.status !== 'offered' && (
+        <Panel title="Conditions on the route">
+          <WeatherImpact estimate={evaluation.plan.estimate} />
+        </Panel>
+      )}
       {evaluation && evaluation.constraints.length > 0 && mission.status !== 'offered' && (
         <Panel title="Constraints">
           <ConstraintList items={evaluation.constraints} />

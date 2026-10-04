@@ -121,6 +121,8 @@
   --color-map-reference-dim: var(--aegis-teal-600);
   --color-map-simulated: var(--aegis-green-400);
   --color-map-selection: var(--aegis-graphite-100);
+  /* World events that affect operations: the caution colour, as in the rest of the interface. */
+  --color-map-caution: var(--aegis-amber-400);
 
   /* Typography: sans for interface text, mono for telemetry and identifiers. */
   --font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;

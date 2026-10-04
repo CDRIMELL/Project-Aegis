@@ -47,6 +47,7 @@ import {
 import { ObjectiveList } from '../shared/mission-display';
 import { usePlanContext } from '../shared/usePlanContext';
 import { useStable } from '../shared/useStable';
+import { WeatherImpact } from '../shared/weather-display';
 
 interface RouteRow {
   readonly index: number;
@@ -241,6 +242,13 @@ function DraftEditor({
           <Hint>No estimate: the plan cannot be flown as it stands.</Hint>
         )}
       </section>
+
+      {estimate && (
+        <section className="flex flex-col gap-2.5">
+          <SectionLabel>Conditions on the route</SectionLabel>
+          <WeatherImpact estimate={estimate} />
+        </section>
+      )}
 
       {evaluation.constraints.length > 0 && (
         <section className="flex flex-col gap-2.5">

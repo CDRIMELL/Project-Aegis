@@ -30,7 +30,14 @@ export interface Area {
  * pretends to work.
  */
 export const AREAS: readonly Area[] = [
-  { id: 'overview', label: 'Overview', icon: Gauge, path: '/overview', plannedPhase: 6 },
+  {
+    id: 'overview',
+    label: 'Overview',
+    icon: Gauge,
+    path: '/overview',
+    plannedPhase: null,
+    bleed: true,
+  },
   {
     id: 'operations',
     label: 'Operations',

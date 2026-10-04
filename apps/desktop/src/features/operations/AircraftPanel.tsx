@@ -21,6 +21,7 @@ import {
   fuelFraction,
   placeName,
 } from '../shared/fleet-display';
+import { formatPrecipitation, formatWind } from '../shared/weather-display';
 
 const PHASE = {
   takeoff: 'Take-off',
@@ -87,6 +88,29 @@ function Telemetry({ flight }: { readonly flight: FlightView }) {
         </DataList>
         <DataList columns={1}>
           <DataField label="Position" value={formatCoordinates(flight.lat, flight.lon)} />
+        </DataList>
+      </section>
+      <section className="flex flex-col gap-2.5">
+        <SectionLabel>Conditions (simulated)</SectionLabel>
+        <DataList>
+          <DataField
+            label="Ground speed"
+            value={`${formatInteger(flight.groundSpeedKmh)} km/h`}
+            hint="Airspeed, less what a crosswind takes, plus the wind along the track."
+          />
+          <DataField
+            label={flight.tailwindKmh >= 0 ? 'Tailwind' : 'Headwind'}
+            value={`${formatInteger(Math.abs(flight.tailwindKmh))} km/h`}
+            hint="Sampled once a minute and held in between."
+          />
+          <DataField label="Wind" value={formatWind(flight)} />
+          <DataField label="Outside air" value={`${flight.outsideTemperatureC.toFixed(0)} °C`} />
+          <DataField label="Visibility" value={`${flight.visibilityKm.toFixed(0)} km`} />
+          <DataField
+            label="Precipitation"
+            value={formatPrecipitation(flight.precipitation)}
+            prose
+          />
         </DataList>
       </section>
     </>

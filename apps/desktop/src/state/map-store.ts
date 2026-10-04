@@ -16,6 +16,8 @@ export type Selection =
 interface MapState {
   readonly selection: Selection;
   readonly visible: Readonly<Record<LayerGroup, boolean>>;
+  /** Simulated weather layers. Off or sparse by default, so the map is not cluttered. */
+  readonly weatherLayers: { readonly wind: boolean; readonly precipitation: boolean };
   /** Whether reference features have been loaded into the map. */
   readonly referenceLoaded: boolean;
   readonly referenceError: string | null;
@@ -31,6 +33,7 @@ export const useMapStore = create<MapState>(() => ({
     borders: true,
     graticule: true,
   },
+  weatherLayers: { wind: false, precipitation: true },
   referenceLoaded: false,
   referenceError: null,
 }));
@@ -41,4 +44,10 @@ export function select(selection: Selection): void {
 
 export function setGroupVisible(group: LayerGroup, visible: boolean): void {
   useMapStore.setState((state) => ({ visible: { ...state.visible, [group]: visible } }));
+}
+
+export function setWeatherLayer(layer: 'wind' | 'precipitation', visible: boolean): void {
+  useMapStore.setState((state) => ({
+    weatherLayers: { ...state.weatherLayers, [layer]: visible },
+  }));
 }

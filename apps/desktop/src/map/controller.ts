@@ -48,6 +48,7 @@ const PALETTE_TOKENS: Readonly<Record<keyof MapPalette, ColorToken>> = {
   referenceDim: '--color-map-reference-dim',
   simulated: '--color-map-simulated',
   selection: '--color-map-selection',
+  caution: '--color-map-caution',
 };
 
 const WORLD_VIEW = { center: [10, 30] as [number, number], zoom: 1.6 };
@@ -193,6 +194,16 @@ export class MapController {
   /** The colours the map draws in, resolved from the design tokens. */
   get colors(): MapPalette {
     return this.palette;
+  }
+
+  /** The visible area: west, south, east, north. Longitudes run past ±180 when the view wraps. */
+  bounds(): [number, number, number, number] {
+    const visible = this.map.getBounds();
+    return [visible.getWest(), visible.getSouth(), visible.getEast(), visible.getNorth()];
+  }
+
+  zoom(): number {
+    return this.map.getZoom();
   }
 
   whenReady(): Promise<void> {

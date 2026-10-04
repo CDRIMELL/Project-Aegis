@@ -16,13 +16,14 @@ import {
 import { Building2, Maximize, Minus, Plane, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { focusLocation, focusZoom, startMapBinding } from '../../map/binding';
+import { startEnvironmentBinding } from '../../map/environment-binding';
 import { startFlightBinding } from '../../map/flight-binding';
 import { startMissionBinding } from '../../map/mission-binding';
 import { mapController } from '../../map/controller';
 import { formatCoordinates, scaleBar } from '../../map/features';
 import type { LayerGroup } from '../../map/style';
 import { searchLocations, type SearchResult } from '../../reference/queries';
-import { setGroupVisible, useMapStore } from '../../state/map-store';
+import { setGroupVisible, setWeatherLayer, useMapStore } from '../../state/map-store';
 import { usePlanStore } from '../../state/plan-store';
 import { useReferenceStore } from '../../state/reference-store';
 import { useSimStore } from '../../state/sim-store';
@@ -41,6 +42,7 @@ function MapSurface() {
     startMapBinding();
     startFlightBinding();
     startMissionBinding();
+    startEnvironmentBinding();
     const element = host.current;
     element?.append(controller.element);
     controller.resize();
@@ -68,6 +70,7 @@ const LAYER_LABELS: readonly { group: LayerGroup; label: string }[] = [
 
 function LayerPanel() {
   const visible = useMapStore((state) => state.visible);
+  const weatherLayers = useMapStore((state) => state.weatherLayers);
   return (
     <FloatingPanel className="w-48 p-2">
       <SectionLabel className="px-1.5 pb-1">Reference layers</SectionLabel>
@@ -82,8 +85,25 @@ function LayerPanel() {
         />
       ))}
       <SectionLabel className="px-1.5 pt-2 pb-1">Simulation layers</SectionLabel>
+      <SwitchRow
+        label="Precipitation"
+        checked={weatherLayers.precipitation}
+        onChange={(checked) => {
+          setWeatherLayer('precipitation', checked);
+        }}
+      />
+      <SwitchRow
+        label="Wind at 9,000 m"
+        checked={weatherLayers.wind}
+        onChange={(checked) => {
+          setWeatherLayer('wind', checked);
+        }}
+      />
       <div className="px-1.5 pb-1">
-        <Hint>Aircraft, flight routes and missions, in green. Always shown.</Hint>
+        <Hint>
+          Aircraft, routes and missions in green; events in amber. Always shown. The weather is
+          simulated.
+        </Hint>
       </div>
     </FloatingPanel>
   );

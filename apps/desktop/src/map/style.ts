@@ -46,6 +46,8 @@ export interface MapPalette {
   readonly referenceDim: string;
   readonly simulated: string;
   readonly selection: string;
+  /** World events that affect operations. */
+  readonly caution: string;
 }
 
 export const FONT_SANS = 'AEGIS Sans';
