@@ -1,6 +1,15 @@
 import { groupThousands } from '../math';
 import { FLIGHT_ASSUMPTIONS, grossMassKg, type PerformanceModel } from './performance';
-import { STILL_AIR, flyToCompletion, type Environment, type FlightProfile } from './profile';
+import { advanceInWeather, type WeatherContext } from '../environment/flight-weather';
+import { conditionsAt, type Conditions, type WeatherModel } from '../environment/weather';
+import {
+  NO_HAZARDS,
+  closureAt,
+  disruptionsOnRoute,
+  type Disruption,
+  type Hazards,
+} from '../event/events';
+import { flyToCompletion, type FlightProfile, type FlightProgress } from './profile';
 import { directRoute, routeGeometry, routeProblems, type RoutePoint } from './route';
 
 /** What the player approves and the simulation then flies. Plain data; persisted with the flight. */
@@ -43,6 +52,37 @@ export interface PlanEstimate {
   /** How far the aircraft gets. Equals `distanceM` when the flight completes. */
   readonly reachedM: number;
   readonly legs: readonly { readonly distanceM: number; readonly bearingDeg: number }[];
+  /** `null` when the plan was evaluated in still air. */
+  readonly weather: WeatherImpact | null;
+  /** Disrupted areas the flight would pass through while they are in force. */
+  readonly disruptions: readonly Disruption[];
+}
+
+/**
+ * The world a plan is evaluated in: its weather, and when the flight would depart. With no
+ * context a plan is evaluated in still air, as it was before the environment existed.
+ */
+export interface PlanContext {
+  readonly weather: WeatherModel;
+  /** The tick the flight would depart. The weather it meets depends on it. */
+  readonly departureTick: number;
+  /** Closed aerodromes and disrupted areas that are announced or under way. */
+  readonly hazards?: Hazards;
+}
+
+/** What the weather does to a plan, against the same plan flown in still air. */
+export interface WeatherImpact {
+  readonly stillAirDurationS: number;
+  readonly stillAirFuelUsedKg: number;
+  /** Mean wind along the track over the flight, km/h. Positive is a tailwind. */
+  readonly meanTailwindKmh: number;
+  readonly worstSeverity: number;
+  readonly lowestVisibilityKm: number;
+  readonly heaviestPrecipitation: number;
+  /** Surface conditions at the origin when the flight departs. */
+  readonly departure: Conditions;
+  /** Surface conditions at the destination when the flight arrives. */
+  readonly arrival: Conditions;
 }
 
 export interface PlanEvaluation {
@@ -73,6 +113,17 @@ export function flightProfile(
   };
 }
 
+/** Flies a profile through the weather of a context, or through still air without one. */
+function fly(
+  profile: FlightProfile,
+  fuelKg: number,
+  weather: WeatherContext | null,
+): FlightProgress {
+  return flyToCompletion(profile, fuelKg, PLANNING_STEP_S, (progress) =>
+    advanceInWeather(profile, progress, PLANNING_STEP_S, weather),
+  );
+}
+
 const kg = (value: number) => `${groupThousands(value)} kg`;
 const metresText = (value: number) => `${groupThousands(value)} m`;
 
@@ -84,7 +135,7 @@ export function evaluatePlan(
   model: PerformanceModel,
   plan: FlightPlan,
   load: FlightLoad,
-  environment: Environment = STILL_AIR,
+  context: PlanContext | null = null,
 ): PlanEvaluation {
   const constraints: Constraint[] = [];
   const block = (code: string, message: string) =>
@@ -96,6 +147,18 @@ export function evaluatePlan(
 
   const problems = routeProblems(plan.points);
   for (const problem of problems) block('invalid_route', problem);
+
+  // A closed aerodrome cannot be departed from.
+  const hazards = context?.hazards ?? NO_HAZARDS;
+  const originPoint = plan.points[0];
+  const closedOrigin =
+    context && originPoint ? closureAt(hazards, originPoint, context.departureTick) : undefined;
+  if (closedOrigin) {
+    block(
+      'origin_closed',
+      `${closedOrigin.place.name} is closed to departures (${closedOrigin.eventId}). The flight can leave once it reopens.`,
+    );
+  }
 
   // Load.
   const finite = [plan.cruiseAltitudeM, plan.cruiseSpeedKmh, load.fuelKg, load.payloadKg].every(
@@ -174,8 +237,28 @@ export function evaluatePlan(
   // Fly it.
   const route = routeGeometry(plan.points);
   const profile = flightProfile(model, plan, load.payloadKg);
-  const end = flyToCompletion(profile, load.fuelKg, PLANNING_STEP_S, environment);
+  const weatherContext: WeatherContext | null = context
+    ? { weather: context.weather, route, departureTick: context.departureTick }
+    : null;
+  const end = fly(profile, load.fuelKg, weatherContext);
   const completes = end.phase === 'landed';
+  let weather: WeatherImpact | null = null;
+  if (context) {
+    // The same plan in still air, with fuel that cannot run out, to show what the weather costs.
+    const calm = fly(profile, model.fuelCapacityKg, null);
+    const origin = plan.points[0] as RoutePoint;
+    const destination = plan.points.at(-1) as RoutePoint;
+    weather = {
+      stillAirDurationS: calm.elapsedS,
+      stillAirFuelUsedKg: model.fuelCapacityKg - calm.fuelKg,
+      meanTailwindKmh: end.elapsedS > 0 ? end.exposure.tailwindKmhS / end.elapsedS : 0,
+      worstSeverity: end.exposure.worstSeverity,
+      lowestVisibilityKm: end.exposure.lowestVisibilityKm ?? 40,
+      heaviestPrecipitation: end.exposure.heaviestPrecipitation,
+      departure: conditionsAt(context.weather, context.departureTick, origin, 0),
+      arrival: conditionsAt(context.weather, context.departureTick + end.elapsedS, destination, 0),
+    };
+  }
   const estimate: PlanEstimate = {
     distanceM: route.totalM,
     durationS: end.elapsedS,
@@ -186,6 +269,15 @@ export function evaluatePlan(
     completes,
     reachedM: end.distanceM,
     legs: route.legs.map((leg) => ({ distanceM: leg.distanceM, bearingDeg: leg.bearingDeg })),
+    weather,
+    disruptions: context
+      ? disruptionsOnRoute(
+          hazards,
+          plan.points,
+          context.departureTick,
+          context.departureTick + end.elapsedS,
+        )
+      : [],
   };
 
   if (!completes) {
@@ -199,6 +291,53 @@ export function evaluatePlan(
         'below_reserve',
         `Arrives with ${kg(end.fuelKg)}, below the assumed reserve of ${kg(model.reserveFuelKg)}.`,
       );
+    }
+    if (context) {
+      // A plan may not arrive at an aerodrome during a closure that is already known.
+      const closedDestination = closureAt(
+        hazards,
+        plan.points.at(-1) as RoutePoint,
+        context.departureTick + end.elapsedS,
+      );
+      if (closedDestination) {
+        block(
+          'destination_closed_on_arrival',
+          `${closedDestination.place.name} will be closed when the flight arrives (${closedDestination.eventId}). Leave later, or choose another destination.`,
+        );
+      }
+      for (const disruption of estimate.disruptions) {
+        warn(
+          disruption.type === 'severe_weather' ? 'severe_weather_area' : 'navigation_disruption',
+          disruption.type === 'severe_weather'
+            ? `The route passes through a severe weather area (${disruption.eventId}).`
+            : `The route passes through an area of disrupted navigation (${disruption.eventId}).`,
+        );
+      }
+    }
+    if (weather) {
+      // Weather informs; it does not forbid. These are warnings and notes, never blocks.
+      if (weather.worstSeverity >= 0.75) {
+        warn('severe_weather_on_route', 'The route passes through severe weather.');
+      }
+      if (weather.arrival.visibilityKm < 3) {
+        warn(
+          'low_visibility_at_destination',
+          `Visibility at the destination is forecast to be ${weather.arrival.visibilityKm.toFixed(1)} km on arrival.`,
+        );
+      }
+      if (weather.arrival.ceilingM !== null && weather.arrival.ceilingM < 300) {
+        note(
+          'low_ceiling_at_destination',
+          `The cloud base at the destination is forecast to be ${metresText(weather.arrival.ceilingM)} on arrival.`,
+        );
+      }
+      const extraS = end.elapsedS - weather.stillAirDurationS;
+      if (extraS > weather.stillAirDurationS * 0.1) {
+        note(
+          'headwind',
+          `Headwinds add ${Math.round(extraS / 60)} min to the flight (${Math.round((extraS / weather.stillAirDurationS) * 100)} %).`,
+        );
+      }
     }
     if (end.topAltitudeM < plan.cruiseAltitudeM - 50) {
       note(
@@ -220,13 +359,21 @@ export function suggestedFuelKg(
   model: PerformanceModel,
   plan: FlightPlan,
   payloadKg: number,
+  context: PlanContext | null = null,
 ): number | null {
   const maxByMass = model.maxTakeoffMassKg - model.emptyMassKg - payloadKg;
   const ceilingKg = Math.min(model.fuelCapacityKg, maxByMass);
   if (ceilingKg <= 0 || routeProblems(plan.points).length > 0) return null;
   const profile = flightProfile(model, plan, payloadKg);
+  const weatherContext: WeatherContext | null = context
+    ? {
+        weather: context.weather,
+        route: routeGeometry(plan.points),
+        departureTick: context.departureTick,
+      }
+    : null;
   const arrivesWith = (fuelKg: number) => {
-    const end = flyToCompletion(profile, fuelKg, PLANNING_STEP_S);
+    const end = fly(profile, fuelKg, weatherContext);
     return end.phase === 'landed' ? end.fuelKg : -1;
   };
   if (arrivesWith(ceilingKg) < 0) return null;

@@ -21,6 +21,12 @@ export const RISK_WEIGHTS = {
   time_pressure: 2,
   aircraft_suitability: 2,
   unchecked_limits: 1,
+  wind: 2,
+  weather_severity: 2,
+  visibility: 1,
+  precipitation: 1,
+  temperature: 1,
+  events: 2,
 } as const;
 export type RiskFactor = keyof typeof RISK_WEIGHTS;
 
@@ -32,6 +38,12 @@ const LABELS: Readonly<Record<RiskFactor, string>> = {
   time_pressure: 'Time pressure',
   aircraft_suitability: 'Aircraft suitability',
   unchecked_limits: 'Limits that could not be checked',
+  wind: 'Wind',
+  weather_severity: 'Weather on the route',
+  visibility: 'Visibility on arrival',
+  precipitation: 'Precipitation',
+  temperature: 'Temperature',
+  events: 'Events on the route',
 };
 
 /** Plan constraints meaning the reference data could not confirm a limit. */
@@ -138,6 +150,60 @@ export function assessRisk(input: RiskInput): RiskAssessment {
     unchecked === 0
       ? 'Every limit the plan depends on is in the reference data.'
       : `${unchecked} limit${unchecked === 1 ? '' : 's'} could not be checked because the reference data does not give ${unchecked === 1 ? 'it' : 'them'}.`,
+  );
+
+  // The environment. In still air, with no events, these all contribute nothing.
+  const weather = estimate.weather;
+  if (!weather) {
+    add('wind', 0, 'Evaluated in still air.');
+    add('weather_severity', 0, 'Evaluated without weather.');
+    add('visibility', 0, 'Evaluated without weather.');
+    add('precipitation', 0, 'Evaluated without weather.');
+    add('temperature', 0, 'Evaluated in a standard atmosphere.');
+  } else {
+    // Wind: none with a tailwind, full when the mean headwind is a quarter of cruise speed.
+    const headwindKmh = -weather.meanTailwindKmh;
+    const extraS = estimate.durationS - weather.stillAirDurationS;
+    add(
+      'wind',
+      headwindKmh / (model.cruiseSpeedKmh * 0.25),
+      headwindKmh > 0.5
+        ? `A mean headwind of ${Math.round(headwindKmh)} km/h adds ${minutes(Math.max(extraS, 0))} to the flight.`
+        : `A mean tailwind of ${Math.round(-headwindKmh)} km/h; the flight is ${minutes(Math.max(-extraS, 0))} shorter than in still air.`,
+    );
+    add(
+      'weather_severity',
+      (weather.worstSeverity - 0.2) / 0.6,
+      `The worst conditions on the route have a severity of ${Math.round(weather.worstSeverity * 100)} out of 100.`,
+    );
+    // Visibility: none at 10 km or better, full at 1 km.
+    add(
+      'visibility',
+      (10 - weather.arrival.visibilityKm) / 9,
+      `Visibility at the destination on arrival is forecast to be ${weather.arrival.visibilityKm.toFixed(0)} km.`,
+    );
+    add(
+      'precipitation',
+      weather.heaviestPrecipitation,
+      weather.heaviestPrecipitation > 0
+        ? `The heaviest precipitation on the route has an intensity of ${Math.round(weather.heaviestPrecipitation * 100)} out of 100.`
+        : 'No precipitation is forecast on the route.',
+    );
+    // Temperature: none within 10 °C of standard, full at 30 °C from it.
+    const deviation = weather.departure.temperatureDeviationC;
+    add(
+      'temperature',
+      (Math.abs(deviation) - 10) / 20,
+      `The surface temperature at departure is ${Math.abs(deviation).toFixed(0)} °C ${deviation >= 0 ? 'above' : 'below'} standard.`,
+    );
+  }
+  const worstEvent = estimate.disruptions.reduce((worst, d) => Math.max(worst, d.severity), 0);
+  add(
+    'events',
+    worstEvent,
+    estimate.disruptions.length === 0
+      ? 'No announced event lies on the route.'
+      : `The route passes through ${estimate.disruptions.length} affected area${estimate.disruptions.length === 1 ? '' : 's'}: ${estimate.disruptions.map((d) => d.eventId).join(', ')}.`,
   );
 
   const totalWeight = Object.values(RISK_WEIGHTS).reduce((sum, weight) => sum + weight, 0);

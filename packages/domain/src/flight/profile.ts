@@ -11,13 +11,66 @@ import { FLIGHT_ASSUMPTIONS, GRAVITY_MS2, type PerformanceModel } from './perfor
 
 export type FlightPhase = 'takeoff' | 'climb' | 'cruise' | 'descent' | 'landed';
 
-/** Conditions the aircraft flies through. Still air and a standard atmosphere until phase 6. */
+/**
+ * The conditions an aircraft is flying through, as far as they change the physics (ADR 0021).
+ * Visibility and cloud do not appear here: they inform warnings and risk, not the flight step.
+ */
 export interface Environment {
   /** Wind component along the direction of travel, km/h. Positive is a tailwind. */
   readonly tailwindKmh: number;
+  /** Wind component across the direction of travel, km/h. Its sign does not matter. */
+  readonly crosswindKmh: number;
+  /** Surface temperature minus the standard 15 °C. Positive is a warm day. */
+  readonly temperatureDeviationC: number;
+  /** Intensity of precipitation, 0 to 1. */
+  readonly precipitation: number;
 }
 
-export const STILL_AIR: Environment = { tailwindKmh: 0 };
+export const STILL_AIR: Environment = {
+  tailwindKmh: 0,
+  crosswindKmh: 0,
+  temperatureDeviationC: 0,
+  precipitation: 0,
+};
+
+/**
+ * How the environment changes a flight. Wind is physics. Temperature and precipitation are
+ * simplified simulation assumptions, stated here and shown as such in the interface.
+ */
+export const ENVIRONMENT_EFFECTS = {
+  wind: {
+    statement:
+      'Ground speed is airspeed plus the wind along the track. A crosswind makes the aircraft crab, which reduces its speed along the track. Fuel is burned for the air flown through, not the ground covered.',
+  },
+  temperature: {
+    fuelPerDegree: 0.002,
+    climbPerDegree: 0.015,
+    limitC: 30,
+    statement:
+      'Assumed: cruise fuel changes by 0.2 % per °C that the day is warmer or colder than standard, and the climb rate falls by 1.5 % per °C on a warm day.',
+  },
+  precipitation: {
+    fuelAtHeaviest: 0.03,
+    statement:
+      'Assumed: precipitation adds up to 3 % to fuel burn, in proportion to its intensity.',
+  },
+} as const;
+
+/** What a flight has met so far, for its history. Updated whenever the conditions are sampled. */
+export interface WeatherExposure {
+  /** Seconds flown, weighted by the tailwind in km/h: divide by elapsed time for the mean. */
+  readonly tailwindKmhS: number;
+  readonly worstSeverity: number;
+  readonly lowestVisibilityKm: number | null;
+  readonly heaviestPrecipitation: number;
+}
+
+export const NO_EXPOSURE: WeatherExposure = {
+  tailwindKmhS: 0,
+  worstSeverity: 0,
+  lowestVisibilityKm: null,
+  heaviestPrecipitation: 0,
+};
 
 /** What the step needs to know about the flight being flown. */
 export interface FlightProfile {
@@ -45,6 +98,9 @@ export interface FlightProgress {
   readonly topAltitudeM: number;
   /** True once the tanks are empty in flight. The flight cannot continue. */
   readonly fuelExhausted: boolean;
+  /** The conditions currently applied. Sampled once a minute and held in between. */
+  readonly environment: Environment;
+  readonly exposure: WeatherExposure;
 }
 
 const A = FLIGHT_ASSUMPTIONS;
@@ -62,6 +118,8 @@ export function initialProgress(profile: FlightProfile, fuelKg: number): FlightP
     burnRateKgH: 0,
     topAltitudeM: profile.originElevationM,
     fuelExhausted: false,
+    environment: STILL_AIR,
+    exposure: NO_EXPOSURE,
   };
 }
 
@@ -70,6 +128,44 @@ function climbRateAt(model: PerformanceModel, altitudeM: number): number {
   if (model.serviceCeilingM === null) return model.climbRateMs;
   const fraction = Math.min(Math.max(altitudeM / model.serviceCeilingM, 0), 1);
   return model.climbRateMs * (1 - (1 - A.climbRate.fractionAtCeiling) * fraction);
+}
+
+const E = ENVIRONMENT_EFFECTS;
+
+/** How far the day is from standard, within the range the assumptions are meant for. */
+function boundedDeviation(environment: Environment): number {
+  return Math.min(
+    Math.max(environment.temperatureDeviationC, -E.temperature.limitC),
+    E.temperature.limitC,
+  );
+}
+
+/** Multiplier on fuel burned for the conditions: temperature and precipitation. */
+export function environmentFuelFactor(environment: Environment): number {
+  return (
+    (1 + E.temperature.fuelPerDegree * boundedDeviation(environment)) *
+    (1 + E.precipitation.fuelAtHeaviest * Math.min(Math.max(environment.precipitation, 0), 1))
+  );
+}
+
+/** Multiplier on climb rate: a warm day climbs more slowly. */
+export function environmentClimbFactor(environment: Environment): number {
+  return Math.max(
+    1 - E.temperature.climbPerDegree * Math.max(boundedDeviation(environment), 0),
+    0.5,
+  );
+}
+
+/**
+ * Speed over the ground for a true airspeed in a wind. With a crosswind the aircraft points into
+ * it to hold its track, so only part of its airspeed carries it along the track.
+ */
+export function groundSpeedKmh(airspeedKmh: number, environment: Environment): number {
+  const cross = Math.min(Math.abs(environment.crosswindKmh), airspeedKmh);
+  // Exactly the airspeed when there is no crosswind, so still air is unchanged to the last bit.
+  const alongTrack =
+    cross === 0 ? airspeedKmh : Math.sqrt(airspeedKmh * airspeedKmh - cross * cross);
+  return Math.max(alongTrack + environment.tailwindKmh, 0);
 }
 
 /** Multiplier on cruise fuel for flying below or above the model's cruise altitude. */
@@ -143,9 +239,15 @@ export function advanceFlight(
     progress.speedKmh +
     Math.min(Math.max(targetKmh - progress.speedKmh, -maxChangeKmh), maxChangeKmh);
 
-  // Distance over the ground: true airspeed plus the wind component.
-  const groundSpeedMs = Math.max((speedKmh + environment.tailwindKmh) * KMH_TO_MS, 0);
+  // Distance over the ground: true airspeed, less what the crosswind takes, plus the tailwind.
+  const groundSpeedMs = groundSpeedKmh(speedKmh, environment) * KMH_TO_MS;
   const stepM = Math.min(groundSpeedMs * dtS, remainingM);
+  // Distance through the air, which is what fuel is burned for. Equal to the ground distance in
+  // still air; on the last step it is cut short in the same proportion as the ground distance.
+  const airStepM =
+    groundSpeedMs > 0
+      ? stepM * ((speedKmh * KMH_TO_MS) / groundSpeedMs)
+      : speedKmh * KMH_TO_MS * dtS;
   const distanceM = progress.distanceM + stepM;
   const stillRemainingM = profile.totalDistanceM - distanceM;
 
@@ -153,7 +255,8 @@ export function advanceFlight(
   let altitudeM = progress.altitudeM;
   if (phase === 'climb') {
     altitudeM = Math.min(
-      progress.altitudeM + climbRateAt(model, progress.altitudeM) * dtS,
+      progress.altitudeM +
+        climbRateAt(model, progress.altitudeM) * environmentClimbFactor(environment) * dtS,
       profile.cruiseAltitudeM,
     );
   } else if (phase === 'descent') {
@@ -167,9 +270,10 @@ export function advanceFlight(
   const massKg = model.emptyMassKg + profile.payloadKg + progress.fuelKg;
   let burnKg =
     (massKg / (model.rangeFactorKm * 1000)) *
-    stepM *
+    airStepM *
     altitudeFuelFactor(model, altitudeM) *
-    speedFuelFactor(model, speedKmh);
+    speedFuelFactor(model, speedKmh) *
+    environmentFuelFactor(environment);
   if (phase === 'descent') {
     burnKg *= A.descent.fuelFractionOfCruise;
   }
@@ -193,6 +297,8 @@ export function advanceFlight(
     burnRateKgH: landed ? 0 : (burnKg / dtS) * 3600,
     topAltitudeM: Math.max(progress.topAltitudeM, altitudeM),
     fuelExhausted,
+    environment: progress.environment,
+    exposure: progress.exposure,
   };
 }
 
@@ -204,13 +310,15 @@ export function flyToCompletion(
   profile: FlightProfile,
   fuelKg: number,
   dtS: number,
-  environment: Environment = STILL_AIR,
+  /** Advances one step. Defaults to the plain flight step in whatever conditions are given. */
+  step: (progress: FlightProgress) => FlightProgress = (progress) =>
+    advanceFlight(profile, progress, dtS),
 ): FlightProgress {
   let progress = initialProgress(profile, fuelKg);
   const maxSteps = Math.ceil(MAX_FLIGHT_S / dtS);
-  for (let step = 0; step < maxSteps; step++) {
+  for (let i = 0; i < maxSteps; i++) {
     if (progress.phase === 'landed' || progress.fuelExhausted) break;
-    progress = advanceFlight(profile, progress, dtS, environment);
+    progress = step(progress);
   }
   return progress;
 }

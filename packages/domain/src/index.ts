@@ -1,3 +1,5 @@
+export * from './environment';
+export * from './event';
 export * from './flight';
 export * from './geo';
 export * from './hash';

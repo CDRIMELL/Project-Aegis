@@ -1,7 +1,9 @@
 import { groupThousands } from '../math';
 import type { PerformanceModel } from '../flight/performance';
 import { flightProfile, type FlightLoad, type FlightPlan } from '../flight/plan';
-import { advanceFlight, initialProgress } from '../flight/profile';
+import { advanceInWeather } from '../environment/flight-weather';
+import type { WeatherModel } from '../environment/weather';
+import { initialProgress } from '../flight/profile';
 import { positionAlong, routeGeometry, routeProblems, type RoutePoint } from '../flight/route';
 import { greatCircleDistance, type LatLon } from '../geo';
 import type { Objective, ObjectiveSpec } from './types';
@@ -227,6 +229,8 @@ export interface ForecastInput {
   /** Expected wear of a flight of the given length, in percentage points of condition. */
   readonly expectedWearPct: (durationS: number) => number;
   readonly stepS: number;
+  /** The world's weather; `null` forecasts in still air. */
+  readonly weather?: WeatherModel | null;
 }
 
 /**
@@ -242,6 +246,9 @@ export function forecastObjectives(input: ForecastInput): ObjectiveForecast | nu
   const origin = plan.points[0] as RoutePoint;
   const destination = plan.points.at(-1) as RoutePoint;
 
+  const weatherContext = input.weather
+    ? { weather: input.weather, route, departureTick: input.departureTick }
+    : null;
   let progress = initialProgress(profile, load.fuelKg);
   let objectives = resetObjectives(input.objectives);
   let tick = input.departureTick;
@@ -250,7 +257,7 @@ export function forecastObjectives(input: ForecastInput): ObjectiveForecast | nu
   const maxSteps = Math.ceil((route.totalM / 1000) * 3600) + 86_400;
 
   for (let step = 0; step < maxSteps; step++) {
-    progress = advanceFlight(profile, progress, stepS);
+    progress = advanceInWeather(profile, progress, stepS, weatherContext);
     tick += 1;
     const landed = progress.phase === 'landed';
     const ended = landed || progress.fuelExhausted;

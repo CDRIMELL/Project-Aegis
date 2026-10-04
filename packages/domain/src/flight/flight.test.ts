@@ -15,6 +15,8 @@ import {
   type FlightPlan,
 } from './plan';
 import {
+  NO_EXPOSURE,
+  STILL_AIR,
   advanceFlight,
   altitudeFuelFactor,
   flyToCompletion,
@@ -246,6 +248,8 @@ describe('fuel model', () => {
       burnRateKgH: 0,
       topAltitudeM: altitudeM,
       fuelExhausted: false,
+      environment: STILL_AIR,
+      exposure: NO_EXPOSURE,
     };
     while (progress.distanceM < distanceKm * 1000 && !progress.fuelExhausted) {
       progress = advanceFlight(profile, progress, 1);
@@ -409,8 +413,12 @@ describe('flight profile', () => {
     const m = model(C17);
     const profile = flightProfile(m, plan(m, PRESTWICK, AKROTIRI), 0);
     const still = flyToCompletion(profile, 60000, 1);
-    const tailwind = flyToCompletion(profile, 60000, 1, { tailwindKmh: 80 });
-    const headwind = flyToCompletion(profile, 60000, 1, { tailwindKmh: -80 });
+    const inWind = (tailwindKmh: number) =>
+      flyToCompletion(profile, 60000, 1, (progress) =>
+        advanceFlight(profile, progress, 1, { ...STILL_AIR, tailwindKmh }),
+      );
+    const tailwind = inWind(80);
+    const headwind = inWind(-80);
     expect(tailwind.elapsedS).toBeLessThan(still.elapsedS);
     expect(headwind.elapsedS).toBeGreaterThan(still.elapsedS);
   });

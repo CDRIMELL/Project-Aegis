@@ -7,6 +7,8 @@ import {
   type FlightPlan,
   type PlanEvaluation,
 } from '../flight/plan';
+import type { WeatherModel } from '../environment/weather';
+import type { Hazards } from '../event/events';
 import { forecastObjectives, type ObjectiveForecast } from './objectives';
 import { assessRisk } from './risk';
 import { MISSION_TEMPLATES } from './templates';
@@ -47,6 +49,10 @@ export interface MissionEvaluationInput {
   readonly completeByTick: number | null;
   readonly maintenance: MaintenancePolicy;
   readonly stepS: number;
+  /** The world's weather; `null` evaluates in still air. */
+  readonly weather?: WeatherModel | null;
+  /** Closed aerodromes and disrupted areas that are announced or under way. */
+  readonly hazards?: Hazards;
 }
 
 export interface MissionEvaluation {
@@ -89,7 +95,18 @@ export function evaluateMission(input: MissionEvaluationInput): MissionEvaluatio
     return { plan: null, forecast: null, constraints: mission, risk: null, acceptable: false };
   }
 
-  const planEvaluation = evaluatePlan(model, plan, load);
+  const planEvaluation = evaluatePlan(
+    model,
+    plan,
+    load,
+    input.weather
+      ? {
+          weather: input.weather,
+          departureTick: input.departureTick,
+          ...(input.hazards && { hazards: input.hazards }),
+        }
+      : null,
+  );
 
   for (const objective of input.objectives) {
     if (
@@ -121,6 +138,7 @@ export function evaluateMission(input: MissionEvaluationInput): MissionEvaluatio
         conditionPct: aircraft.conditionPct,
         expectedWearPct: input.maintenance.expectedWearPct,
         stepS: input.stepS,
+        weather: input.weather ?? null,
       })
     : null;
 
