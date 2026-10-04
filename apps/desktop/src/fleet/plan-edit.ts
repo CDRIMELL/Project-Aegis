@@ -6,6 +6,7 @@ import {
   type FlightLoad,
   type FlightPlan,
   type PerformanceModel,
+  type PlanContext,
   type PlanEvaluation,
   type RoutePoint,
 } from '@aegis/domain';
@@ -22,10 +23,16 @@ export interface PlanDraft {
 }
 
 /** Fuel to load by default: enough to arrive with the reserve, or full tanks if that cannot be met. */
-function defaultFuel(model: PerformanceModel, plan: FlightPlan, payloadKg: number): number {
+function defaultFuel(
+  model: PerformanceModel,
+  plan: FlightPlan,
+  payloadKg: number,
+  context: PlanContext | null,
+): number {
   const byMass = model.maxTakeoffMassKg - model.emptyMassKg - payloadKg;
   return (
-    suggestedFuelKg(model, plan, payloadKg) ?? Math.max(Math.min(model.fuelCapacityKg, byMass), 0)
+    suggestedFuelKg(model, plan, payloadKg, context) ??
+    Math.max(Math.min(model.fuelCapacityKg, byMass), 0)
   );
 }
 
@@ -36,9 +43,15 @@ export function generateDraft(
   origin: RoutePoint,
   destination: RoutePoint,
   payloadKg: number,
+  /** The world the flight would leave in; `null` plans in still air. */
+  context: PlanContext | null = null,
 ): PlanDraft {
   const plan = generatePlan(model, origin, destination);
-  return { aircraftId, plan, load: { fuelKg: defaultFuel(model, plan, payloadKg), payloadKg } };
+  return {
+    aircraftId,
+    plan,
+    load: { fuelKg: defaultFuel(model, plan, payloadKg, context), payloadKg },
+  };
 }
 
 const withPoints = (draft: PlanDraft, points: RoutePoint[]): PlanDraft => ({
@@ -137,10 +150,24 @@ export function setLoad(draft: PlanDraft, load: Partial<FlightLoad>): PlanDraft 
 }
 
 /** Sets the fuel load to what the current route needs, with reserve. */
-export function refuelForRoute(draft: PlanDraft, model: PerformanceModel): PlanDraft {
-  return setLoad(draft, { fuelKg: defaultFuel(model, draft.plan, draft.load.payloadKg) });
+export function refuelForRoute(
+  draft: PlanDraft,
+  model: PerformanceModel,
+  context: PlanContext | null = null,
+): PlanDraft {
+  return setLoad(draft, {
+    fuelKg: defaultFuel(model, draft.plan, draft.load.payloadKg, context),
+  });
 }
 
-export function evaluateDraft(draft: PlanDraft, model: PerformanceModel): PlanEvaluation {
-  return evaluatePlan(model, draft.plan, draft.load);
+/**
+ * Evaluates a draft in the world it would be flown in: the same weather and events a launch is
+ * checked against. With no context the draft is evaluated in still air.
+ */
+export function evaluateDraft(
+  draft: PlanDraft,
+  model: PerformanceModel,
+  context: PlanContext | null = null,
+): PlanEvaluation {
+  return evaluatePlan(model, draft.plan, draft.load, context);
 }

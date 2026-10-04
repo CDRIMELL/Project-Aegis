@@ -13,6 +13,7 @@ import {
   type MissionStatus,
   type MissionType,
   type NamedPoint,
+  type PlanContext,
   type RoutePoint,
   type SimInstant,
 } from '@aegis/domain';
@@ -196,6 +197,8 @@ export function evaluationOf(
   mission: Mission,
   aircraft: AircraftState | undefined,
   tick: number,
+  /** The world's weather and open events; `null` evaluates in still air with no events. */
+  context: PlanContext | null = null,
 ): MissionEvaluation {
   return evaluateMission({
     type: mission.type,
@@ -207,6 +210,8 @@ export function evaluationOf(
     completeByTick: mission.completeByTick,
     maintenance: MAINTENANCE_POLICY,
     stepS: TICK_S,
+    weather: context?.weather ?? null,
+    ...(context?.hazards && { hazards: context.hazards }),
   });
 }
 
@@ -292,6 +297,7 @@ export function configurationFromForm(
   aircraft: AircraftState | null,
   tick: number,
   existing: Mission | null,
+  context: PlanContext | null = null,
 ): MissionConfiguration {
   const brief = briefFromForm(values);
   const hoursFromNow = (hours: number) => (hours > 0 ? tick + Math.round(hours * 3600) : null);
@@ -307,6 +313,7 @@ export function configurationFromForm(
         : (existing?.completeByTick ?? null),
     ...(values.title.trim().length > 0 && { title: values.title.trim() }),
     ...(existing && { description: existing.description }),
+    context,
   };
   const configuration = defaultConfiguration(values.type, brief, aircraft, options);
   const routeStillFits =

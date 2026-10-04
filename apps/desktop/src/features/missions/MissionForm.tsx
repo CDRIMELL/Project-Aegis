@@ -39,6 +39,7 @@ import { createMission, updateMission } from '../../missions/service';
 import { useSimStore } from '../../state/sim-store';
 import { AerodromePicker, placeName } from '../shared/fleet-display';
 import { ObjectiveList, RiskBreakdown } from '../shared/mission-display';
+import { usePlanContext } from '../shared/usePlanContext';
 import { useStable } from '../shared/useStable';
 
 export interface MissionFormProps {
@@ -105,8 +106,9 @@ export function MissionForm({ mission, onDone }: MissionFormProps) {
   };
 
   const stableValues = useStable(values);
+  const context = usePlanContext();
   const preview = useMemo(() => {
-    const configuration = configurationFromForm(stableValues, aircraft, tick, existing);
+    const configuration = configurationFromForm(stableValues, aircraft, tick, existing, context);
     const evaluation = evaluateMission({
       type: stableValues.type,
       aircraft,
@@ -117,9 +119,11 @@ export function MissionForm({ mission, onDone }: MissionFormProps) {
       completeByTick: configuration.completeByTick,
       maintenance: MAINTENANCE_POLICY,
       stepS: 1,
+      weather: context?.weather ?? null,
+      ...(context?.hazards && { hazards: context.hazards }),
     });
     return { configuration, evaluation };
-  }, [stableValues, aircraft, tick, existing]);
+  }, [stableValues, aircraft, tick, existing, context]);
   const { configuration, evaluation } = preview;
   const incomplete = briefProblem(briefFromForm(values));
   const estimate = evaluation.plan?.estimate ?? null;

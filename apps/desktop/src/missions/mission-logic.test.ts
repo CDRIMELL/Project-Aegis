@@ -75,7 +75,7 @@ function create(engine: SimulationEngine, type: MissionType, brief: MissionBrief
   const command: WorldCommand = {
     type: 'createMission',
     missionType: type,
-    ...defaultConfiguration(type, brief, aircraftOf(engine)),
+    ...defaultConfiguration(type, brief, aircraftOf(engine), { context: engine.planContext() }),
   };
   engine.applyCommand(command);
   return engine.snapshot().missions.missions.at(-1) as Mission;
@@ -387,7 +387,7 @@ describe('the mission form', () => {
   it('evaluates a mission as the simulation will when it is accepted', () => {
     const scratch = world();
     const mission = training(scratch);
-    const evaluation = evaluationOf(mission, aircraftOf(scratch), 0);
+    const evaluation = evaluationOf(mission, aircraftOf(scratch), 0, scratch.planContext());
     scratch.applyCommand({ type: 'acceptMission', missionId: mission.id });
     expect(missionOf(scratch).assessment?.risk).toEqual(evaluation.risk);
     expect(missionOf(scratch).assessment?.durationS).toBe(evaluation.plan?.estimate?.durationS);

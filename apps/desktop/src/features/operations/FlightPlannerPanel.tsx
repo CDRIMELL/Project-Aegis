@@ -45,6 +45,7 @@ import {
   placeName,
 } from '../shared/fleet-display';
 import { ObjectiveList } from '../shared/mission-display';
+import { usePlanContext } from '../shared/usePlanContext';
 import { useStable } from '../shared/useStable';
 
 interface RouteRow {
@@ -142,6 +143,7 @@ function MissionForecast({
   });
   const stableMission = useStable(mission);
   const stableAircraft = useStable(aircraft);
+  const context = usePlanContext();
   const evaluation = useMemo(
     () =>
       evaluateMission({
@@ -154,8 +156,10 @@ function MissionForecast({
         completeByTick: stableMission.completeByTick,
         maintenance: MAINTENANCE_POLICY,
         stepS: 1,
+        weather: context?.weather ?? null,
+        ...(context?.hazards && { hazards: context.hazards }),
       }),
-    [stableMission, stableAircraft, draft, tick],
+    [stableMission, stableAircraft, draft, tick, context],
   );
   const missionOnly = evaluation.constraints.filter(
     (constraint) => !evaluation.plan?.constraints.includes(constraint),
@@ -185,7 +189,11 @@ function DraftEditor({
   const model = aircraft.performance;
   const navigate = useNavigate();
   const simTime = useSimStore((state) => state.view?.clock.simTime ?? null);
-  const evaluation = useMemo(() => (model ? evaluateDraft(draft, model) : null), [draft, model]);
+  const context = usePlanContext();
+  const evaluation = useMemo(
+    () => (model ? evaluateDraft(draft, model, context) : null),
+    [draft, model, context],
+  );
   if (!model || !evaluation) return null;
   const estimate = evaluation.estimate;
 
@@ -300,7 +308,7 @@ function DraftEditor({
             size="sm"
             icon={Fuel}
             onClick={() => {
-              editDraft((current) => refuelForRoute(current, model));
+              editDraft((current) => refuelForRoute(current, model, context));
             }}
           >
             Fuel for this route
@@ -390,11 +398,12 @@ export function FlightPlannerPanel({
 }) {
   const origin = aircraft.location;
   const model = aircraft.performance;
+  const context = usePlanContext();
   const destination = draft?.plan.points.at(-1) ?? null;
 
   const choose = (point: RoutePoint) => {
     if (!origin || !model) return;
-    setDraft(generateDraft(aircraft.id, model, origin, point, aircraft.payloadKg));
+    setDraft(generateDraft(aircraft.id, model, origin, point, aircraft.payloadKg, context));
     mapController().fitBounds(
       Math.min(origin.lon, point.lon),
       Math.min(origin.lat, point.lat),

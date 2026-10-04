@@ -338,6 +338,14 @@ describe('flight map features', () => {
     etaTick: 16_000,
     estimatedFuelAtDestinationKg: 9000,
     points: [NEWQUAY, AKROTIRI],
+    groundSpeedKmh: 833,
+    tailwindKmh: 0,
+    windFromDeg: 0,
+    windSpeedKmh: 0,
+    outsideTemperatureC: -50,
+    visibilityKm: 40,
+    precipitation: 0,
+    severity: 0,
     ...overrides,
   });
 

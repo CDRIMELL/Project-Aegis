@@ -46,6 +46,7 @@ import {
   typeLabel,
 } from '../shared/mission-display';
 import { useAsync } from '../shared/useAsync';
+import { usePlanContext } from '../shared/usePlanContext';
 import { useLastReady, useStable } from '../shared/useStable';
 
 /** Words for log entries, so that history reads as events and not as command names. */
@@ -251,12 +252,13 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
     return tick - (tick % 600);
   });
   const open = !isFinished(mission.status) && mission.status !== 'active';
+  const context = usePlanContext();
   // The forecast flies the whole route, so it is recomputed only when its inputs really change.
   const stableMission = useStable(mission);
   const stableAircraft = useStable(aircraft);
   const evaluation = useMemo(
-    () => (open ? evaluationOf(stableMission, stableAircraft, hourTick) : null),
-    [open, stableMission, stableAircraft, hourTick],
+    () => (open && context ? evaluationOf(stableMission, stableAircraft, hourTick, context) : null),
+    [open, stableMission, stableAircraft, hourTick, context],
   );
   const ready = readiness(mission, aircraft);
   const risk = evaluation?.risk ?? mission.assessment?.risk ?? null;

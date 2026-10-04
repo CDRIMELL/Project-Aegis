@@ -14,6 +14,7 @@ import {
 import { importReferenceData } from '@aegis/ingest';
 import {
   SimulationRunner,
+  planContextOf,
   replayComparable,
   replayWorld,
   type Checkpoint,
@@ -84,6 +85,8 @@ describe('missions: end-to-end scenario', () => {
       }
     };
     const view = () => runner.view();
+    /** The world a plan would be flown in if it left now: what the screens use. */
+    const context = () => planContextOf(runner.view());
     const aircraft = (id = AIRCRAFT) => {
       const found = view().fleet.aircraft.find((candidate) => candidate.id === id);
       if (!found) throw new Error(`no aircraft ${id}`);
@@ -98,7 +101,7 @@ describe('missions: end-to-end scenario', () => {
     const runUntilFinished = (id: string) => {
       for (let i = 0; i < 2000 && mission(id).status === 'active'; i++) run(600);
     };
-    return { database, runner, execute, run, view, aircraft, mission, runUntilFinished };
+    return { database, runner, execute, run, view, context, aircraft, mission, runUntilFinished };
   }
 
   let session: Awaited<ReturnType<typeof openSession>>;
@@ -147,7 +150,13 @@ describe('missions: end-to-end scenario', () => {
       aircraftId: aircraft.id,
       target: suggestedTarget('training', aircraft.location, aircraft.performance.referenceRangeKm),
     };
-    const configuration = configurationFromForm(form, aircraft, session.view().clock.tick, null);
+    const configuration = configurationFromForm(
+      form,
+      aircraft,
+      session.view().clock.tick,
+      null,
+      session.context(),
+    );
     session.execute({ type: 'createMission', missionType: 'training', ...configuration });
 
     const mission = session.mission();
@@ -171,7 +180,8 @@ describe('missions: end-to-end scenario', () => {
     const mission = session.mission();
     const aircraft = session.aircraft();
     if (!mission.plan || !mission.load || !aircraft.performance) throw new Error('setup');
-    const before = evaluationOf(mission, aircraft, session.view().clock.tick).plan?.estimate;
+    const before = evaluationOf(mission, aircraft, session.view().clock.tick, session.context())
+      .plan?.estimate;
 
     // What the planner does: the mission's route becomes the one draft both the panel and the
     // map edit. Add a waypoint on the way home and drag it out over the Celtic Sea.
@@ -179,6 +189,7 @@ describe('missions: end-to-end scenario', () => {
     const edited = refuelForRoute(
       moveWaypoint(insertWaypoint(draft, 1), 2, 50.9, -8.5),
       aircraft.performance,
+      session.context(),
     );
     session.execute({
       type: 'updateMission',
@@ -197,7 +208,8 @@ describe('missions: end-to-end scenario', () => {
       'Cornwall Airport Newquay',
     ]);
     expect(saved.plan?.points[2]).toMatchObject({ lat: 50.9, lon: -8.5 });
-    const after = evaluationOf(saved, aircraft, session.view().clock.tick).plan?.estimate;
+    const after = evaluationOf(saved, aircraft, session.view().clock.tick, session.context()).plan
+      ?.estimate;
     expect(after?.distanceM).toBeGreaterThan(before?.distanceM ?? 0);
     expect(saved.load?.fuelKg).toBeGreaterThan(mission.load.fuelKg);
     // The objectives are the mission's own; editing the route did not change them.
@@ -209,6 +221,7 @@ describe('missions: end-to-end scenario', () => {
       session.mission(),
       session.aircraft(),
       session.view().clock.tick,
+      session.context(),
     );
     expect(evaluation.acceptable).toBe(true);
     expect(evaluation.constraints.filter((c) => c.severity === 'block')).toEqual([]);
@@ -233,7 +246,7 @@ describe('missions: end-to-end scenario', () => {
     const risk = evaluation.risk;
     expect(risk?.index).toBeGreaterThanOrEqual(0);
     expect(risk?.index).toBeLessThan(30);
-    expect(risk?.contributors).toHaveLength(7);
+    expect(risk?.contributors).toHaveLength(13);
     expect(risk?.contributors.every((c) => c.explanation.length > 0)).toBe(true);
     expect(risk?.contributors.find((c) => c.id === 'aircraft_suitability')?.value).toBe(0);
   });
@@ -438,6 +451,7 @@ describe('missions: end-to-end scenario', () => {
           aircraft,
           tick,
           session.mission(offerId),
+          session.context(),
         ),
       }))
       .find(({ aircraft, configuration }) => {
@@ -445,6 +459,7 @@ describe('missions: end-to-end scenario', () => {
           { ...session.mission(offerId), ...configuration, objectives: offer.objectives },
           aircraft,
           tick,
+          session.context(),
         );
         return evaluation.acceptable && objectivesMet(evaluation.forecast?.objectives ?? []);
       });

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SqliteWorldStore } from '@aegis/db';
 import { openNodeDatabase } from '@aegis/db/node';
-import { greatCircleDistance, simInstant, type RoutePoint } from '@aegis/domain';
+import { greatCircleDistance, simInstant, type PlanEstimate, type RoutePoint } from '@aegis/domain';
 import { importReferenceData } from '@aegis/ingest';
-import { SimulationEngine, SimulationRunner, type SimCommand } from '@aegis/sim';
+import { SimulationEngine, SimulationRunner, planContextOf, type SimCommand } from '@aegis/sim';
 import { ManualHostClock } from '@aegis/sim/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bindReferenceDb, loadAerodrome, loadAircraftTypes } from '../reference/queries';
@@ -61,11 +61,15 @@ describe('fleet and flight: end-to-end scenario', () => {
       if (!found) throw new Error(`no aircraft ${id}`);
       return found;
     };
-    return { database, runner, execute, run, aircraft };
+    /** The world a plan would be flown in if it left now: what the planner on screen uses. */
+    const context = () => planContextOf(runner.view());
+    return { database, runner, execute, run, aircraft, context };
   }
 
   let session: Awaited<ReturnType<typeof openSession>>;
   let draft: PlanDraft;
+  /** The planner's estimate at the moment of launch. */
+  let launchEstimate: PlanEstimate | null = null;
   let newquay: RoutePoint;
   let akrotiri: RoutePoint;
 
@@ -118,8 +122,15 @@ describe('fleet and flight: end-to-end scenario', () => {
     newquay = aircraft.location;
     akrotiri = aerodromePoint(destination);
 
-    draft = generateDraft(AIRCRAFT, aircraft.performance, newquay, akrotiri, 15_000);
-    const evaluation = evaluateDraft(draft, aircraft.performance);
+    draft = generateDraft(
+      AIRCRAFT,
+      aircraft.performance,
+      newquay,
+      akrotiri,
+      15_000,
+      session.context(),
+    );
+    const evaluation = evaluateDraft(draft, aircraft.performance, session.context());
 
     expect(draft.plan.points[0]).toMatchObject({ code: 'EGHQ', kind: 'aerodrome' });
     expect(draft.plan.points.at(-1)).toMatchObject({
@@ -140,7 +151,7 @@ describe('fleet and flight: end-to-end scenario', () => {
   it('5-6. recalculates when a waypoint is added and moved', () => {
     const model = session.aircraft().performance;
     if (!model) throw new Error('setup');
-    const before = evaluateDraft(draft, model).estimate;
+    const before = evaluateDraft(draft, model, session.context()).estimate;
 
     // Add a waypoint on the first leg, then drag it well off the direct route (over Sicily).
     const edited = moveWaypoint(insertWaypoint(draft, 0), 1, 37.5, 14.0);
@@ -152,21 +163,23 @@ describe('fleet and flight: end-to-end scenario', () => {
       lon: 14.0,
     });
 
-    const after = evaluateDraft(edited, model).estimate;
+    const after = evaluateDraft(edited, model, session.context()).estimate;
     expect(after?.distanceM).toBeGreaterThan(before?.distanceM ?? 0);
     expect(after?.durationS).toBeGreaterThan(before?.durationS ?? 0);
     expect(after?.fuelUsedKg).toBeGreaterThan(before?.fuelUsedKg ?? 0);
     expect(after?.legs).toHaveLength((before?.legs.length ?? 0) + 1);
 
-    draft = refuelForRoute(edited, model);
+    draft = refuelForRoute(edited, model, session.context());
     expect(draft.load.fuelKg).toBeGreaterThan(edited.load.fuelKg);
-    expect(evaluateDraft(draft, model).flyable).toBe(true);
+    expect(evaluateDraft(draft, model, session.context()).flyable).toBe(true);
   });
 
   it('7-10. launches, and the aircraft moves and its telemetry changes', () => {
     const model = session.aircraft().performance;
     if (!model) throw new Error('setup');
-    const estimate = evaluateDraft(draft, model).estimate;
+    // Estimated in the world as it is at the moment of launch: this is what will be flown.
+    const estimate = evaluateDraft(draft, model, session.context()).estimate;
+    launchEstimate = estimate;
 
     session.execute({
       type: 'launchFlight',
@@ -229,9 +242,7 @@ describe('fleet and flight: end-to-end scenario', () => {
   });
 
   it('14-15. completes the flight and updates the aircraft', async () => {
-    const model = session.aircraft().performance;
-    if (!model) throw new Error('setup');
-    const estimate = evaluateDraft(draft, model).estimate;
+    const estimate = launchEstimate;
 
     let guard = 0;
     while (session.aircraft().activeFlightId !== null) {
