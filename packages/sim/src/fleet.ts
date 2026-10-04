@@ -16,6 +16,7 @@ import {
   type RouteGeometry,
   type RoutePoint,
 } from '@aegis/domain';
+import type { EmitEvent, LogSubject } from './log';
 
 /*
  * The fleet: simulated aircraft and their flights (ADR 0016).
@@ -150,6 +151,9 @@ export type FleetCommand =
     }
   | { readonly type: 'startMaintenance'; readonly aircraftId: string };
 
+/** What an effective command touched, for the log. */
+export type CommandEffect = LogSubject;
+
 /** A command the simulation refused. The world is unchanged. */
 export class CommandRejected extends Error {
   override readonly name = 'CommandRejected';
@@ -278,7 +282,7 @@ export class Fleet {
     return aircraft.location;
   }
 
-  private acquire(order: AircraftOrder, tick: number): void {
+  private assertOrder(order: AircraftOrder): void {
     assertPoint(order.home, 'The home aerodrome');
     if (order.home.kind !== 'aerodrome') {
       throw new CommandRejected('An aircraft must be based at an aerodrome.');
@@ -286,6 +290,10 @@ export class Fleet {
     if (order.typeId.length === 0 || order.typeName.length === 0) {
       throw new CommandRejected('An aircraft must be an instance of a reference type.');
     }
+  }
+
+  private acquire(order: AircraftOrder, tick: number): string {
+    this.assertOrder(order);
     const id = this.nextId(`AEGIS-${CATEGORY_CODE[order.category] ?? 'XX'}`, 3);
     this.aircraft.set(id, {
       id,
@@ -307,23 +315,26 @@ export class Fleet {
       activeFlightId: null,
       acquiredTick: tick,
     });
+    return id;
   }
 
   /**
-   * Applies a command. Returns false if it had no effect (so nothing needs saving); throws
-   * {@link CommandRejected} if it cannot be carried out.
+   * Applies a command. Returns what it touched, or `null` if it had no effect (so nothing needs
+   * saving or logging); throws {@link CommandRejected} if it cannot be carried out, leaving the
+   * fleet exactly as it was.
    */
-  apply(command: FleetCommand, tick: number): boolean {
+  apply(command: FleetCommand, tick: number): CommandEffect | null {
     switch (command.type) {
       case 'acquireAircraft':
-        this.acquire(command, tick);
-        return true;
+        return { aircraftId: this.acquire(command, tick) };
 
       case 'seedStarterFleet':
-        if (this.starterFleetSeeded) return false;
+        if (this.starterFleetSeeded) return null;
+        // Check every order first: a rejected command must change nothing.
+        for (const order of command.aircraft) this.assertOrder(order);
         for (const order of command.aircraft) this.acquire(order, tick);
         this.starterFleetSeeded = true;
-        return true;
+        return {};
 
       case 'setHome': {
         const aircraft = this.require(command.aircraftId);
@@ -332,7 +343,7 @@ export class Fleet {
           throw new CommandRejected('An aircraft must be based at an aerodrome.');
         }
         this.aircraft.set(aircraft.id, { ...aircraft, home: command.home });
-        return true;
+        return { aircraftId: aircraft.id };
       }
 
       case 'setLoad': {
@@ -359,7 +370,7 @@ export class Fleet {
           throw new CommandRejected('That load exceeds the maximum take-off mass.');
         }
         this.aircraft.set(aircraft.id, { ...aircraft, fuelKg, payloadKg });
-        return true;
+        return { aircraftId: aircraft.id };
       }
 
       case 'launchFlight': {
@@ -413,25 +424,25 @@ export class Fleet {
           payloadKg: command.load.payloadKg,
           activeFlightId: flight.id,
         });
-        return true;
+        return { aircraftId: aircraft.id, flightId: flight.id };
       }
 
       case 'startMaintenance': {
         const aircraft = this.require(command.aircraftId);
         this.onGround(aircraft, 'be maintained');
-        if (aircraft.status === 'in_maintenance') return false;
+        if (aircraft.status === 'in_maintenance') return null;
         this.aircraft.set(aircraft.id, {
           ...aircraft,
           status: 'in_maintenance',
           maintenanceCompleteTick: tick + MAINTENANCE.durationSeconds / STEP_S,
         });
-        return true;
+        return { aircraftId: aircraft.id };
       }
     }
   }
 
   /** Advances every active flight and any maintenance by one step. Returns true if anything changed. */
-  step(tick: number, rng: (stream: string) => Rng): boolean {
+  step(tick: number, rng: (stream: string) => Rng, emit: EmitEvent): boolean {
     let changed = false;
 
     for (const [flightId, { profile, route }] of [...this.active].sort(([a], [b]) =>
@@ -459,11 +470,23 @@ export class Fleet {
           activeFlightId: null,
           status: 'available',
         };
+        const due = maintenanceDue(landed);
         this.aircraft.set(aircraft.id, {
           ...landed,
-          status: maintenanceDue(landed) ? 'maintenance_due' : 'available',
+          status: due ? 'maintenance_due' : 'available',
         });
         this.finish({ ...flight, progress, status: 'completed', arrivedTick: tick });
+        emit(
+          'flightCompleted',
+          { aircraftId: aircraft.id, flightId },
+          {
+            destination: destination.code ?? destination.name,
+            durationS: progress.elapsedS,
+            fuelRemainingKg: progress.fuelKg,
+            wearPct: wear,
+          },
+        );
+        if (due) emit('maintenanceDue', { aircraftId: aircraft.id });
       } else if (progress.fuelExhausted) {
         // Abstract outcome: the aircraft is down where it ran out and must be recovered.
         const position = positionAlong(route, progress.distanceM);
@@ -485,13 +508,18 @@ export class Fleet {
           status: 'unserviceable',
         });
         this.finish({ ...flight, progress, status: 'fuel_exhausted', arrivedTick: tick });
+        emit(
+          'flightFuelExhausted',
+          { aircraftId: aircraft.id, flightId },
+          { distanceM: progress.distanceM, lat: position.lat, lon: position.lon },
+        );
       } else {
         this.flights.set(flightId, { ...flight, progress });
         this.aircraft.set(aircraft.id, { ...aircraft, fuelKg: progress.fuelKg });
       }
     }
 
-    for (const aircraft of this.aircraft.values()) {
+    for (const aircraft of [...this.aircraft.values()].sort((a, b) => a.id.localeCompare(b.id))) {
       if (
         aircraft.status === 'in_maintenance' &&
         aircraft.maintenanceCompleteTick !== null &&
@@ -506,6 +534,7 @@ export class Fleet {
           // An aircraft recovered from a forced landing is returned to its home aerodrome.
           location: aircraft.location?.kind === 'aerodrome' ? aircraft.location : aircraft.home,
         });
+        emit('maintenanceCompleted', { aircraftId: aircraft.id });
         changed = true;
       }
     }

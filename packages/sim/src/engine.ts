@@ -8,6 +8,7 @@ import {
   type SpeedMultiplier,
 } from '@aegis/domain';
 import { EMPTY_FLEET, Fleet, type FleetCommand, type FleetView } from './fleet';
+import { EMPTY_LOG, SimLog, type EmitEvent, type LogSnapshot } from './log';
 import {
   OLDEST_LOADABLE_MODEL_VERSION,
   SIM_MODEL_VERSION,
@@ -16,6 +17,12 @@ import {
   type NewWorldOptions,
   type WorldSnapshot,
 } from './world';
+
+/** Commands the application issues itself, not the player (ADR 0018). */
+const SYSTEM_COMMANDS: ReadonlySet<string> = new Set(['seedStarterFleet']);
+
+/** The first simulation model that kept a log. */
+const FIRST_LOGGED_MODEL_VERSION = 3;
 
 /** RNG stream consumed by the integrity probe. Persisted name: do not rename (ADR 0006). */
 const INTEGRITY_STREAM = 'core.integrity';
@@ -43,6 +50,7 @@ export class SimulationEngine {
     clock: Pick<ClockState, 'tick' | 'speed' | 'running'>,
     integrityDigest: number,
     private readonly fleet: Fleet,
+    private readonly log: SimLog,
   ) {
     this.tick = clock.tick;
     this.speed = clock.speed;
@@ -61,6 +69,7 @@ export class SimulationEngine {
       { tick: 0, speed: 1, running: true },
       DIGEST_SEED,
       new Fleet(),
+      new SimLog(),
     );
   }
 
@@ -105,6 +114,12 @@ export class SimulationEngine {
     } catch (cause) {
       throw new WorldRestoreError('Saved fleet state is invalid', { cause });
     }
+    let log: SimLog;
+    try {
+      log = new SimLog(restoredLog(snapshot));
+    } catch (cause) {
+      throw new WorldRestoreError('Saved log is invalid', { cause });
+    }
     return new SimulationEngine(
       snapshot.seed,
       snapshot.epoch,
@@ -112,6 +127,7 @@ export class SimulationEngine {
       clock,
       snapshot.integrityDigest,
       fleet,
+      log,
     );
   }
 
@@ -154,15 +170,32 @@ export class SimulationEngine {
       rngStreams: this.rng.states(),
       integrityDigest: this.integrityDigest,
       fleet: this.fleet.snapshot(),
+      log: this.log.snapshot(),
     };
   }
 
+  /** Tells the engine that every log entry up to `seq` is on disk. */
+  acknowledgeLogSaved(seq: number): void {
+    this.log.acknowledgeSaved(seq);
+  }
+
   /**
-   * Applies a fleet command at the current step boundary. Returns false if it changed nothing;
-   * throws `CommandRejected` if it cannot be carried out, leaving the world untouched.
+   * Applies a command at the current step boundary and records it in the log. Returns false if it
+   * changed nothing; throws `CommandRejected` if it cannot be carried out, leaving the world
+   * untouched and the log without an entry.
    */
   applyCommand(command: FleetCommand): boolean {
-    return this.fleet.apply(command, this.tick);
+    const effect = this.fleet.apply(command, this.tick);
+    if (effect === null) return false;
+    this.log.append(
+      this.tick,
+      'command',
+      command.type,
+      SYSTEM_COMMANDS.has(command.type) ? 'system' : 'player',
+      effect,
+      { ...command },
+    );
+    return true;
   }
 
   fleetView(): FleetView {
@@ -175,7 +208,10 @@ export class SimulationEngine {
    */
   private step(): void {
     this.tick += 1;
-    this.fleet.step(this.tick, (stream) => this.rng.stream(stream));
+    const emit: EmitEvent = (type, subject, payload) => {
+      this.log.append(this.tick, 'event', type, 'world', subject, payload);
+    };
+    this.fleet.step(this.tick, (stream) => this.rng.stream(stream), emit);
     this.updateIntegrityDigest();
   }
 
@@ -190,4 +226,14 @@ export class SimulationEngine {
     const draw = this.rng.stream(INTEGRITY_STREAM).nextUint32();
     this.integrityDigest = foldUint32(foldUint32(this.integrityDigest, this.tick >>> 0), draw);
   }
+}
+
+/**
+ * The log of a saved world. A world saved before the log existed (model 2 or earlier) gets an
+ * empty one that is complete only from the moment of the upgrade.
+ */
+function restoredLog(snapshot: WorldSnapshot): LogSnapshot {
+  const saved = (snapshot as Partial<WorldSnapshot>).log;
+  if (saved && snapshot.modelVersion >= FIRST_LOGGED_MODEL_VERSION) return saved;
+  return { ...EMPTY_LOG, completeFromTick: snapshot.clock.tick };
 }

@@ -1,3 +1,13 @@
+import {
+  derivePerformance,
+  generatePlan,
+  simInstant,
+  suggestedFuelKg,
+  type PerformanceModel,
+  type RoutePoint,
+  type TypeCharacteristics,
+} from '@aegis/domain';
+import type { AircraftOrder, FleetCommand } from './fleet';
 import type { HostClock } from './runner';
 import type { Checkpoint, WorldStore } from './world';
 
@@ -68,4 +78,95 @@ export class MemoryWorldStore implements WorldStore {
   get latest(): Checkpoint | null {
     return this.current;
   }
+}
+
+const fixtureModel = (type: TypeCharacteristics): PerformanceModel => {
+  const result = derivePerformance(type);
+  if (!result.available) throw new Error(`Fixture type has no model: ${result.missing.join(', ')}`);
+  return result.model;
+};
+
+const fixtureAerodrome = (
+  code: string,
+  name: string,
+  lat: number,
+  lon: number,
+  elevationM: number,
+): RoutePoint => ({
+  kind: 'aerodrome',
+  refId: `fixture:${code.toLowerCase()}`,
+  name,
+  code,
+  lat,
+  lon,
+  elevationM,
+});
+
+/** Aircraft and places for tests. Characteristics are illustrative test inputs, not reference data. */
+export const FIXTURES = {
+  epoch: simInstant(Date.UTC(2026, 9, 4, 12, 0, 0)),
+  models: {
+    fastJet: fixtureModel({
+      category: 'fast_jet',
+      engineType: 'turbofan',
+      emptyMassKg: 11000,
+      maxTakeoffMassKg: 23500,
+      cruiseSpeedKmh: null,
+      maxSpeedKmh: 2495,
+      rangeKm: 2900,
+      ferryRangeKm: 3790,
+      serviceCeilingM: 16764,
+    }),
+    transport: fixtureModel({
+      category: 'transport',
+      engineType: 'turbofan',
+      emptyMassKg: 128140,
+      maxTakeoffMassKg: 265352,
+      cruiseSpeedKmh: 833,
+      maxSpeedKmh: null,
+      rangeKm: 4482,
+      ferryRangeKm: 11538,
+      serviceCeilingM: 13716,
+    }),
+  },
+  places: {
+    prestwick: fixtureAerodrome('EGPK', 'Glasgow Prestwick', 55.5094, -4.5867, 20),
+    newquay: fixtureAerodrome('EGHQ', 'Newquay', 50.4406, -4.9954, 119),
+    exeter: fixtureAerodrome('EGTE', 'Exeter', 50.7344, -3.4139, 31),
+    akrotiri: fixtureAerodrome('LCRA', 'Akrotiri', 34.5904, 32.9879, 23),
+  },
+} as const;
+
+export function fixtureOrder(kind: keyof typeof FIXTURES.models, home: RoutePoint): AircraftOrder {
+  return kind === 'fastJet'
+    ? {
+        typeId: 'fixture:fast-jet',
+        typeName: 'Fixture fast jet',
+        category: 'fast_jet',
+        performance: FIXTURES.models.fastJet,
+        performanceMissing: [],
+        home,
+      }
+    : {
+        typeId: 'fixture:transport',
+        typeName: 'Fixture transport',
+        category: 'transport',
+        performance: FIXTURES.models.transport,
+        performanceMissing: [],
+        home,
+      };
+}
+
+/** A launch command for the direct route, with fuel to arrive on reserve. */
+export function fixtureLaunch(
+  aircraftId: string,
+  model: PerformanceModel,
+  origin: RoutePoint,
+  destination: RoutePoint,
+  payloadKg = 0,
+): FleetCommand {
+  const plan = generatePlan(model, origin, destination);
+  const fuelKg = suggestedFuelKg(model, plan, payloadKg);
+  if (fuelKg === null) throw new Error('Fixture route cannot be flown');
+  return { type: 'launchFlight', aircraftId, plan, load: { fuelKg, payloadKg } };
 }

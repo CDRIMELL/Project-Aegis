@@ -31,6 +31,8 @@ export interface SimView {
   readonly clock: ClockState;
   readonly integrityDigest: number;
   readonly fleet: FleetView;
+  /** Number of entries in the command and event log. The entries are read from the database. */
+  readonly logLength: number;
   readonly checkpoint: {
     /** Sequence number of the last checkpoint known to be on disk; 0 if none yet. */
     readonly persistedSeq: number;
@@ -202,6 +204,7 @@ export class SimulationRunner {
       clock: snapshot.clock,
       integrityDigest: snapshot.integrityDigest,
       fleet: this.engine.fleetView(),
+      logLength: snapshot.log.nextSeq - 1,
       checkpoint: {
         persistedSeq: this.persisted?.seq ?? 0,
         persistedWallMs: this.persisted?.wallMs ?? null,
@@ -234,6 +237,7 @@ export class SimulationRunner {
     this.waiting = null;
     try {
       await this.store.save(checkpoint);
+      this.engine.acknowledgeLogSaved(checkpoint.snapshot.log.nextSeq - 1);
       this.persisted = {
         seq: checkpoint.seq,
         wallMs: checkpoint.wallTimeMs,

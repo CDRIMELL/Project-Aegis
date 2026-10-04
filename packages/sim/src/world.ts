@@ -1,15 +1,17 @@
 import type { RngState, SimInstant, SpeedMultiplier } from '@aegis/domain';
 import type { FleetSnapshot } from './fleet';
+import type { LogSnapshot } from './log';
 
 /**
  * Version of the simulation rules. A saved world records the version that produced it;
  * bump this whenever a change would make an existing world behave differently.
  */
-export const SIM_MODEL_VERSION = 2;
+export const SIM_MODEL_VERSION = 3;
 
 /**
- * Oldest model version this build can load. A model-1 world (clock only) is upgraded on load to a
- * model-2 world with an empty fleet (ADR 0016).
+ * Oldest model version this build can load. Older worlds are upgraded on load: a model-1 world
+ * (clock only) gains an empty fleet (ADR 0016); a model-2 world gains an empty log and no missions
+ * (ADR 0017, ADR 0018).
  */
 export const OLDEST_LOADABLE_MODEL_VERSION = 1;
 
@@ -37,6 +39,8 @@ export interface WorldSnapshot {
   readonly integrityDigest: number;
   /** Simulated aircraft and flights. */
   readonly fleet: FleetSnapshot;
+  /** Recent entries of the command and event log (ADR 0018). */
+  readonly log: LogSnapshot;
 }
 
 export interface NewWorldOptions {
