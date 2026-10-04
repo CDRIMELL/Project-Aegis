@@ -38,3 +38,11 @@ export function simCommandRejected(message: string): void {
 export function simFailed(message: string): void {
   useSimStore.setState({ phase: 'failed', failure: message });
 }
+
+/*
+ * Stable empty values for selectors. A selector must return the same reference while the store is
+ * unchanged: one that builds a new array each time (`?? []`, `.map(...)`) makes React re-render
+ * without end. Select the stored value, or one of these, and derive anything else in `useMemo`.
+ */
+export const NO_AIRCRAFT: SimView['fleet']['aircraft'] = [];
+export const NO_FLIGHTS: SimView['fleet']['recentFlights'] = [];

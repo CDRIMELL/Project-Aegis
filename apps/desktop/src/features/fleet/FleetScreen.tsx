@@ -23,7 +23,7 @@ import { acquireAircraft, setHome, startMaintenance, useCatalogueStore } from '.
 import { formatDuration, formatInteger, formatKg, formatKm } from '../../format';
 import { focusAircraft } from '../../map/flight-binding';
 import { beginPlanning } from '../../state/plan-store';
-import { useSimStore } from '../../state/sim-store';
+import { NO_FLIGHTS, useSimStore } from '../../state/sim-store';
 import {
   AerodromePicker,
   AircraftStatusBadge,
@@ -201,7 +201,7 @@ function MaintenancePanel({ aircraft }: { readonly aircraft: AircraftState }) {
 }
 
 function RecordPanel({ aircraft }: { readonly aircraft: AircraftState }) {
-  const flights = useSimStore((state) => state.view?.fleet.recentFlights ?? []);
+  const flights = useSimStore((state) => state.view?.fleet.recentFlights ?? NO_FLIGHTS);
   const own = flights.filter((flight) => flight.aircraftId === aircraft.id).slice(0, 6);
   return (
     <Panel title="Flight record">

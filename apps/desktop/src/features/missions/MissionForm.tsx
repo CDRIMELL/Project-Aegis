@@ -36,7 +36,7 @@ import {
   type MissionFormValues,
 } from '../../missions/mission-logic';
 import { createMission, updateMission } from '../../missions/service';
-import { useSimStore } from '../../state/sim-store';
+import { NO_AIRCRAFT, useSimStore } from '../../state/sim-store';
 import { AerodromePicker, placeName } from '../shared/fleet-display';
 import { ObjectiveList, RiskBreakdown } from '../shared/mission-display';
 import { usePlanContext } from '../shared/usePlanContext';
@@ -53,7 +53,7 @@ export interface MissionFormProps {
  * what the template makes of it. Inline, not a dialog, so the list stays in view.
  */
 export function MissionForm({ mission, onDone }: MissionFormProps) {
-  const fleet = useStable(useSimStore((state) => state.view?.fleet.aircraft ?? []));
+  const fleet = useStable(useSimStore((state) => state.view?.fleet.aircraft ?? NO_AIRCRAFT));
   const tick = useSimStore((state) => {
     const now = state.view?.clock.tick ?? 0;
     return now - (now % 600);

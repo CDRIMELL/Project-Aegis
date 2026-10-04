@@ -24,7 +24,7 @@ import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { formatInteger } from '../../format';
 import { focusEvent } from '../../map/environment-binding';
-import { useSimStore } from '../../state/sim-store';
+import { NO_AIRCRAFT, useSimStore } from '../../state/sim-store';
 import { SimulatedBadge } from '../shared/fleet-display';
 import { formatTick, relativeTick } from '../shared/mission-display';
 import { useStable } from '../shared/useStable';
@@ -54,12 +54,12 @@ interface BaseConditions {
 /** Current and coming conditions at every aerodrome where the fleet has an aircraft. */
 function useBaseConditions(): BaseConditions[] {
   const weather = useStable(useSimStore((state) => state.view?.weather ?? null));
+  // The selector returns the stored array as it is; where each aircraft is, is derived below.
+  const aircraft = useSimStore((state) => state.view?.fleet.aircraft ?? NO_AIRCRAFT);
   const fleet = useStable(
-    useSimStore((state) =>
-      (state.view?.fleet.aircraft ?? []).map((aircraft) => ({
-        id: aircraft.id,
-        place: aircraft.location ?? aircraft.home,
-      })),
+    useMemo(
+      () => aircraft.map((each) => ({ id: each.id, place: each.location ?? each.home })),
+      [aircraft],
     ),
   );
   const tick = useSimStore((state) => {
@@ -75,9 +75,9 @@ function useBaseConditions(): BaseConditions[] {
       entry.aircraft.push(id);
       byPlace.set(key, entry);
     }
-    return [...byPlace.values()].map(({ place, aircraft }) => ({
+    return [...byPlace.values()].map(({ place, aircraft: based }) => ({
       place,
-      aircraft,
+      aircraft: based,
       now: conditionsAt(weather, tick, place, 0),
       trend: TREND_HOURS.map((hours) => conditionsAt(weather, tick + hours * 3600, place, 0)),
     }));

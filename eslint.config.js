@@ -35,6 +35,9 @@ const ENGINE_DEPENDENT_MATH = [
 const ENGINE_DEPENDENT_MESSAGE =
   'This is not computed identically by every engine. Use packages/domain/src/math.ts (ADR 0020).';
 
+const STABLE_SELECTOR_MESSAGE =
+  'A store selector must not build a new array or object: select the stored value and derive the rest in useMemo.';
+
 const PURE_CORE_MESSAGE =
   'The domain and simulation packages must stay free of UI, platform and persistence code (ADR 0001, 0002).';
 
@@ -74,6 +77,21 @@ export default tseslint.config(
     rules: {
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
+      // A store selector must return the same reference while the store is unchanged. One that
+      // builds a new array or object makes React re-render without end.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'CallExpression[callee.name=/^use[A-Z]\\w*Store$/] > ArrowFunctionExpression :matches(ArrayExpression, ObjectExpression)',
+          message: STABLE_SELECTOR_MESSAGE,
+        },
+        {
+          selector:
+            'CallExpression[callee.name=/^use[A-Z]\\w*Store$/] > ArrowFunctionExpression CallExpression[callee.property.name=/^(map|filter|slice|concat|flatMap)$/]',
+          message: STABLE_SELECTOR_MESSAGE,
+        },
+      ],
     },
   },
   {
