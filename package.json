@@ -2,6 +2,7 @@
   "name": "aegis",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "AEGIS - Aerospace Operations & Simulation Platform",
   "type": "module",
   "workspaces": [

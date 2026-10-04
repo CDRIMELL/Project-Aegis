@@ -74,3 +74,8 @@ docs                Architecture, design system, reference data, decision record
 - [Design system](docs/design-system.md)
 - [Reference data](docs/reference-data.md)
 - [Architecture decision records](docs/adr/README.md)
+
+## Licence
+
+The code is released under the [MIT License](LICENSE). Reference data keeps the licence of its
+source; see [NOTICE.md](NOTICE.md).
