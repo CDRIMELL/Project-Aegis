@@ -14,6 +14,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openNodeDatabase } from '@aegis/db/node';
+import { prepareCountries, prepareCountryLabels, prepareShapes } from '../basemap';
 import {
   loadReferenceData,
   normaliseReferenceData,
@@ -25,6 +26,7 @@ import { PACK_MANIFEST_FILE, buildPack, installPack, type PackReader } from '../
 import { readCuratedTypes } from '../sources/aircraft';
 import { curatedCharacteristicsRevisedAt } from '../sources/aircraft-curated';
 import {
+  BASEMAP_DIR,
   CURATED_ATTRIBUTES,
   CURATED_CHARACTERISTICS,
   CURATED_TYPES,
@@ -173,7 +175,32 @@ async function installBuiltPack(): Promise<void> {
   }
 }
 
+/** Builds the offline basemap files the map loads (ADR 0008). Coordinates: 2, 3 and 4 decimals. */
+function basemap(): Promise<void> {
+  const outputs: Record<string, object> = {
+    'land-110m.json': prepareCountries(readRemote('basemap-countries-110m').text, 2),
+    'land-50m.json': prepareCountries(readRemote('basemap-countries-50m').text, 3),
+    'land-10m.json': prepareCountries(readRemote('basemap-countries-10m').text, 4),
+    'borders-50m.json': prepareShapes(readRemote('basemap-borders-50m').text, 3),
+    'borders-10m.json': prepareShapes(readRemote('basemap-borders-10m').text, 4),
+    'lakes-50m.json': prepareShapes(readRemote('basemap-lakes-50m').text, 3),
+    'lakes-10m.json': prepareShapes(readRemote('basemap-lakes-10m').text, 4),
+    'country-labels.json': prepareCountryLabels(readRemote('basemap-countries-50m').text),
+  };
+  rmSync(BASEMAP_DIR, { recursive: true, force: true });
+  mkdirSync(BASEMAP_DIR, { recursive: true });
+  const written = Object.entries(outputs).map(([file, content]) => {
+    const text = JSON.stringify(content);
+    writeFileSync(join(BASEMAP_DIR, file), text);
+    return { file, bytes: Buffer.byteLength(text) };
+  });
+  console.table(written);
+  console.log(`Basemap written to ${BASEMAP_DIR}`);
+  return Promise.resolve();
+}
+
 const commands: Record<string, () => Promise<void>> = {
+  basemap,
   fetch: fetchAll,
   'aircraft-specs': aircraftSpecs,
   import: importAll,

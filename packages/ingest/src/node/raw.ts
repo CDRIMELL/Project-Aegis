@@ -32,7 +32,25 @@ export const REMOTE_FILES = {
     url: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_populated_places_simple.geojson',
     file: 'natural-earth/ne_10m_populated_places_simple.geojson',
   },
+  // Basemap cartography (ADR 0008), at three levels of detail.
+  'basemap-countries-110m': naturalEarth('ne_110m_admin_0_countries'),
+  'basemap-countries-50m': naturalEarth('ne_50m_admin_0_countries'),
+  'basemap-countries-10m': naturalEarth('ne_10m_admin_0_countries'),
+  'basemap-borders-50m': naturalEarth('ne_50m_admin_0_boundary_lines_land'),
+  'basemap-borders-10m': naturalEarth('ne_10m_admin_0_boundary_lines_land'),
+  'basemap-lakes-50m': naturalEarth('ne_50m_lakes'),
+  'basemap-lakes-10m': naturalEarth('ne_10m_lakes'),
 } as const;
+
+function naturalEarth(name: string) {
+  return {
+    url: `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/${name}.geojson`,
+    file: `natural-earth/${name}.geojson`,
+  };
+}
+
+/** Where the offline basemap is written: inside the desktop app's bundled assets. */
+export const BASEMAP_DIR = join(REPO_ROOT, 'apps', 'desktop', 'public', 'basemap');
 
 export type RemoteName = keyof typeof REMOTE_FILES;
 

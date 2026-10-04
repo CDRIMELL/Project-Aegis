@@ -7,6 +7,55 @@
       "bytes": 12735652,
       "retrievedAt": "2026-10-04T10:42:21.726Z"
     },
+    "basemap-borders-10m": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_boundary_lines_land.geojson",
+      "file": "natural-earth/ne_10m_admin_0_boundary_lines_land.geojson",
+      "sha256": "74d9c16229c095fde65943a9919e337682f044bcebccb120764f38edf3b70f4a",
+      "bytes": 2284669,
+      "retrievedAt": "2026-10-04T11:25:55.597Z"
+    },
+    "basemap-borders-50m": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_boundary_lines_land.geojson",
+      "file": "natural-earth/ne_50m_admin_0_boundary_lines_land.geojson",
+      "sha256": "2faac4f6b34386f3d21b6e018cf151f241f00e5c936d44dd17d7d9bfb147fa48",
+      "bytes": 760189,
+      "retrievedAt": "2026-10-04T11:25:55.142Z"
+    },
+    "basemap-countries-10m": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson",
+      "file": "natural-earth/ne_10m_admin_0_countries.geojson",
+      "sha256": "239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255",
+      "bytes": 13287234,
+      "retrievedAt": "2026-10-04T11:25:54.936Z"
+    },
+    "basemap-countries-110m": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson",
+      "file": "natural-earth/ne_110m_admin_0_countries.geojson",
+      "sha256": "6866c877d39cba9c357620878839b336d569f8c662d3cfab4cb1dbe2d39c977f",
+      "bytes": 838726,
+      "retrievedAt": "2026-10-04T11:25:53.995Z"
+    },
+    "basemap-countries-50m": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
+      "file": "natural-earth/ne_50m_admin_0_countries.geojson",
+      "sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb",
+      "bytes": 3083490,
+      "retrievedAt": "2026-10-04T11:25:54.263Z"
+    },
+    "basemap-lakes-10m": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_lakes.geojson",
+      "file": "natural-earth/ne_10m_lakes.geojson",
+      "sha256": "2d036f53dedec578001c5c30c2959ee7d4eebc1306900fa4367c49929ec8f2d9",
+      "bytes": 5043554,
+      "retrievedAt": "2026-10-04T11:25:56.665Z"
+    },
+    "basemap-lakes-50m": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_lakes.geojson",
+      "file": "natural-earth/ne_50m_lakes.geojson",
+      "sha256": "d350b75978b26fe839b797c2c529b2fb8f47fb3983c03f4964e36d5df9378a52",
+      "bytes": 876018,
+      "retrievedAt": "2026-10-04T11:25:55.854Z"
+    },
     "cities": {
       "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_populated_places_simple.geojson",
       "file": "natural-earth/ne_10m_populated_places_simple.geojson",

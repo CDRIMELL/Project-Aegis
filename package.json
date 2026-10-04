@@ -13,7 +13,7 @@
   },
   "scripts": {
     "dev": "npm run tauri:dev -w @aegis/desktop",
-    "build": "npm run tauri:build -w @aegis/desktop",
+    "build": "npm run data:build && npm run tauri:build -w @aegis/desktop",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
@@ -34,7 +34,9 @@
     "rust:prepare": "npm run build -w @aegis/desktop && tsx tools/make-parity-db.ts",
     "data:pack": "tsx packages/ingest/src/node/cli.ts pack",
     "data:install-pack": "tsx packages/ingest/src/node/cli.ts install-pack",
-    "verify:reference": "tsx tools/verify-reference.ts"
+    "verify:reference": "tsx tools/verify-reference.ts",
+    "data:basemap": "tsx packages/ingest/src/node/cli.ts basemap",
+    "data:build": "npm run data:pack && npm run data:basemap"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
