@@ -326,3 +326,11 @@ export async function searchAerodromes(query: string, limit = 8): Promise<Search
   const results = await searchLocations(query, limit * 3);
   return results.filter((result) => result.kind !== 'city').slice(0, limit);
 }
+
+/**
+ * Every aerodrome OurAirports classes as a large airport, for choosing a world's operating area.
+ * Size class is the only criterion: nothing about an aerodrome's operator or use is read.
+ */
+export function loadLargeAerodromes(): Promise<LocationRecord[]> {
+  return db.select().from(refLocation).where(eq(refLocation.kind, 'airport_large'));
+}

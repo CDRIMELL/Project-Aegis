@@ -14,12 +14,20 @@ const AIRPORTS = `${AIRPORT_HEADER}
 2448,"EGHQ","medium_airport","Cornwall Airport Newquay",50.440601,-4.995410,390,"EU","GB","GB-ENG","Newquay","yes","EGHQ","NQY","EGHQ",,,,
 4175,"LCRA","medium_airport","RAF Akrotiri",34.590401,32.987900,76,"AS","CY","CY-02","Akrotiri","no","LCRA","AKT","LCRA",,,,
 3622,"KJFK","large_airport","John F Kennedy International Airport",40.639447,-73.779317,13,"NA","US","US-NY","New York","yes","KJFK","JFK","KJFK","JFK",,,
+2434,"EGLL","large_airport","London Heathrow Airport",51.4706,-0.461941,83,"EU","GB","GB-ENG","London","yes","EGLL","LHR","EGLL",,,,
+2429,"EGCC","large_airport","Manchester Airport",53.353699,-2.27495,257,"EU","GB","GB-ENG","Manchester","yes","EGCC","MAN","EGCC",,,,
+2513,"EHAM","large_airport","Amsterdam Airport Schiphol",52.308601,4.76389,-11,"EU","NL","NL-NH","Amsterdam","yes","EHAM","AMS","EHAM",,,,
+4185,"LFPG","large_airport","Charles de Gaulle International Airport",49.012798,2.55,392,"EU","FR","FR-IDF","Paris","yes","LFPG","CDG","LFPG",,,,
+2544,"EIDW","large_airport","Dublin Airport",53.421299,-6.27007,242,"EU","IE","IE-D","Dublin","yes","EIDW","DUB","EIDW",,,,
 `;
 
 const COUNTRIES = `"id","code","name","continent","wikipedia_link","keywords"
 302791,"GB","United Kingdom","EU",,
 302755,"US","United States","NA",,
 302618,"CY","Cyprus","AS",,
+302735,"NL","Netherlands","EU",,
+302687,"FR","France","EU",,
+302708,"IE","Ireland","EU",,
 `;
 
 const RUNWAYS =

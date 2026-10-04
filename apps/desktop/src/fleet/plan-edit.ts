@@ -59,11 +59,20 @@ function wrapLon(lon: number): number {
   return ((((lon + 180) % 360) + 360) % 360) - 180;
 }
 
-/** Renames free waypoints WP1, WP2, ... in route order, so names always match positions. */
+/** A waypoint the planner named itself, as opposed to one a mission named. */
+const GENERIC_WAYPOINT = /^WP\d*$/;
+
+/**
+ * Renames the planner's own waypoints WP1, WP2, ... in route order, so their names always match
+ * their positions. A waypoint with a name of its own (a mission's turning point, an orbit point)
+ * keeps it.
+ */
 function renumber(points: readonly RoutePoint[]): RoutePoint[] {
   let n = 0;
   return points.map((point) =>
-    point.kind === 'waypoint' ? { ...point, name: `WP${++n}` } : point,
+    point.kind === 'waypoint' && GENERIC_WAYPOINT.test(point.name)
+      ? { ...point, name: `WP${++n}` }
+      : point,
   );
 }
 
