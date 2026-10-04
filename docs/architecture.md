@@ -74,7 +74,8 @@ launch without touching the real profile.
 | `apps/desktop`  | Tauri shell, workers, IPC bridge, map engine, screens                      | all of the above     |
 
 `domain` and `sim` compile without DOM or Node typings, and ESLint forbids them from importing UI,
-platform or persistence code and from using `Date.now`, `Math.random` or timers. A violation fails
+platform or persistence code and from using `Date.now`, `Math.random`, timers, locale formatting
+or any `Math` function that engines do not compute identically. A violation fails
 `npm run lint` or `npm run typecheck`.
 
 ## Simulation model
@@ -91,6 +92,10 @@ platform or persistence code and from using `Date.now`, `Math.random` or timers.
   stalls or the webview throttles timers, the world slows down; it does not burst.
 - **Randomness.** `xoshiro128**`, one named stream per subsystem, all derived from the world seed.
   Stream states are part of the world and are checkpointed.
+- **Mathematics.** `Math.sin`, `cos`, `atan2`, `log` and their relatives differ in the last digit
+  between JavaScript engines and engine versions. The simulation core uses its own versions
+  (`packages/domain/src/math.ts`), built only from the operations the language guarantees exactly,
+  so a world is the same world under any engine ([ADR 0020](adr/0020-deterministic-mathematics.md)).
 - **Integrity digest.** Each step folds the tick number and one random draw into a rolling digest.
   Equal digests at equal ticks mean two runs executed identically. It is how tests, and the System
   screen, prove a world continued exactly across a restart.
@@ -311,19 +316,20 @@ needs a GPU and is verified by running the application.
 
 ## Testing
 
-| Layer            | Tool                   | What it proves                                                               |
-| ---------------- | ---------------------- | ---------------------------------------------------------------------------- |
-| Domain           | Vitest, fast-check     | RNG reference vector, stream isolation, bounds, time and digest helpers      |
-| Simulation       | Vitest                 | Determinism, every speed, pause/resume, catch-up cap, checkpoint policy      |
-| Persistence      | Vitest + `node:sqlite` | Round trip, atomic rollback, constraints, restart continuity, crash recovery |
-| Native core      | `cargo test`           | Batch atomicity, statement guard, value conversion, migrations, backup, gate |
-| Ingestion        | Vitest + `node:sqlite` | Normalisation, idempotency, reproducibility, atomic failure, data pack       |
-| Map              | Vitest                 | Tier order, density rules, feature building, style uses only palette colours |
-| Flight           | Vitest                 | Fuel calibration, phases, constraints, determinism, 1x equals 100x           |
-| Scenario         | Vitest + `node:sqlite` | Starter fleet, plan, edit, launch, fly, save, reload, land, end to end       |
-| Missions         | Vitest                 | Lifecycle, objectives, validation, risk, seeded generation, consequences     |
-| Log              | Vitest + `node:sqlite` | Append-only, atomic with state, deterministic order, replay from seed        |
-| Mission scenario | Vitest + `node:sqlite` | Create, route, edit, accept, launch, complete, reopen, generated offer       |
+| Layer            | Tool                   | What it proves                                                                |
+| ---------------- | ---------------------- | ----------------------------------------------------------------------------- |
+| Domain           | Vitest, fast-check     | RNG reference vector, stream isolation, bounds, time and digest helpers       |
+| Mathematics      | Vitest                 | Exact recorded bits of every function and of geodesy; accuracy against `Math` |
+| Simulation       | Vitest                 | Determinism, every speed, pause/resume, catch-up cap, checkpoint policy       |
+| Persistence      | Vitest + `node:sqlite` | Round trip, atomic rollback, constraints, restart continuity, crash recovery  |
+| Native core      | `cargo test`           | Batch atomicity, statement guard, value conversion, migrations, backup, gate  |
+| Ingestion        | Vitest + `node:sqlite` | Normalisation, idempotency, reproducibility, atomic failure, data pack        |
+| Map              | Vitest                 | Tier order, density rules, feature building, style uses only palette colours  |
+| Flight           | Vitest                 | Fuel calibration, phases, constraints, determinism, 1x equals 100x            |
+| Scenario         | Vitest + `node:sqlite` | Starter fleet, plan, edit, launch, fly, save, reload, land, end to end        |
+| Missions         | Vitest                 | Lifecycle, objectives, validation, risk, seeded generation, consequences      |
+| Log              | Vitest + `node:sqlite` | Append-only, atomic with state, deterministic order, replay from seed         |
+| Mission scenario | Vitest + `node:sqlite` | Create, route, edit, accept, launch, complete, reopen, generated offer        |
 
 Persistence tests use the same Drizzle driver and SQL as production; only the transport differs.
 
