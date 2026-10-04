@@ -224,7 +224,7 @@ describe('world continuity across application restarts', () => {
     const applied = second.transport.connection
       .prepare('SELECT tag FROM __aegis_migrations ORDER BY idx')
       .all();
-    expect(applied).toEqual([{ tag: '0000_init' }]);
+    expect(applied).toEqual([{ tag: '0000_init' }, { tag: '0001_reference_data' }]);
     second.close();
   });
 });

@@ -10,6 +10,8 @@ import { check, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
  * Changing this file requires `npm run db:generate` and committing the generated migration.
  */
 
+export * from './reference-schema';
+
 /** Identity of the simulated world. Exactly one row. */
 export const simWorld = sqliteTable(
   'sim_world',

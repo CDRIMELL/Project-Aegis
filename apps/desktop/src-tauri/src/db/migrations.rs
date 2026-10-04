@@ -214,9 +214,24 @@ mod tests {
         let report = run(&mut conn, &migrations, None).unwrap();
         assert_eq!(report.applied.len(), migrations.len());
         assert_eq!(report.applied[0], "0000_init");
+        assert_eq!(report.applied[1], "0001_reference_data");
         assert_eq!(
             table_names(&conn),
-            ["sim_checkpoint", "sim_clock", "sim_rng_stream", "sim_world"]
+            [
+                "ref_aircraft_attribute",
+                "ref_aircraft_type",
+                "ref_country",
+                "ref_data_source",
+                "ref_ingestion_issue",
+                "ref_ingestion_job",
+                "ref_location",
+                "ref_runway",
+                "sim_checkpoint",
+                "sim_clock",
+                "sim_rng_stream",
+                "sim_world",
+                "sqlite_sequence",
+            ]
         );
     }
 
