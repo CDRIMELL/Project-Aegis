@@ -25,3 +25,5 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0018](0018-command-log.md)                    | Append-only command and event log, atomic with state                       | Accepted |
 | [0019](0019-sourced-fuel-capacity.md)          | Sourced fuel capacity; flight model 2; grounded-only migration             | Accepted |
 | [0020](0020-deterministic-mathematics.md)      | Deterministic mathematics: no engine-dependent functions in the simulation | Accepted |
+| [0021](0021-environment.md)                    | Simulated environment: weather computed from seed, time and place          | Accepted |
+| [0022](0022-world-events.md)                   | World events: one generic event, lifecycle, consequences                   | Accepted |
