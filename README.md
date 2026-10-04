@@ -8,9 +8,14 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Milestone 1 of 10: foundation. The application launches, runs a deterministic simulation clock at
-1x to 100x, checkpoints it transactionally to SQLite and resumes the exact same world after a
-restart. There is no map, fleet or mission system yet.
+Phase 2 of 10 complete.
+
+- **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
+  checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
+- **Reference data:** real countries, aerodromes, runways, cities and aircraft types are imported
+  with provenance by an idempotent, reproducible pipeline.
+
+There is no map, fleet or mission system yet.
 
 ## Requirements
 
@@ -28,6 +33,9 @@ npm run dev          # run the desktop app with hot reload
 npm run ci           # format, lint, type-check and all tests (TypeScript and Rust)
 npm run build        # release executable and installer
 npm run verify:world # replay the saved world from its seed and confirm it matches
+
+npm run data:fetch   # download the public reference datasets (once; needs a connection)
+npm run data:import  # import reference data into the application's database
 ```
 
 The world is stored in `%APPDATA%\dev.aegis.desktop\aegis.db`. Delete that file to start a new
@@ -41,12 +49,15 @@ apps/desktop        Tauri shell, simulation worker host, screens
 packages/domain     Pure value types and rules
 packages/sim        Simulation engine and runner
 packages/db         Drizzle schema, migrations, persistence
+packages/ingest     Reference-data pipeline: parse, validate, load
 packages/ui         Design system: tokens and components
-docs                Architecture, design system, decision records
+data                Curated reference files and the lock that pins downloaded sources
+docs                Architecture, design system, reference data, decision records
 ```
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Design system](docs/design-system.md)
+- [Reference data](docs/reference-data.md)
 - [Architecture decision records](docs/adr/README.md)
