@@ -1,0 +1,16 @@
+node_modules/
+dist/
+target/
+apps/desktop/src-tauri/gen/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
+# Raw reference-data downloads are fetched by ingestion jobs, never committed.
+data/raw/
+# Local databases and backups
+*.db
+*.db-wal
+*.db-shm
