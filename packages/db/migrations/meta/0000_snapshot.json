@@ -1,0 +1,202 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "869cc361-4d41-43ec-90b2-a91b01ab7e99",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "sim_checkpoint": {
+      "name": "sim_checkpoint",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "wall_ms": {
+          "name": "wall_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "integrity_digest": {
+          "name": "integrity_digest",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sim_checkpoint_singleton": {
+          "name": "sim_checkpoint_singleton",
+          "value": "\"sim_checkpoint\".\"id\" = 1"
+        },
+        "sim_checkpoint_seq_positive": {
+          "name": "sim_checkpoint_seq_positive",
+          "value": "\"sim_checkpoint\".\"seq\" > 0"
+        }
+      }
+    },
+    "sim_clock": {
+      "name": "sim_clock",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sim_time_ms": {
+          "name": "sim_time_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tick": {
+          "name": "tick",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "speed": {
+          "name": "speed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "running": {
+          "name": "running",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sim_clock_singleton": {
+          "name": "sim_clock_singleton",
+          "value": "\"sim_clock\".\"id\" = 1"
+        },
+        "sim_clock_tick_non_negative": {
+          "name": "sim_clock_tick_non_negative",
+          "value": "\"sim_clock\".\"tick\" >= 0"
+        },
+        "sim_clock_speed_supported": {
+          "name": "sim_clock_speed_supported",
+          "value": "\"sim_clock\".\"speed\" in (1, 2, 5, 10, 50, 100)"
+        }
+      }
+    },
+    "sim_rng_stream": {
+      "name": "sim_rng_stream",
+      "columns": {
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sim_rng_stream_state_length": {
+          "name": "sim_rng_stream_state_length",
+          "value": "length(\"sim_rng_stream\".\"state\") = 32"
+        }
+      }
+    },
+    "sim_world": {
+      "name": "sim_world",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "seed": {
+          "name": "seed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_version": {
+          "name": "model_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "epoch_ms": {
+          "name": "epoch_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_wall_ms": {
+          "name": "created_wall_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sim_world_singleton": {
+          "name": "sim_world_singleton",
+          "value": "\"sim_world\".\"id\" = 1"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
