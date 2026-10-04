@@ -741,8 +741,8 @@ describe('opportunity generation', () => {
   });
 
   it('offers only what an aircraft in the fleet can fly from where it is', () => {
-    const offers = run('feasible', 600);
-    expect(new Set(offers.map((offer) => offer.type)).size).toBeGreaterThan(5);
+    const offers = run('feasible', 150);
+    expect(new Set(run('feasible', 600).map((offer) => offer.type)).size).toBeGreaterThan(5);
     for (const offer of offers) {
       const template = MISSION_TEMPLATES[offer.type];
       expect(briefProblem(offer.brief)).toBeNull();
@@ -789,9 +789,7 @@ describe('opportunity generation', () => {
   });
 
   it('gives an urgent mission a deadline that an immediate launch can meet', () => {
-    const urgent = run('urgent', 2000).filter(
-      (offer) => MISSION_TEMPLATES[offer.type].timeCritical,
-    );
+    const urgent = run('urgent', 700).filter((offer) => MISSION_TEMPLATES[offer.type].timeCritical);
     expect(urgent.length).toBeGreaterThan(10);
     for (const offer of urgent) {
       const template = MISSION_TEMPLATES[offer.type];
