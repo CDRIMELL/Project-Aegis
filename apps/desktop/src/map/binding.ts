@@ -49,7 +49,8 @@ function applySelection(): void {
     const position = positions.get(selection.id);
     mapController().setSelection(position ? { ...selection, ...position } : null);
   } else {
-    mapController().setSelection(selection);
+    // A selected aircraft is marked by its own layer, which follows it as it moves.
+    mapController().setSelection(selection?.type === 'country' ? selection : null);
   }
 }
 

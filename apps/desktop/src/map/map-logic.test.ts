@@ -268,19 +268,52 @@ describe('map style', () => {
       locations: 'reference',
       runways: 'reference',
       selection: 'interaction',
+      'sim-routes': 'simulation',
+      'sim-aircraft': 'simulation',
+      'draft-route': 'interaction',
+      'draft-handles': 'interaction',
     };
     for (const layer of style.layers) {
-      if (!('source' in layer) || layer.id.startsWith('selection-country')) continue;
+      // Selection outlines reuse the source of the thing they outline.
+      const outline = layer.id.startsWith('selection-country') || layer.id === 'aircraft-selected';
+      if (!('source' in layer) || outline) continue;
       expect(tierOfLayer(style, layer.id), layer.id).toBe(sourceTier[layer.source]);
     }
   });
 
-  it('starts with an empty simulation tier and empty reference sources', () => {
+  it('keeps simulated aircraft and routes in the simulation tier, in the simulated colour', () => {
     const simulationLayers = style.layers.filter(
       (layer) => tierOfLayer(style, layer.id) === 'simulation' && !layer.id.startsWith('slot:'),
     );
-    expect(simulationLayers).toEqual([]);
-    for (const source of ['locations', 'runways', 'selection']) {
+    expect(simulationLayers.map((layer) => layer.id)).toEqual(['flight-route', 'aircraft-marker']);
+    for (const layer of simulationLayers) {
+      expect('source' in layer && layer.source.startsWith('sim-')).toBe(true);
+      const text = JSON.stringify(layer);
+      expect(text).toContain(PALETTE.simulated);
+      expect(text).not.toContain(PALETTE.reference);
+    }
+  });
+
+  it('draws the draft flight plan in the interaction tier, above every aircraft', () => {
+    const order = (id: string) => layerIds.indexOf(id);
+    for (const id of ['draft-route-line', 'draft-midpoint', 'draft-waypoint', 'draft-endpoint']) {
+      expect(tierOfLayer(style, id), id).toBe('interaction');
+      expect(order(id)).toBeGreaterThan(order('aircraft-marker'));
+    }
+    // Waypoints are drawn over midpoints so a waypoint is what gets picked where they overlap.
+    expect(order('draft-waypoint')).toBeGreaterThan(order('draft-midpoint'));
+  });
+
+  it('starts with every data source empty', () => {
+    for (const source of [
+      'locations',
+      'runways',
+      'selection',
+      'sim-routes',
+      'sim-aircraft',
+      'draft-route',
+      'draft-handles',
+    ]) {
       expect(style.sources[source]).toMatchObject({
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },

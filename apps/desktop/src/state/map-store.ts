@@ -7,6 +7,7 @@ import type { LayerGroup } from '../map/style';
  */
 
 export type Selection =
+  | { readonly type: 'aircraft'; readonly id: string }
   | { readonly type: 'location'; readonly id: string }
   | { readonly type: 'country'; readonly iso2: string }
   | null;

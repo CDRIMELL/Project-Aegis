@@ -16,13 +16,18 @@ import {
 import { Building2, Maximize, Minus, Plane, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { focusLocation, focusZoom, startMapBinding } from '../../map/binding';
+import { startFlightBinding } from '../../map/flight-binding';
 import { mapController } from '../../map/controller';
 import { formatCoordinates, scaleBar } from '../../map/features';
 import type { LayerGroup } from '../../map/style';
 import { searchLocations, type SearchResult } from '../../reference/queries';
 import { setGroupVisible, useMapStore } from '../../state/map-store';
+import { usePlanStore } from '../../state/plan-store';
 import { useReferenceStore } from '../../state/reference-store';
+import { useSimStore } from '../../state/sim-store';
 import { useAsync } from '../shared/useAsync';
+import { AircraftPanel } from './AircraftPanel';
+import { FlightPlannerPanel } from './FlightPlannerPanel';
 import { SelectionDetail } from './SelectionDetail';
 
 /** Mounts the application's single map into this screen. The map itself is not a React tree. */
@@ -32,6 +37,7 @@ function MapSurface() {
   useEffect(() => {
     const controller = mapController();
     startMapBinding();
+    startFlightBinding();
     const element = host.current;
     element?.append(controller.element);
     controller.resize();
@@ -74,7 +80,7 @@ function LayerPanel() {
       ))}
       <SectionLabel className="px-1.5 pt-2 pb-1">Simulation layers</SectionLabel>
       <div className="px-1.5 pb-1">
-        <Hint>None yet. Aircraft and missions arrive in later phases.</Hint>
+        <Hint>Aircraft and flight routes, in green. Always shown.</Hint>
       </div>
     </FloatingPanel>
   );
@@ -242,9 +248,27 @@ function ReferenceStatus() {
   return null;
 }
 
+/**
+ * The panel beside the map. Planning a flight takes precedence over inspecting a selection, so the
+ * planner stays open while the player clicks around the map to edit the route.
+ */
+function SidePanel() {
+  const selection = useMapStore((state) => state.selection);
+  const planningId = usePlanStore((state) => state.planningAircraftId);
+  const draft = usePlanStore((state) => state.draft);
+  const wantedId = planningId ?? (selection?.type === 'aircraft' ? selection.id : null);
+  const aircraft = useSimStore(
+    (state) => state.view?.fleet.aircraft.find((candidate) => candidate.id === wantedId) ?? null,
+  );
+
+  if (planningId && aircraft) return <FlightPlannerPanel aircraft={aircraft} draft={draft} />;
+  if (selection?.type === 'aircraft')
+    return aircraft ? <AircraftPanel aircraft={aircraft} /> : null;
+  return selection ? <SelectionDetail selection={selection} /> : null;
+}
+
 /** The world map: the main operational surface. */
 export function OperationsScreen() {
-  const selection = useMapStore((state) => state.selection);
   return (
     <div className="flex size-full">
       <div className="relative min-w-0 flex-1">
@@ -269,7 +293,7 @@ export function OperationsScreen() {
           </div>
         </div>
       </div>
-      {selection && <SelectionDetail selection={selection} />}
+      <SidePanel />
     </div>
   );
 }

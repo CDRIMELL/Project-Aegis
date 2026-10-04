@@ -220,7 +220,11 @@ function Pending({ title, error }: { readonly title: string; readonly error?: st
 }
 
 /** Details of whatever is selected on the map. Renders nothing when nothing is selected. */
-export function SelectionDetail({ selection }: { readonly selection: NonNullable<Selection> }) {
+export function SelectionDetail({
+  selection,
+}: {
+  readonly selection: Exclude<NonNullable<Selection>, { type: 'aircraft' }>;
+}) {
   const key =
     selection.type === 'location' ? `location:${selection.id}` : `country:${selection.iso2}`;
   const state = useAsync(key, async () =>

@@ -9,7 +9,11 @@ import {
 } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import {
+  AIRCRAFT_HIT_LAYER,
+  AIRCRAFT_IMAGE,
   COUNTRY_HIT_LAYERS,
+  DRAFT_MIDPOINT_LAYER,
+  DRAFT_WAYPOINT_LAYER,
   DETAIL_ZOOM,
   HIT_LAYERS,
   LAYER_GROUPS,
@@ -52,7 +56,19 @@ const MAX_ZOOM = 16;
 /** Pixels around the pointer that count as a hit, so small markers are easy to pick. */
 const HIT_TOLERANCE_PX = 5;
 
+/** An edit to the draft flight plan made on the map. Indices refer to the plan's points. */
+export type DraftEdit =
+  | { readonly type: 'move'; readonly index: number; readonly lat: number; readonly lon: number }
+  | {
+      readonly type: 'insert';
+      readonly afterIndex: number;
+      readonly lat: number;
+      readonly lon: number;
+    }
+  | { readonly type: 'remove'; readonly index: number };
+
 export type MapPick =
+  | { readonly type: 'aircraft'; readonly id: string }
   | { readonly type: 'location'; readonly id: string }
   | { readonly type: 'country'; readonly iso2: string }
   | null;
@@ -94,6 +110,11 @@ export class MapController {
   private readonly pickListeners = new Set<Listener<MapPick>>();
   private readonly viewListeners = new Set<Listener<MapViewState>>();
   private readonly pointerListeners = new Set<Listener<MapPointer | null>>();
+  private readonly draftListeners = new Set<Listener<DraftEdit>>();
+  /** Index of the waypoint being dragged, while a drag is in progress. */
+  private dragging: number | null = null;
+  /** Set when a press acted on a draft handle, so the click that follows is not also a pick. */
+  private suppressPick = false;
 
   constructor() {
     setWorkerUrl(workerUrl);
@@ -136,14 +157,32 @@ export class MapController {
     this.map.on('move', () => {
       this.emitView();
     });
+    this.map.on('styleimagemissing', (event) => {
+      if (event.id === AIRCRAFT_IMAGE && !this.map.hasImage(AIRCRAFT_IMAGE)) {
+        this.map.addImage(
+          AIRCRAFT_IMAGE,
+          aircraftImage(this.palette.simulated, this.palette.water),
+          {
+            pixelRatio: 2,
+          },
+        );
+      }
+    });
+    this.bindDraftEditing();
     this.map.on('click', (event) => {
+      if (this.suppressPick) {
+        this.suppressPick = false;
+        return;
+      }
       const pick = this.pickAt(event);
       for (const listener of this.pickListeners) listener(pick);
     });
     this.map.on('mousemove', (event) => {
       const { lat, lng } = event.lngLat.wrap();
       for (const listener of this.pointerListeners) listener({ lat, lon: lng });
-      this.map.getCanvas().style.cursor = this.pickAt(event, false) ? 'pointer' : '';
+      if (this.dragging !== null) return;
+      this.map.getCanvas().style.cursor =
+        this.draftHandleAt(event) || this.pickAt(event, false) ? 'pointer' : '';
     });
     this.map.on('mouseout', () => {
       for (const listener of this.pointerListeners) listener(null);
@@ -168,6 +207,89 @@ export class MapController {
 
   setRunways(data: FeatureCollection): void {
     void this.source('runways').setData(data);
+  }
+
+  // --- Simulated entities --------------------------------------------------------------------
+
+  /** Aircraft positions. Called every animation frame while anything is flying. */
+  setAircraft(data: FeatureCollection): void {
+    void this.source('sim-aircraft').setData(data);
+  }
+
+  /** Routes of the flights in progress. Called when the set of flights or the selection changes. */
+  setFlightRoutes(data: FeatureCollection): void {
+    void this.source('sim-routes').setData(data);
+  }
+
+  // --- Draft flight plan ---------------------------------------------------------------------
+
+  setDraft(route: FeatureCollection, handles: FeatureCollection): void {
+    void this.source('draft-route').setData(route);
+    void this.source('draft-handles').setData(handles);
+  }
+
+  /** Edits made to the draft on the map: dragging a waypoint, adding one, removing one. */
+  onDraftEdit(listener: Listener<DraftEdit>): () => void {
+    return subscribe(this.draftListeners, listener);
+  }
+
+  private emitDraft(edit: DraftEdit): void {
+    for (const listener of this.draftListeners) listener(edit);
+  }
+
+  private draftHandleAt(event: MapMouseEvent): { role: string; index: number } | null {
+    const { x, y } = event.point;
+    const [feature] = this.map.queryRenderedFeatures(
+      [
+        [x - HIT_TOLERANCE_PX, y - HIT_TOLERANCE_PX],
+        [x + HIT_TOLERANCE_PX, y + HIT_TOLERANCE_PX],
+      ],
+      { layers: [DRAFT_WAYPOINT_LAYER, DRAFT_MIDPOINT_LAYER] },
+    );
+    const properties = feature?.properties as { role?: unknown; index?: unknown } | undefined;
+    return typeof properties?.role === 'string' && typeof properties.index === 'number'
+      ? { role: properties.role, index: properties.index }
+      : null;
+  }
+
+  /**
+   * Drag a waypoint to move it, press a leg's midpoint handle to add a waypoint there (and keep
+   * dragging it), right-click a waypoint to remove it.
+   */
+  private bindDraftEditing(): void {
+    this.map.on('mousedown', (event) => {
+      const handle = this.draftHandleAt(event);
+      if (!handle || event.originalEvent.button !== 0) return;
+      // Stops the map from panning while a handle is held.
+      event.preventDefault();
+      this.suppressPick = true;
+      const { lat, lng } = event.lngLat.wrap();
+      if (handle.role === 'midpoint') {
+        this.emitDraft({ type: 'insert', afterIndex: handle.index, lat, lon: lng });
+        this.dragging = handle.index + 1;
+      } else {
+        this.dragging = handle.index;
+      }
+      this.map.getCanvas().style.cursor = 'grabbing';
+    });
+    this.map.on('mousemove', (event) => {
+      if (this.dragging === null) return;
+      const { lat, lng } = event.lngLat.wrap();
+      this.emitDraft({ type: 'move', index: this.dragging, lat, lon: lng });
+    });
+    const endDrag = () => {
+      if (this.dragging === null) return;
+      this.dragging = null;
+      this.map.getCanvas().style.cursor = '';
+    };
+    this.map.on('mouseup', endDrag);
+    this.map.on('mouseout', endDrag);
+    this.map.on('contextmenu', (event) => {
+      const handle = this.draftHandleAt(event);
+      if (handle?.role !== 'waypoint') return;
+      event.preventDefault();
+      this.emitDraft({ type: 'remove', index: handle.index });
+    });
   }
 
   // --- Simulation tier ---------------------------------------------------------------------
@@ -333,6 +455,12 @@ export class MapController {
     ];
     const present = (layers: readonly string[]) => layers.filter((id) => this.map.getLayer(id));
 
+    const [aircraft] = this.map.queryRenderedFeatures(box, {
+      layers: present([AIRCRAFT_HIT_LAYER]),
+    });
+    const aircraftId = (aircraft?.properties as { id?: unknown } | undefined)?.id;
+    if (typeof aircraftId === 'string') return { type: 'aircraft', id: aircraftId };
+
     for (const layer of present(HIT_LAYERS)) {
       const [feature] = this.map.queryRenderedFeatures(box, { layers: [layer] });
       const properties = feature?.properties as { id?: unknown; locationId?: unknown } | undefined;
@@ -347,6 +475,29 @@ export class MapController {
     const iso2 = (country?.properties as { iso2?: unknown } | undefined)?.iso2;
     return typeof iso2 === 'string' && iso2.length === 2 ? { type: 'country', iso2 } : null;
   }
+}
+
+/** The aircraft marker: a plain arrowhead pointing north, rotated by heading when drawn. */
+function aircraftImage(fill: string, outline: string): ImageData {
+  const size = 40;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D canvas is unavailable; the aircraft marker cannot be drawn');
+  ctx.beginPath();
+  ctx.moveTo(20, 4);
+  ctx.lineTo(33, 35);
+  ctx.lineTo(20, 28);
+  ctx.lineTo(7, 35);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = outline;
+  ctx.stroke();
+  return ctx.getImageData(0, 0, size, size);
 }
 
 function subscribe<T>(listeners: Set<Listener<T>>, listener: Listener<T>): () => void {

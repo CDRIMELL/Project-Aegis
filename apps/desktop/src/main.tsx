@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createDb } from '@aegis/db';
 import { App } from './app/App';
+import { startFleetServices } from './fleet/service';
 import { isDesktop, tauriTransport } from './platform/tauri';
 import { ensureReferenceData } from './reference/client';
 import { bindReferenceDb } from './reference/queries';
@@ -16,6 +17,8 @@ if (isDesktop()) {
   simClient.start(tauriTransport);
   // First launch installs the reference data shipped in the bundle; later launches find it present.
   ensureReferenceData(tauriTransport);
+  // Reads the aircraft catalogue and gives a new world its starter fleet.
+  startFleetServices();
   // Persist unsaved simulation state before the window goes away (ADR 0004).
   void getCurrentWindow().onCloseRequested(async () => {
     await simClient.flush();

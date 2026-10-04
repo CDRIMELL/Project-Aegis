@@ -73,6 +73,13 @@ export const DETAIL_ZOOM = { medium: 2.5, high: 5.5 } as const;
 
 /** Layers that respond to a click, most specific first. */
 export const HIT_LAYERS = ['aerodrome-marker', 'city-marker', 'runway-line'] as const;
+/** Simulated aircraft are picked before anything beneath them. */
+export const AIRCRAFT_HIT_LAYER = 'aircraft-marker';
+/** Handles of the draft flight plan: waypoints can be dragged, midpoints add a waypoint. */
+export const DRAFT_WAYPOINT_LAYER = 'draft-waypoint';
+export const DRAFT_MIDPOINT_LAYER = 'draft-midpoint';
+/** Name of the image the aircraft layer draws. The controller supplies it. */
+export const AIRCRAFT_IMAGE = 'aegis-aircraft';
 export const COUNTRY_HIT_LAYERS = ['land-110m', 'land-50m', 'land-10m'] as const;
 
 const EMPTY = { type: 'FeatureCollection', features: [] } as const;
@@ -356,9 +363,115 @@ export function buildMapStyle(
     },
   ];
 
+  // Simulated AEGIS entities: fictional state from `sim_*`, drawn in the simulated colour.
+  const simulation: LayerSpecification[] = [
+    {
+      id: 'flight-route',
+      type: 'line',
+      source: 'sim-routes',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': palette.simulated,
+        'line-width': ['case', ['get', 'selected'], 2, 1.25],
+        'line-opacity': ['case', ['get', 'selected'], 0.9, 0.45],
+      },
+    },
+    {
+      id: 'aircraft-marker',
+      type: 'symbol',
+      source: 'sim-aircraft',
+      layout: {
+        'icon-image': AIRCRAFT_IMAGE,
+        'icon-rotate': ['get', 'heading'],
+        'icon-rotation-alignment': 'map',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 2, 0.6, 8, 1],
+        'text-field': ['get', 'id'],
+        'text-font': [FONT_MONO],
+        'text-size': 10.5,
+        'text-anchor': 'top',
+        'text-offset': [0, 1.2],
+        'text-optional': true,
+      },
+      paint: { ...label, 'text-color': palette.simulated },
+    },
+  ];
+
   const interaction: LayerSpecification[] = [
     countrySelectionLayer(palette, LOW),
     countrySelectionLayer(palette, MEDIUM),
+    {
+      id: 'aircraft-selected',
+      type: 'circle',
+      source: 'sim-aircraft',
+      filter: ['==', ['get', 'selected'], true],
+      paint: {
+        'circle-radius': 15,
+        'circle-color': 'transparent',
+        'circle-stroke-color': palette.selection,
+        'circle-stroke-width': 1.5,
+      },
+    },
+    // The flight plan being drafted. It is not simulation state until it is launched.
+    {
+      id: 'draft-route-line',
+      type: 'line',
+      source: 'draft-route',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': palette.selection, 'line-width': 1.75, 'line-dasharray': [2, 2] },
+    },
+    {
+      id: 'draft-midpoint',
+      type: 'circle',
+      source: 'draft-handles',
+      filter: ['==', ['get', 'role'], 'midpoint'],
+      paint: {
+        'circle-radius': 4,
+        'circle-color': palette.water,
+        'circle-stroke-color': palette.selection,
+        'circle-stroke-width': 1,
+      },
+    },
+    {
+      id: 'draft-endpoint',
+      type: 'circle',
+      source: 'draft-handles',
+      filter: ['in', ['get', 'role'], ['literal', ['origin', 'destination']]],
+      paint: {
+        'circle-radius': 6,
+        'circle-color': palette.simulated,
+        'circle-stroke-color': palette.water,
+        'circle-stroke-width': 1.5,
+      },
+    },
+    {
+      id: 'draft-waypoint',
+      type: 'circle',
+      source: 'draft-handles',
+      filter: ['==', ['get', 'role'], 'waypoint'],
+      paint: {
+        'circle-radius': 6,
+        'circle-color': palette.selection,
+        'circle-stroke-color': palette.water,
+        'circle-stroke-width': 1.5,
+      },
+    },
+    {
+      id: 'draft-label',
+      type: 'symbol',
+      source: 'draft-handles',
+      filter: ['!=', ['get', 'role'], 'midpoint'],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': [FONT_MONO],
+        'text-size': 10.5,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -0.9],
+        'text-allow-overlap': true,
+      },
+      paint: { ...label, 'text-color': palette.selection },
+    },
     {
       id: 'selection-ring',
       type: 'circle',
@@ -386,13 +499,17 @@ export function buildMapStyle(
       locations: geojson(EMPTY),
       runways: geojson(EMPTY),
       selection: geojson(EMPTY),
+      'sim-routes': geojson(EMPTY),
+      'sim-aircraft': geojson(EMPTY),
+      'draft-route': geojson(EMPTY),
+      'draft-handles': geojson(EMPTY),
     },
     layers: [
       ...basemap,
       slot(TIER_END_SLOT.basemap),
       ...reference,
       slot(TIER_END_SLOT.reference),
-      // Simulation tier: empty until simulated entities exist.
+      ...simulation,
       slot(TIER_END_SLOT.simulation),
       ...interaction,
       slot(TIER_END_SLOT.interaction),
