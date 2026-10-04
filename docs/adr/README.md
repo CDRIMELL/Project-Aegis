@@ -20,3 +20,4 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0013](0013-reference-data-pack.md)            | Reference data ships as a release-time data pack                 | Accepted |
 | [0014](0014-map-architecture.md)               | Map architecture: four tiers, driven outside React               | Accepted |
 | [0015](0015-application-shell-and-routing.md)  | Application shell and routing                                    | Accepted |
+| [0016](0016-fleet-and-flight-model.md)         | Fleet state and the flight model                                 | Accepted |

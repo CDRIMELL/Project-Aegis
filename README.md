@@ -8,7 +8,7 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 3 of 10 complete.
+Phase 4 of 10 complete.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -19,7 +19,11 @@ Phase 3 of 10 complete.
   data over a Natural Earth basemap, with search, selection, layer controls and provenance for
   every record.
 
-There is no fleet, mission system or aircraft simulation yet.
+- **Fleet and flight:** simulated aircraft of real types, acquired, based, planned and flown
+  between real aerodromes on the map, with fuel, wear and maintenance. The flight model is
+  calibrated to each type's published range and states its assumptions.
+
+There is no mission system, weather, traffic or economy yet.
 
 ## Requirements
 

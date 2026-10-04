@@ -1,14 +1,14 @@
 # AEGIS architecture
 
-This document describes how AEGIS is built as of phase 3. It is the map; the
+This document describes how AEGIS is built as of phase 4. It is the map; the
 [ADRs](adr/README.md) are the reasons. Product intent lives in the master handover specification.
 
 ## What exists today
 
 Three things:
 
-- **A simulated world** consisting, so far, of a clock, a seeded random source and an integrity
-  digest, persisted and restored exactly.
+- **A simulated world**: a clock, seeded random streams, an integrity digest, and a fleet of
+  aircraft that fly planned routes between real aerodromes, all persisted and restored exactly.
 - **Real reference data** (countries, aerodromes, runways, cities, aircraft types) with provenance,
   shipped inside the application and installed on first launch. See
   [reference-data.md](reference-data.md).
@@ -97,12 +97,57 @@ Adding a subsystem means: add its state to `WorldSnapshot`, call it from `Simula
 a fixed position, give it its own RNG stream, persist its state in the same checkpoint batch, and
 bump `SIM_MODEL_VERSION` if existing worlds would behave differently.
 
+## Fleet and flight
+
+The decisions and every assumption are in [ADR 0016](adr/0016-fleet-and-flight-model.md).
+
+- **Aircraft** are simulated instances (`AEGIS-FT-001`) of real reference types. Identity, fuel,
+  load, condition, maintenance and history are `sim_*` state.
+- **Reference data reaches the simulation in one place**, `apps/desktop/src/fleet/catalogue.ts`,
+  and as a copy. An aircraft stores the performance model it was acquired with; a flight stores the
+  coordinates of its route. The engine never reads `ref_*`.
+- **Performance model** (`derivePerformance`): sourced mass, range, speed and ceiling, plus named
+  assumptions for everything the reference data lacks. A type missing a required characteristic
+  has no model and cannot fly; nothing is substituted.
+- **Flight step** (`advanceFlight`): take-off, climb, cruise, descent, landing along great-circle
+  legs, one simulation step at a time, inside the engine step.
+- **Fuel**: the Breguet range equation, calibrated per type to its published range. Burn depends on
+  type, current mass, phase, altitude and speed. Climbing and accelerating cost their energy.
+- **Planning** (`evaluatePlan`): runs the same step function over the whole route, so the estimate
+  equals the outcome in still air. Constraints are `block`, `warning` or `note`.
+- **Commands**: `acquireAircraft`, `seedStarterFleet`, `setHome`, `setLoad`, `launchFlight`,
+  `startMaintenance`. A refused command throws `CommandRejected` and changes nothing.
+- **Maintenance**: flying wears condition and accumulates hours; a due aircraft cannot launch until
+  maintained, which takes simulated time.
+
+| Layer                    | Where                                                          |
+| ------------------------ | -------------------------------------------------------------- |
+| Flight and fuel rules    | `packages/domain/src/flight/`                                  |
+| Fleet state and commands | `packages/sim/src/fleet.ts`                                    |
+| Persistence              | `packages/db/src/fleet-schema.ts`, `world-store.ts`            |
+| Reference to simulation  | `apps/desktop/src/fleet/catalogue.ts`                          |
+| Plan editing             | `apps/desktop/src/fleet/plan-edit.ts`                          |
+| Map features and binding | `apps/desktop/src/map/flight-features.ts`, `flight-binding.ts` |
+
+### Editing a plan on the map and in the panel
+
+There is one draft, in `state/plan-store.ts`. The panel's controls and the map's drag handles both
+change it through the same pure functions, and both render from it, so they cannot disagree. The
+estimate and constraints are recomputed from the draft on every change.
+
+### Drawing flights
+
+The simulation publishes state about ten times a second. `flight-binding.ts` writes routes and
+aircraft straight into MapLibre sources and, between updates, interpolates each aircraft along its
+own route every animation frame. Interpolation is display only. React renders the panels; it never
+renders a frame of aircraft movement.
+
 ## Persistence model
 
-- **Checkpoint.** One transaction writes the clock, every RNG stream, the digest and the checkpoint
-  sequence number. The database always describes a single simulation instant.
-- **When.** Every 2 s of real time while the world is changing; immediately on pause, resume and
-  speed change; and when the window closes.
+- **Checkpoint.** One transaction writes the clock, every RNG stream, the digest, the checkpoint
+  sequence number, every aircraft, every flight in memory and the identifier counters. The database always describes a single simulation instant.
+- **When.** Every 2 s of real time while the world is changing; immediately on pause, resume,
+  speed change and every fleet command; and when the window closes.
 - **Ordering.** Writes never overlap. If one is in flight, the newest capture waits and replaces any
   older capture still waiting.
 - **Failure.** A failed write is reported in the view, the world keeps running, and the next
@@ -113,12 +158,15 @@ bump `SIM_MODEL_VERSION` if existing worlds would behave differently.
 
 ### Schema
 
-| Table            | Rows | Contents                                           |
-| ---------------- | ---- | -------------------------------------------------- |
-| `sim_world`      | 1    | seed, simulation model version, epoch              |
-| `sim_clock`      | 1    | simulation time, tick, speed, running              |
-| `sim_checkpoint` | 1    | sequence number, wall-clock time, integrity digest |
-| `sim_rng_stream` | n    | one row per named RNG stream                       |
+| Table            | Rows | Contents                                               |
+| ---------------- | ---- | ------------------------------------------------------ |
+| `sim_world`      | 1    | seed, simulation model version, epoch                  |
+| `sim_clock`      | 1    | simulation time, tick, speed, running                  |
+| `sim_checkpoint` | 1    | sequence number, wall-clock time, integrity digest     |
+| `sim_rng_stream` | n    | one row per named RNG stream                           |
+| `sim_aircraft`   | n    | one row per simulated aircraft                         |
+| `sim_flight`     | n    | active and finished flights; finished ones are history |
+| `sim_counter`    | n    | next sequence number per identifier prefix             |
 
 Singleton tables enforce `id = 1` with a CHECK constraint. Table prefixes separate families:
 `ref_` (sourced reference data), `sim_` (simulated world), `sys_` (application records).
@@ -163,18 +211,18 @@ into the simulation.
 ### Shell and routing
 
 Seven areas: Overview, Operations, Fleet, Missions, Reports, Data, System. Operations (the map),
-Data and System exist and have routes. The others are listed in the rail, disabled, with the phase
+Fleet, Data and System exist and have routes. The others are listed in the rail, disabled, with the phase
 that delivers them; there are no placeholder screens. The simulation clock stays in the top bar on
 every screen (ADR 0015).
 
 ### Map
 
-| Tier        | Content                                          | Fed by                        |
-| ----------- | ------------------------------------------------ | ----------------------------- |
-| basemap     | Land, water, borders, graticule, country names   | Bundled Natural Earth files   |
-| reference   | Aerodromes, runways, cities (teal)               | `ref_*` tables, read once     |
-| simulation  | Aircraft, routes, events, weather (green; later) | `addSimulationSource` handles |
-| interaction | Selection                                        | UI state                      |
+| Tier        | Content                                                   | Fed by                      |
+| ----------- | --------------------------------------------------------- | --------------------------- |
+| basemap     | Land, water, borders, graticule, country names            | Bundled Natural Earth files |
+| reference   | Aerodromes, runways, cities (teal)                        | `ref_*` tables, read once   |
+| simulation  | Aircraft and flight routes (green); events, weather later | Simulation state, per frame |
+| interaction | Selection; the draft flight plan and its handles          | UI state                    |
 
 Tiers are separated by slot layers and cannot interleave. The map is driven by `MapController`
 methods, not by rendering components, so data updates never re-render React; that is the path
@@ -194,6 +242,8 @@ needs a GPU and is verified by running the application.
 | Native core | `cargo test`           | Batch atomicity, statement guard, value conversion, migrations, backup, gate |
 | Ingestion   | Vitest + `node:sqlite` | Normalisation, idempotency, reproducibility, atomic failure, data pack       |
 | Map         | Vitest                 | Tier order, density rules, feature building, style uses only palette colours |
+| Flight      | Vitest                 | Fuel calibration, phases, constraints, determinism, 1x equals 100x           |
+| Scenario    | Vitest + `node:sqlite` | Starter fleet, plan, edit, launch, fly, save, reload, land, end to end       |
 
 Persistence tests use the same Drizzle driver and SQL as production; only the transport differs.
 

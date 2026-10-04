@@ -84,7 +84,17 @@ through `SANS_FONT_FILES` and `MONO_FONT_FILES`: labels in the sans face, codes 
 | `ReadoutStrip`, `ReadoutItem`, `ScaleRule` | Line of small technical readouts, written by ref          |
 | `EmptyState`                               | Nothing to show, and what to do next                      |
 
+| `NumberField`, `SelectField` | Labelled number with unit; labelled choice |
+| `Meter` | A quantity against its capacity, with a semantic tone |
+| `ConstraintList` | Findings about a plan, most severe first, each stating its severity in words |
+| `PageHeader` | Heading of a detail view: identity and actions |
+| `ListPane`, `EntityRow` | The list half of a list-and-detail screen |
+
 `AppFrame` takes `bleed` for full-surface screens such as the map.
+
+A simulated entity carries a green "Simulated" badge, the counterpart of the teal "Reference" badge.
+A value that is a simulation assumption says so in its label ("Fuel capacity (assumed)") and
+explains the assumption on hover.
 
 ## Planned
 

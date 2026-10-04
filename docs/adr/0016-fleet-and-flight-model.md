@@ -38,24 +38,24 @@ Everything not in the reference data is a **simulation assumption**, defined onc
 `FLIGHT_ASSUMPTIONS`, versioned by `FLIGHT_MODEL_VERSION`, stored with each aircraft and shown in
 the interface as an assumption, never as a specification:
 
-| Assumption                  | Value                                                             |
-| --------------------------- | ----------------------------------------------------------------- |
-| Fuel capacity               | Half of useful load (maximum take-off mass minus empty mass)      |
-| Published range condition   | Full fuel, take-off at maximum mass (ferry range: no payload)     |
-| Reserve                     | 10 % of fuel capacity                                             |
-| Cruise speed, if unsourced  | The lesser of 85 % of maximum speed and 900 km/h                  |
-| Cruise altitude             | 80 % of service ceiling, at most 11,500 m; rotorcraft 900 m       |
-| Climb rate at sea level     | By engine type: jet 15 m/s (fast jet 60), turboprop 9, rotor 7, piston 5 |
-| Climb rate with altitude    | Falls linearly to 30 % at the service ceiling                     |
-| Descent path                | 3 degrees                                                         |
-| Speeds                      | Lift-off 40 %, climb 75 %, approach 45 % of cruise speed          |
-| Acceleration                | 1.5 m/s² (fast jet 4 m/s²)                                        |
-| Propulsive energy per kg fuel | 12.9 MJ (43 MJ/kg at 30 % overall efficiency)                   |
-| Off-optimum altitude        | Up to 50 % more cruise fuel at sea level, quadratic               |
-| Off-optimum speed           | Fuel per distance rises with the square of the speed error        |
-| Descent fuel                | Half the cruise rate                                              |
-| Wear                        | 0.4 % condition per flight hour, 0.5 % per flight, ±10 % seeded   |
-| Maintenance                 | Due at 50 flight hours or below 60 % condition; takes 6 hours     |
+| Assumption                    | Value                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| Fuel capacity                 | Half of useful load (maximum take-off mass minus empty mass)             |
+| Published range condition     | Full fuel, take-off at maximum mass (ferry range: no payload)            |
+| Reserve                       | 10 % of fuel capacity                                                    |
+| Cruise speed, if unsourced    | The lesser of 85 % of maximum speed and 900 km/h                         |
+| Cruise altitude               | 80 % of service ceiling, at most 11,500 m; rotorcraft 900 m              |
+| Climb rate at sea level       | By engine type: jet 15 m/s (fast jet 60), turboprop 9, rotor 7, piston 5 |
+| Climb rate with altitude      | Falls linearly to 30 % at the service ceiling                            |
+| Descent path                  | 3 degrees                                                                |
+| Speeds                        | Lift-off 40 %, climb 75 %, approach 45 % of cruise speed                 |
+| Acceleration                  | 1.5 m/s² (fast jet 4 m/s²)                                               |
+| Propulsive energy per kg fuel | 12.9 MJ (43 MJ/kg at 30 % overall efficiency)                            |
+| Off-optimum altitude          | Up to 50 % more cruise fuel at sea level, quadratic                      |
+| Off-optimum speed             | Fuel per distance rises with the square of the speed error               |
+| Descent fuel                  | Half the cruise rate                                                     |
+| Wear                          | 0.4 % condition per flight hour, 0.5 % per flight, ±10 % seeded          |
+| Maintenance                   | Due at 50 flight hours or below 60 % condition; takes 6 hours            |
 
 ### Fuel
 
@@ -88,11 +88,11 @@ Absolute fuel masses are simulated quantities. The interface says so.
 
 ### Constraints
 
-| Level   | Meaning                                  | Examples                                                         |
-| ------- | ---------------------------------------- | ---------------------------------------------------------------- |
+| Level   | Meaning                                  | Examples                                                                                                               |
+| ------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | block   | Cannot be flown                          | Above the service ceiling; over maximum mass; not enough fuel to arrive; aircraft not at the origin or not serviceable |
-| warning | Outside the normal envelope; allowed     | Arrival below reserve; cruise far from the assumed optimum speed |
-| note    | Poor but legitimate; allowed, has a cost | Low cruise altitude; a limit the reference data cannot check     |
+| warning | Outside the normal envelope; allowed     | Arrival below reserve; cruise far from the assumed optimum speed                                                       |
+| note    | Poor but legitimate; allowed, has a cost | Low cruise altitude; a limit the reference data cannot check                                                           |
 
 Poor choices are allowed and cost fuel, time or wear.
 
