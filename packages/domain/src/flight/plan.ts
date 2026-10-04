@@ -1,0 +1,258 @@
+import { FLIGHT_ASSUMPTIONS, grossMassKg, type PerformanceModel } from './performance';
+import { STILL_AIR, flyToCompletion, type Environment, type FlightProfile } from './profile';
+import { directRoute, routeGeometry, routeProblems, type RoutePoint } from './route';
+
+/** What the player approves and the simulation then flies. Plain data; persisted with the flight. */
+export interface FlightPlan {
+  /** Origin aerodrome, any free waypoints, destination aerodrome. */
+  readonly points: readonly RoutePoint[];
+  readonly cruiseAltitudeM: number;
+  readonly cruiseSpeedKmh: number;
+}
+
+/** Fuel and payload on board at departure. */
+export interface FlightLoad {
+  readonly fuelKg: number;
+  readonly payloadKg: number;
+}
+
+export type ConstraintSeverity = 'block' | 'warning' | 'note';
+
+/**
+ * - `block`: the flight cannot be flown as planned.
+ * - `warning`: outside the normal envelope; allowed.
+ * - `note`: a poor but legitimate choice, or a limit that could not be checked; allowed.
+ */
+export interface Constraint {
+  readonly severity: ConstraintSeverity;
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface PlanEstimate {
+  readonly distanceM: number;
+  readonly durationS: number;
+  readonly fuelUsedKg: number;
+  readonly fuelAtDestinationKg: number;
+  readonly takeoffMassKg: number;
+  /** Highest altitude the flight reaches; lower than planned on a route too short to get there. */
+  readonly topAltitudeM: number;
+  /** False when the fuel on board runs out before the destination. */
+  readonly completes: boolean;
+  /** How far the aircraft gets. Equals `distanceM` when the flight completes. */
+  readonly reachedM: number;
+  readonly legs: readonly { readonly distanceM: number; readonly bearingDeg: number }[];
+}
+
+export interface PlanEvaluation {
+  /** `null` when the route itself is invalid and nothing can be estimated. */
+  readonly estimate: PlanEstimate | null;
+  readonly constraints: readonly Constraint[];
+  /** True when no constraint blocks the flight. */
+  readonly flyable: boolean;
+}
+
+/** The step the planner integrates with. Must equal the simulation step for estimates to match. */
+export const PLANNING_STEP_S = 1;
+
+export function flightProfile(
+  model: PerformanceModel,
+  plan: FlightPlan,
+  payloadKg: number,
+): FlightProfile {
+  const route = routeGeometry(plan.points);
+  return {
+    model,
+    totalDistanceM: route.totalM,
+    originElevationM: plan.points[0]?.elevationM ?? 0,
+    destinationElevationM: plan.points.at(-1)?.elevationM ?? 0,
+    cruiseAltitudeM: plan.cruiseAltitudeM,
+    cruiseSpeedKmh: plan.cruiseSpeedKmh,
+    payloadKg,
+  };
+}
+
+const kg = (value: number) => `${Math.round(value).toLocaleString('en-GB')} kg`;
+const metresText = (value: number) => `${Math.round(value).toLocaleString('en-GB')} m`;
+
+/**
+ * Checks a plan against the aircraft's model and estimates the flight by flying it.
+ * Deterministic: the same inputs always give the same evaluation.
+ */
+export function evaluatePlan(
+  model: PerformanceModel,
+  plan: FlightPlan,
+  load: FlightLoad,
+  environment: Environment = STILL_AIR,
+): PlanEvaluation {
+  const constraints: Constraint[] = [];
+  const block = (code: string, message: string) =>
+    constraints.push({ severity: 'block', code, message });
+  const warn = (code: string, message: string) =>
+    constraints.push({ severity: 'warning', code, message });
+  const note = (code: string, message: string) =>
+    constraints.push({ severity: 'note', code, message });
+
+  const problems = routeProblems(plan.points);
+  for (const problem of problems) block('invalid_route', problem);
+
+  // Load.
+  const finite = [plan.cruiseAltitudeM, plan.cruiseSpeedKmh, load.fuelKg, load.payloadKg].every(
+    Number.isFinite,
+  );
+  if (!finite) block('invalid_number', 'Altitude, speed, fuel and payload must all be numbers.');
+  if (load.fuelKg < 0 || load.payloadKg < 0)
+    block('negative_load', 'Fuel and payload cannot be negative.');
+  if (load.fuelKg > model.fuelCapacityKg + 0.5) {
+    block(
+      'fuel_over_capacity',
+      `Fuel load ${kg(load.fuelKg)} exceeds the assumed capacity of ${kg(model.fuelCapacityKg)}.`,
+    );
+  }
+  const takeoffMassKg = grossMassKg(model, load.fuelKg, load.payloadKg);
+  if (takeoffMassKg > model.maxTakeoffMassKg + 0.5) {
+    block(
+      'over_maximum_mass',
+      `Take-off mass ${kg(takeoffMassKg)} exceeds the maximum of ${kg(model.maxTakeoffMassKg)}. Reduce fuel or payload.`,
+    );
+  } else if (takeoffMassKg > model.maxTakeoffMassKg * 0.98) {
+    note('near_maximum_mass', 'Take-off mass is within 2 % of the maximum.');
+  }
+
+  // Altitude.
+  const originElevationM = plan.points[0]?.elevationM ?? 0;
+  const destinationElevationM = plan.points.at(-1)?.elevationM ?? 0;
+  const highestGroundM = Math.max(originElevationM, destinationElevationM);
+  if (plan.cruiseAltitudeM <= highestGroundM + 100) {
+    block(
+      'altitude_below_terrain',
+      `Cruise altitude ${metresText(plan.cruiseAltitudeM)} is not clear of the aerodromes (highest is ${metresText(highestGroundM)}).`,
+    );
+  }
+  if (model.serviceCeilingM === null) {
+    note(
+      'ceiling_unknown',
+      'No source gives a service ceiling for this type, so the altitude cannot be checked against one.',
+    );
+  } else if (plan.cruiseAltitudeM > model.serviceCeilingM) {
+    block(
+      'above_service_ceiling',
+      `Cruise altitude ${metresText(plan.cruiseAltitudeM)} is above the service ceiling of ${metresText(model.serviceCeilingM)}.`,
+    );
+  }
+  if (plan.cruiseAltitudeM < model.cruiseAltitudeM * 0.5 && !model.hovers) {
+    note('low_cruise_altitude', 'Cruising this low costs noticeably more fuel.');
+  }
+
+  // Speed.
+  if (plan.cruiseSpeedKmh <= 0) {
+    block('invalid_speed', 'Cruise speed must be greater than zero.');
+  } else if (model.maxSpeedKmh !== null && plan.cruiseSpeedKmh > model.maxSpeedKmh) {
+    block(
+      'above_maximum_speed',
+      `Cruise speed ${Math.round(plan.cruiseSpeedKmh)} km/h is above the maximum of ${Math.round(model.maxSpeedKmh)} km/h.`,
+    );
+  } else {
+    const error = Math.abs(plan.cruiseSpeedKmh - model.cruiseSpeedKmh) / model.cruiseSpeedKmh;
+    if (model.maxSpeedKmh === null && plan.cruiseSpeedKmh > model.cruiseSpeedKmh * 1.1) {
+      warn(
+        'speed_unchecked',
+        'No source gives a maximum speed for this type; this is more than 10 % above its cruise speed.',
+      );
+    } else if (!model.hovers && plan.cruiseSpeedKmh < model.cruiseSpeedKmh * 0.55) {
+      warn('speed_very_low', 'This is far below normal cruise speed for a fixed-wing aircraft.');
+    } else if (error > 0.15) {
+      note('off_optimum_speed', 'Flying this far from cruise speed costs more fuel per kilometre.');
+    }
+  }
+
+  if (constraints.some((constraint) => constraint.severity === 'block') || problems.length > 0) {
+    return { estimate: null, constraints, flyable: false };
+  }
+
+  // Fly it.
+  const route = routeGeometry(plan.points);
+  const profile = flightProfile(model, plan, load.payloadKg);
+  const end = flyToCompletion(profile, load.fuelKg, PLANNING_STEP_S, environment);
+  const completes = end.phase === 'landed';
+  const estimate: PlanEstimate = {
+    distanceM: route.totalM,
+    durationS: end.elapsedS,
+    fuelUsedKg: load.fuelKg - end.fuelKg,
+    fuelAtDestinationKg: end.fuelKg,
+    takeoffMassKg,
+    topAltitudeM: end.topAltitudeM,
+    completes,
+    reachedM: end.distanceM,
+    legs: route.legs.map((leg) => ({ distanceM: leg.distanceM, bearingDeg: leg.bearingDeg })),
+  };
+
+  if (!completes) {
+    block(
+      'insufficient_fuel',
+      `Fuel runs out after ${Math.round(end.distanceM / 1000).toLocaleString('en-GB')} km of ${Math.round(route.totalM / 1000).toLocaleString('en-GB')} km. Load more fuel, reduce payload or shorten the route.`,
+    );
+  } else {
+    if (end.fuelKg < model.reserveFuelKg) {
+      warn(
+        'below_reserve',
+        `Arrives with ${kg(end.fuelKg)}, below the assumed reserve of ${kg(model.reserveFuelKg)}.`,
+      );
+    }
+    if (end.topAltitudeM < plan.cruiseAltitudeM - 50) {
+      note(
+        'cruise_altitude_not_reached',
+        `The route is too short to reach ${metresText(plan.cruiseAltitudeM)}; the flight tops out at ${metresText(end.topAltitudeM)}.`,
+      );
+    }
+  }
+
+  return {
+    estimate,
+    constraints,
+    flyable: !constraints.some((constraint) => constraint.severity === 'block'),
+  };
+}
+
+/** Fuel that completes the plan and arrives with the assumed reserve, or `null` if none can. */
+export function suggestedFuelKg(
+  model: PerformanceModel,
+  plan: FlightPlan,
+  payloadKg: number,
+): number | null {
+  const maxByMass = model.maxTakeoffMassKg - model.emptyMassKg - payloadKg;
+  const ceilingKg = Math.min(model.fuelCapacityKg, maxByMass);
+  if (ceilingKg <= 0 || routeProblems(plan.points).length > 0) return null;
+  const profile = flightProfile(model, plan, payloadKg);
+  const arrivesWith = (fuelKg: number) => {
+    const end = flyToCompletion(profile, fuelKg, PLANNING_STEP_S);
+    return end.phase === 'landed' ? end.fuelKg : -1;
+  };
+  if (arrivesWith(ceilingKg) < 0) return null;
+  // Smallest load that still arrives with the reserve; more fuel always arrives with more.
+  let low = 0;
+  let high = ceilingKg;
+  if (arrivesWith(high) < model.reserveFuelKg) return Math.floor(high);
+  for (let i = 0; i < 18; i++) {
+    const middle = (low + high) / 2;
+    if (arrivesWith(middle) >= model.reserveFuelKg) high = middle;
+    else low = middle;
+  }
+  return Math.min(Math.ceil(high / 10) * 10, Math.floor(ceilingKg));
+}
+
+/** A sensible first plan: the direct route at the model's cruise altitude and speed. */
+export function generatePlan(
+  model: PerformanceModel,
+  origin: RoutePoint,
+  destination: RoutePoint,
+): FlightPlan {
+  return {
+    points: directRoute(origin, destination),
+    cruiseAltitudeM: model.cruiseAltitudeM,
+    cruiseSpeedKmh: model.cruiseSpeedKmh,
+  };
+}
+
+/** Assumed reserve policy, for display. */
+export const RESERVE_STATEMENT = FLIGHT_ASSUMPTIONS.reserve.statement;
