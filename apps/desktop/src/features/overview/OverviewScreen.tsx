@@ -87,7 +87,7 @@ function useBaseConditions(): BaseConditions[] {
 function trendWord(now: Conditions, later: Conditions): string {
   const change = later.severity - now.severity;
   const word = severityWord(later.severity);
-  if (Math.abs(change) < 0.1) return `${word}, steady`;
+  if (Math.abs(change) < 0.1) return word;
   return `${word}, ${change > 0 ? 'worsening' : 'improving'}`;
 }
 
@@ -102,7 +102,7 @@ function ConditionsPanel() {
   }
   return (
     <Panel title="Conditions at fleet aerodromes">
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 overflow-x-auto">
         <DataTable<BaseConditions>
           caption="Simulated surface conditions now and the trend over twelve hours"
           rows={bases}
@@ -112,6 +112,12 @@ function ConditionsPanel() {
               header: 'Aerodrome',
               cell: (row) => row.place.code ?? row.place.name,
               numeric: true,
+            },
+            {
+              header: 'Aircraft',
+              numeric: true,
+              align: 'right' as const,
+              cell: (row: BaseConditions) => formatInteger(row.aircraft.length),
             },
             { header: 'Now', cell: (row) => <SeverityBadge severity={row.now.severity} /> },
             { header: 'Wind', numeric: true, cell: (row) => formatWind(row.now) },
@@ -133,12 +139,6 @@ function ConditionsPanel() {
               header: `+${hours} h`,
               cell: (row: BaseConditions) => trendWord(row.now, row.trend[index] as Conditions),
             })),
-            {
-              header: 'Aircraft',
-              numeric: true,
-              align: 'right' as const,
-              cell: (row: BaseConditions) => formatInteger(row.aircraft.length),
-            },
           ]}
         />
         <Hint>

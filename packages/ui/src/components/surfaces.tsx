@@ -261,7 +261,8 @@ export function DataTable<Row>({ columns, rows, rowKey, caption }: DataTableProp
                 className={cn(
                   'h-7 cursor-text px-2 text-ink select-text',
                   column.align === 'right' ? 'text-right' : 'text-left',
-                  column.numeric && 'telemetry',
+                  // A reading is one thing: it never breaks across lines.
+                  column.numeric && 'telemetry whitespace-nowrap',
                 )}
               >
                 {column.cell(row)}

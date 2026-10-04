@@ -169,7 +169,9 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       headwindKmh / (model.cruiseSpeedKmh * 0.25),
       headwindKmh > 0.5
         ? `A mean headwind of ${Math.round(headwindKmh)} km/h adds ${minutes(Math.max(extraS, 0))} to the flight.`
-        : `A mean tailwind of ${Math.round(-headwindKmh)} km/h; the flight is ${minutes(Math.max(-extraS, 0))} shorter than in still air.`,
+        : headwindKmh > -0.5
+          ? 'The wind along the route neither helps nor hinders the flight.'
+          : `A mean tailwind of ${Math.round(-headwindKmh)} km/h; the flight is ${minutes(Math.max(-extraS, 0))} shorter than in still air.`,
     );
     add(
       'weather_severity',

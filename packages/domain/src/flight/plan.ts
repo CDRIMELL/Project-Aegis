@@ -244,13 +244,17 @@ export function evaluatePlan(
   const completes = end.phase === 'landed';
   let weather: WeatherImpact | null = null;
   if (context) {
-    // The same plan in still air, with fuel that cannot run out, to show what the weather costs.
-    const calm = fly(profile, model.fuelCapacityKg, null);
+    // The same plan with the same load in still air, to show what the weather costs. Burn depends
+    // on mass, so it must carry the same fuel; only if that would not get it there in still air
+    // either is it flown with full tanks, so that there is a whole flight to compare against.
+    const sameLoad = fly(profile, load.fuelKg, null);
+    const calmFuelKg = sameLoad.phase === 'landed' ? load.fuelKg : model.fuelCapacityKg;
+    const calm = sameLoad.phase === 'landed' ? sameLoad : fly(profile, calmFuelKg, null);
     const origin = plan.points[0] as RoutePoint;
     const destination = plan.points.at(-1) as RoutePoint;
     weather = {
       stillAirDurationS: calm.elapsedS,
-      stillAirFuelUsedKg: model.fuelCapacityKg - calm.fuelKg,
+      stillAirFuelUsedKg: calmFuelKg - calm.fuelKg,
       meanTailwindKmh: end.elapsedS > 0 ? end.exposure.tailwindKmhS / end.elapsedS : 0,
       worstSeverity: end.exposure.worstSeverity,
       lowestVisibilityKm: end.exposure.lowestVisibilityKm ?? 40,

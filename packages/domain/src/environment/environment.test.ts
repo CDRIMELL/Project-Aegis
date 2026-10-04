@@ -500,6 +500,19 @@ describe('flying through the world’s weather', () => {
     );
   });
 
+  it('compares against still air with the same fuel aboard, because burn depends on mass', () => {
+    const world = { weather: MODEL, departureTick: 0 };
+    // Well short of full tanks: a lighter aircraft, which burns less.
+    const fuelKg = suggestedFuelKg(TRANSPORT, plan, 0, world) as number;
+    expect(fuelKg).toBeLessThan(TRANSPORT.fuelCapacityKg * 0.9);
+    const load = { fuelKg, payloadKg: 0 };
+    const inWeather = evaluatePlan(TRANSPORT, plan, load, world).estimate;
+    const inStillAir = evaluatePlan(TRANSPORT, plan, load).estimate;
+    expect(inStillAir?.completes).toBe(true);
+    expect(inWeather?.weather?.stillAirFuelUsedKg).toBe(inStillAir?.fuelUsedKg);
+    expect(inWeather?.weather?.stillAirDurationS).toBe(inStillAir?.durationS);
+  });
+
   it('loads enough fuel for the weather, where still-air fuel would fall short', () => {
     // Find a departure with a real headwind and check the suggested fuel still arrives on reserve.
     let checked = 0;
