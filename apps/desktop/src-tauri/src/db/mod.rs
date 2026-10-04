@@ -358,6 +358,33 @@ mod tests {
         }
     }
 
+    /// The Node migration runner (tests and tooling) and this one must agree on checksums and
+    /// bookkeeping, or a database prepared by one would be refused by the other.
+    #[test]
+    fn accepts_a_database_migrated_by_the_node_runner() {
+        let prepared = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("parity")
+            .join("node-migrated.db");
+        assert!(
+            prepared.exists(),
+            "{} is missing; run `npm run rust:prepare` (it is part of `npm run check:rust`)",
+            prepared.display()
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let copy = dir.path().join("aegis.db");
+        std::fs::copy(&prepared, &copy).unwrap();
+
+        let db = Database::open(OpenOptions {
+            path: copy,
+            encryption: Encryption::None,
+        })
+        .unwrap();
+        let report = db.migrate(None).unwrap();
+        assert!(report.applied.is_empty(), "nothing should be pending");
+        assert_eq!(report.total, migrations::embedded().unwrap().len());
+    }
+
     #[test]
     fn file_databases_use_wal_and_survive_reopen() {
         let dir = tempfile::tempdir().unwrap();
