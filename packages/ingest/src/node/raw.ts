@@ -11,6 +11,7 @@ export const LOCK_PATH = join(REPO_ROOT, 'data', 'sources.lock.json');
 export const CURATED_TYPES = 'data/curated/aircraft-types.json';
 export const CURATED_ATTRIBUTES = 'data/curated/aircraft-attributes.wikipedia.json';
 export const CURATED_CHARACTERISTICS = 'data/curated/aircraft-characteristics.json';
+export const CURATED_RANGE_CONDITIONS = 'data/curated/aircraft-range-conditions.json';
 /** Where the release-time data pack is written: inside the desktop app's bundled assets. */
 export const PACK_DIR = join(REPO_ROOT, 'apps', 'desktop', 'public', 'reference-pack');
 

@@ -1,0 +1,221 @@
+{
+  "revisedAt": "2026-10-04",
+  "entries": [
+    {
+      "type": "c-17",
+      "key": "range_km",
+      "sourceText": "range note = with 157,000 lb payload",
+      "payload": {
+        "sourceValue": 157000,
+        "sourceUnit": "lb"
+      },
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "unknown",
+      "sourceName": "Wikipedia, \"Boeing C-17 Globemaster III\", revision 1376719976",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1376719976",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "a400m",
+      "key": "range_km",
+      "sourceText": "range note = at max payload",
+      "payload": {
+        "sourceValue": 37,
+        "sourceUnit": "t"
+      },
+      "payloadSource": {
+        "sourceText": "37 tonnes (81,600 lb) maximum payload",
+        "sourceName": "Airbus, A400M product page",
+        "sourceUrl": "https://www.airbus.com/en/products-services/defence/military-aircraft/a400m"
+      },
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "Long range cruise speed (article footnote).",
+      "sourceName": "Wikipedia, \"Airbus A400M Atlas\", revision 1371476720",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1371476720",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "c-130j",
+      "key": "range_km",
+      "sourceText": "range note = at max normal payload (34,000 lb)",
+      "payload": {
+        "sourceValue": 34000,
+        "sourceUnit": "lb"
+      },
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "unknown",
+      "sourceName": "Wikipedia, \"Lockheed Martin C-130J Super Hercules\", revision 1377214978",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1377214978",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "kc-135",
+      "key": "range_km",
+      "sourceText": "range note = with 150,000 lb of transferable fuel",
+      "payload": "unknown",
+      "externalFuel": "unknown",
+      "fuel": "Carrying 150,000 lb of transferable fuel; how much of it is burned is not stated.",
+      "speedAltitude": "unknown",
+      "sourceName": "Wikipedia, \"Boeing KC-135 Stratotanker\", revision 1375087844",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1375087844",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "envoy",
+      "key": "range_km",
+      "sourceText": "range note = with 8 passengers",
+      "payload": "unknown",
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "unknown",
+      "note": "Eight passengers; the source gives no mass for them.",
+      "sourceName": "Wikipedia, \"Dassault Falcon 900\", revision 1376537842",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1376537842",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "phenom",
+      "key": "range_km",
+      "sourceText": "range note = (LRC, four 200 lb occupants, NBAA IFR reserves with 185 km alternate)",
+      "payload": {
+        "sourceValue": 800,
+        "sourceUnit": "lb"
+      },
+      "externalFuel": "unknown",
+      "fuel": "NBAA IFR reserves with a 185 km alternate.",
+      "speedAltitude": "Long range cruise.",
+      "sourceName": "Wikipedia, \"Embraer Phenom 100\", revision 1370610125",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1370610125",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "prefect",
+      "key": "range_km",
+      "sourceText": "range note = at 5,000 ft and 75% power",
+      "payload": "unknown",
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "At 5,000 ft and 75 % power.",
+      "sourceName": "Wikipedia, \"Grob G 120TP\", revision 1367279421",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1367279421",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "prefect",
+      "key": "ferry_range_km",
+      "sourceText": "ferry range note = at 10,000 ft and 45% power",
+      "payload": "unknown",
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "At 10,000 ft and 45 % power.",
+      "sourceName": "Wikipedia, \"Grob G 120TP\", revision 1367279421",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1367279421",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "apache",
+      "key": "range_km",
+      "sourceText": "range note present",
+      "payload": "not_recorded",
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "unknown",
+      "note": "The source states an equipment fit for this figure. AEGIS does not hold such data (ADR 0011), so it is not recorded.",
+      "sourceName": "Wikipedia, \"Boeing AH-64 Apache\", revision 1378216495",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1378216495",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "super-hornet",
+      "key": "range_km",
+      "sourceText": "range note present",
+      "payload": "not_recorded",
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "unknown",
+      "note": "The source states a loading for this figure. AEGIS does not hold such data (ADR 0011), so it is not recorded.",
+      "sourceName": "Wikipedia, \"Boeing F/A-18E/F Super Hornet\", revision 1378284456",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1378284456",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "typhoon",
+      "key": "ferry_range_km",
+      "sourceText": "ferry range note = with 3 × drop tanks",
+      "payload": "unknown",
+      "externalFuel": true,
+      "fuel": "With three external fuel tanks.",
+      "speedAltitude": "unknown",
+      "sourceName": "Wikipedia, \"Eurofighter Typhoon\", revision 1377610122",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1377610122",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "f-16",
+      "key": "ferry_range_km",
+      "sourceText": "ferry range note = with three drop tanks",
+      "payload": "unknown",
+      "externalFuel": true,
+      "fuel": "With three external fuel tanks.",
+      "speedAltitude": "unknown",
+      "sourceName": "Wikipedia, \"General Dynamics F-16 Fighting Falcon\", revision 1378065267",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1378065267",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "rafale",
+      "key": "ferry_range_km",
+      "sourceText": "ferry range note = with 3 drop tanks",
+      "payload": "unknown",
+      "externalFuel": true,
+      "fuel": "With three external fuel tanks.",
+      "speedAltitude": "unknown",
+      "sourceName": "Wikipedia, \"Dassault Rafale\", revision 1377238412",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1377238412",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "black-hawk",
+      "key": "ferry_range_km",
+      "sourceText": "ferry range note = with ESSS stub wings and external tanks",
+      "payload": "unknown",
+      "externalFuel": true,
+      "fuel": "With external fuel tanks on stub wings.",
+      "speedAltitude": "unknown",
+      "sourceName": "Wikipedia, \"Sikorsky UH-60 Black Hawk\", revision 1376062965",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?oldid=1376062965",
+      "retrievedAt": "2026-10-04",
+      "source": "wikipedia"
+    },
+    {
+      "type": "voyager",
+      "key": "ferry_range_km",
+      "source": "aegis-curated",
+      "sourceText": "Up to 8,700nm (16,000km) of range for global coverage.",
+      "payload": "unknown",
+      "externalFuel": "unknown",
+      "fuel": "unknown",
+      "speedAltitude": "unknown",
+      "note": "Published as an upper bound, with no loading stated.",
+      "sourceName": "Airbus, A330 MRTT product page",
+      "sourceUrl": "https://www.airbus.com/en/products-services/defence/military-aircraft/a330-mrtt",
+      "retrievedAt": "2026-10-04"
+    }
+  ]
+}

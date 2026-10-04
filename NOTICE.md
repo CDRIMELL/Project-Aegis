@@ -13,6 +13,7 @@ Data screen shows them.
 | ------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
 | `data/curated/aircraft-attributes.wikipedia.json` | English Wikipedia, aircraft specification templates                            | CC BY-SA 4.0                              |
 | `data/curated/aircraft-characteristics.json`      | Individual published figures, each with the publisher's name and URL beside it | Facts cited to their publisher; see below |
+| `data/curated/aircraft-range-conditions.json`     | English Wikipedia specification templates; one figure from Airbus              | CC BY-SA 4.0                              |
 | `data/curated/aircraft-types.json`                | Hand-entered by the AEGIS project                                              | MIT, as the code                          |
 | `data/sources.lock.json`                          | AEGIS project (file names and hashes of downloaded datasets)                   | MIT, as the code                          |
 

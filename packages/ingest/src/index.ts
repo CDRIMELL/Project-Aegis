@@ -9,4 +9,5 @@ export * from './sources/aircraft';
 export * from './sources/aircraft-curated';
 export * from './sources/natural-earth';
 export * from './sources/ourairports';
+export * from './sources/range-conditions';
 export * from './sources/wikipedia-specs';

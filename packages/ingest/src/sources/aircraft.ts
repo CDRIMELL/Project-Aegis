@@ -1,5 +1,6 @@
 import { schema } from '@aegis/db';
 import { z } from 'zod';
+import { variantFromHeading } from './range-conditions';
 import {
   IssueLog,
   sourceId,
@@ -206,6 +207,7 @@ export function normaliseAircraftAttributes(
         sourceText: attribute.sourceText,
         sourceUrl: `https://en.wikipedia.org/w/index.php?oldid=${extract.revisionId}`,
         note,
+        variant: variantFromHeading(extract.heading),
       });
     }
   }

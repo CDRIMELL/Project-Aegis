@@ -77,6 +77,8 @@ const established = z
     sourceUrl: z.url(),
     retrievedAt: z.iso.date(),
     note: z.string().trim().min(1).optional(),
+    /** The variant the figure is for, where the source names one. */
+    variant: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -161,6 +163,7 @@ export function normaliseCuratedCharacteristics(
       note: [`${entry.sourceName}, retrieved ${entry.retrievedAt}.`, entry.note]
         .filter(Boolean)
         .join(' '),
+      variant: entry.variant ?? null,
     });
   });
 

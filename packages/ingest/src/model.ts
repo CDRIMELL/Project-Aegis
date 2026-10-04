@@ -1,7 +1,7 @@
 import type { schema } from '@aegis/db';
 
 /** Bumped when normalisation rules change in a way that alters output for the same input. */
-export const PIPELINE_VERSION = 3;
+export const PIPELINE_VERSION = 4;
 
 /** The bytes a dataset was built from, and where and when they were obtained. */
 export interface RawInput {

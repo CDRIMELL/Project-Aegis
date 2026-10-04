@@ -25,10 +25,12 @@ import type { JobReport } from '../load';
 import { PACK_MANIFEST_FILE, buildPack, installPack, type PackReader } from '../pack';
 import { readCuratedTypes } from '../sources/aircraft';
 import { curatedCharacteristicsRevisedAt } from '../sources/aircraft-curated';
+import { rangeConditionsRevisedAt } from '../sources/range-conditions';
 import {
   BASEMAP_DIR,
   CURATED_ATTRIBUTES,
   CURATED_CHARACTERISTICS,
+  CURATED_RANGE_CONDITIONS,
   CURATED_TYPES,
   PACK_DIR,
   REMOTE_FILES,
@@ -65,6 +67,9 @@ function readInputs(): ReferenceInputs {
     ),
     aircraftCharacteristics: readCurated(CURATED_CHARACTERISTICS, (text) =>
       midnight(curatedCharacteristicsRevisedAt(text)),
+    ),
+    aircraftRangeConditions: readCurated(CURATED_RANGE_CONDITIONS, (text) =>
+      midnight(rangeConditionsRevisedAt(text)),
     ),
   };
 }

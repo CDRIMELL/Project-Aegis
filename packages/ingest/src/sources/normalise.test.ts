@@ -239,6 +239,8 @@ describe('aircraft characteristics', () => {
       sourceText: 'length m=15.96',
       sourceUrl: 'https://en.wikipedia.org/w/index.php?oldid=1377610122',
       note: 'Article section: "Specifications".',
+      // The heading names no variant.
+      variant: null,
     });
   });
 
@@ -336,6 +338,7 @@ describe('curated aircraft characteristics', () => {
       sourceText: 'Overall length 72.72 m',
       sourceUrl: 'https://example.org/aircraft/a380',
       note: 'Example Air Force, aircraft page, retrieved 2026-10-04.',
+      variant: null,
     });
   });
 

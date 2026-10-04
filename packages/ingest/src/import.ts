@@ -7,6 +7,7 @@ import {
   readCuratedTypes,
 } from './sources/aircraft';
 import { normaliseCuratedCharacteristics } from './sources/aircraft-curated';
+import { applyRangeConditions } from './sources/range-conditions';
 import { normaliseCities } from './sources/natural-earth';
 import { normaliseAirports, normaliseCountries, normaliseRunways } from './sources/ourairports';
 
@@ -18,6 +19,8 @@ export interface ReferenceInputs {
   readonly aircraftTypes: RawInput;
   readonly aircraftAttributes: RawInput;
   readonly aircraftCharacteristics: RawInput;
+  /** Conditions under which published ranges hold. Without it every condition is unknown. */
+  readonly aircraftRangeConditions?: RawInput;
 }
 
 /** Tables a dataset may be loaded into, by SQL name. */
@@ -47,6 +50,7 @@ export function normaliseReferenceData(inputs: ReferenceInputs): PreparedDataset
   const airports = normaliseAirports(inputs.airports, knownCountries);
   const airportKeys = new Set(airports.rows.map((row) => row.sourceKey));
   const curatedTypes = readCuratedTypes(inputs.aircraftTypes.text).types;
+  const conditions = inputs.aircraftRangeConditions?.text ?? null;
 
   return [
     { table: 'ref_country', data: countries },
@@ -56,11 +60,19 @@ export function normaliseReferenceData(inputs: ReferenceInputs): PreparedDataset
     { table: 'ref_aircraft_type', data: normaliseAircraftTypes(inputs.aircraftTypes) },
     {
       table: 'ref_aircraft_attribute',
-      data: normaliseAircraftAttributes(inputs.aircraftAttributes, curatedTypes),
+      data: applyRangeConditions(
+        normaliseAircraftAttributes(inputs.aircraftAttributes, curatedTypes),
+        conditions,
+        'wikipedia',
+      ),
     },
     {
       table: 'ref_aircraft_attribute',
-      data: normaliseCuratedCharacteristics(inputs.aircraftCharacteristics, curatedTypes),
+      data: applyRangeConditions(
+        normaliseCuratedCharacteristics(inputs.aircraftCharacteristics, curatedTypes),
+        conditions,
+        'aegis-curated',
+      ),
     },
   ];
 }
