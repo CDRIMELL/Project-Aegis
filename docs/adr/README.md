@@ -27,3 +27,4 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0020](0020-deterministic-mathematics.md)      | Deterministic mathematics: no engine-dependent functions in the simulation | Accepted |
 | [0021](0021-environment.md)                    | Simulated environment: weather computed from seed, time and place          | Accepted |
 | [0022](0022-world-events.md)                   | World events: one generic event, lifecycle, consequences                   | Accepted |
+| [0023](0023-range-conditions.md)               | Range conditions as reference data; flight model 3                         | Accepted |

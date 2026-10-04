@@ -252,6 +252,13 @@ function RecordPanel({ aircraft }: { readonly aircraft: AircraftState }) {
   );
 }
 
+const CALIBRATION_LABEL = {
+  ferry_range: 'Ferry range, internal fuel (sourced)',
+  ferry_range_assumed_internal: 'Ferry range, internal fuel (assumed)',
+  range_with_payload: 'Range at the sourced payload',
+  range_at_max_mass: 'Range at maximum mass (assumed)',
+} as const;
+
 const FUEL_CAPACITY_LABEL = {
   sourced_mass: 'Fuel capacity',
   sourced_volume: 'Fuel capacity (from volume)',
@@ -283,7 +290,11 @@ function PerformancePanel({ aircraft }: { readonly aircraft: AircraftState }) {
               model.referenceRangeKind === 'range' ? 'Published range' : 'Published ferry range'
             }
             value={`${formatInteger(model.referenceRangeKm)} km`}
-            hint="Reference data. The fuel model is calibrated to this figure."
+            hint={`Reference data. The fuel model is calibrated to this figure. ${
+              model.referenceConditions
+                ? `The source states: ${model.referenceConditions}.`
+                : 'The source states no conditions for it.'
+            }`}
           />
           <DataField
             label={assumed.has('cruiseSpeed') ? 'Cruise speed (assumed)' : 'Cruise speed'}
@@ -305,6 +316,16 @@ function PerformancePanel({ aircraft }: { readonly aircraft: AircraftState }) {
             label="Cruise altitude (assumed)"
             value={`${formatInteger(model.cruiseAltitudeM)} m`}
             hint={FLIGHT_ASSUMPTIONS.cruiseAltitude.statement}
+          />
+          <DataField
+            label="Calibration"
+            value={CALIBRATION_LABEL[model.calibration ?? 'range_at_max_mass']}
+            hint={
+              assumed.has('rangeCondition')
+                ? FLIGHT_ASSUMPTIONS.rangeCondition.statement
+                : 'The loading for this figure is stated by the source.'
+            }
+            prose
           />
           <DataField
             label={FUEL_CAPACITY_LABEL[fuelBasis]}

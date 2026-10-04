@@ -38,6 +38,68 @@ export interface AttributeRow {
   readonly confidence: 'high' | 'medium' | 'low';
   readonly verification: 'unverified' | 'source_asserted' | 'cross_checked';
   readonly note: string | null;
+  /** The variant the source's figure is for, where it names one. */
+  readonly variant?: string | null;
+  /** JSON: the conditions the source states for a range figure. */
+  readonly conditions?: string | null;
+}
+
+/** The conditions a source states for a range figure. "unknown" is what the source leaves out. */
+export interface RangeConditions {
+  readonly payloadKg: number | 'unknown' | 'not_recorded';
+  readonly externalFuel: boolean | 'unknown';
+  readonly fuel: string;
+  readonly speedAltitude: string;
+  readonly sourceText: string | null;
+  readonly note: string | null;
+}
+
+/** Reads the stored conditions of a range record. `null` when the record holds none. */
+export function parseConditions(text: string | null | undefined): RangeConditions | null {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as Partial<RangeConditions>;
+    return {
+      payloadKg:
+        typeof parsed.payloadKg === 'number' || parsed.payloadKg === 'not_recorded'
+          ? parsed.payloadKg
+          : 'unknown',
+      externalFuel: typeof parsed.externalFuel === 'boolean' ? parsed.externalFuel : 'unknown',
+      fuel: typeof parsed.fuel === 'string' ? parsed.fuel : 'unknown',
+      speedAltitude: typeof parsed.speedAltitude === 'string' ? parsed.speedAltitude : 'unknown',
+      sourceText: typeof parsed.sourceText === 'string' ? parsed.sourceText : null,
+      note: typeof parsed.note === 'string' ? parsed.note : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The conditions of a range in words: what the source states, and plainly what it does not. */
+export function describeConditions(conditions: RangeConditions | null): string {
+  if (!conditions) return 'The source states no conditions for this figure.';
+  const parts: string[] = [];
+  if (typeof conditions.payloadKg === 'number') {
+    parts.push(`payload ${Math.round(conditions.payloadKg).toLocaleString('en-GB')} kg`);
+  } else {
+    parts.push(
+      conditions.payloadKg === 'not_recorded' ? 'loading stated but not held' : 'payload unknown',
+    );
+  }
+  parts.push(
+    conditions.externalFuel === 'unknown'
+      ? 'external fuel unknown'
+      : conditions.externalFuel
+        ? 'with external fuel'
+        : 'internal fuel only',
+  );
+  parts.push(conditions.fuel === 'unknown' ? 'fuel state unknown' : conditions.fuel);
+  parts.push(
+    conditions.speedAltitude === 'unknown'
+      ? 'speed and altitude unknown'
+      : conditions.speedAltitude,
+  );
+  return `Source conditions: ${parts.join('; ')}.`;
 }
 
 /** A sourced value chosen for use, with where it came from. */
@@ -49,6 +111,8 @@ export interface SourcedValue {
   readonly sourceUrl: string;
   readonly sourceText: string;
   readonly note: string | null;
+  readonly variant: string | null;
+  readonly conditions: RangeConditions | null;
 }
 
 export interface CatalogueEntry {
@@ -88,6 +152,8 @@ export function chooseSourced(attributes: readonly AttributeRow[]): Record<strin
         sourceUrl: a.sourceUrl,
         sourceText: a.sourceText,
         note: a.note,
+        variant: a.variant ?? null,
+        conditions: parseConditions(a.conditions),
       },
     ]),
   );
@@ -106,6 +172,8 @@ export function buildCatalogue(
   return types.map((type) => {
     const sourced = chooseSourced(byType.get(type.id) ?? []);
     const value = (key: string) => sourced[key]?.value ?? null;
+    const rangeConditions = sourced.range_km?.conditions ?? null;
+    const ferryConditions = sourced.ferry_range_km?.conditions ?? null;
     const characteristics: TypeCharacteristics = {
       category: type.category,
       engineType: type.engineType as EngineType,
@@ -118,6 +186,12 @@ export function buildCatalogue(
       serviceCeilingM: value('service_ceiling_m'),
       fuelCapacityKg: value('fuel_capacity_kg'),
       fuelCapacityL: value('fuel_capacity_l'),
+      rangePayloadKg:
+        typeof rangeConditions?.payloadKg === 'number' ? rangeConditions.payloadKg : null,
+      ferryExternalFuel:
+        typeof ferryConditions?.externalFuel === 'boolean' ? ferryConditions.externalFuel : null,
+      rangeConditionsText: rangeConditions?.sourceText ?? null,
+      ferryConditionsText: ferryConditions?.sourceText ?? null,
     };
     return { type, sourced, characteristics, performance: derivePerformance(characteristics) };
   });
