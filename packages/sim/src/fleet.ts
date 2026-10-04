@@ -149,7 +149,18 @@ export type FleetCommand =
       readonly plan: FlightPlan;
       readonly load: FlightLoad;
     }
-  | { readonly type: 'startMaintenance'; readonly aircraftId: string };
+  | { readonly type: 'startMaintenance'; readonly aircraftId: string }
+  /**
+   * Replaces a grounded aircraft's performance model, for example after the flight model or the
+   * reference data behind it has changed. An airborne aircraft is refused: a flight finishes
+   * under the model it departed with.
+   */
+  | {
+      readonly type: 'updatePerformance';
+      readonly aircraftId: string;
+      readonly performance: PerformanceModel | null;
+      readonly performanceMissing: readonly string[];
+    };
 
 /** What an effective command touched, for the log. */
 export type CommandEffect = LogSubject;
@@ -425,6 +436,32 @@ export class Fleet {
           activeFlightId: flight.id,
         });
         return { aircraftId: aircraft.id, flightId: flight.id };
+      }
+
+      case 'updatePerformance': {
+        const aircraft = this.require(command.aircraftId);
+        this.onGround(aircraft, 'be given a new performance model');
+        const { performance } = command;
+        if (JSON.stringify(performance) === JSON.stringify(aircraft.performance)) return null;
+        // Loads the new model cannot hold are reduced to what it can.
+        const fuelKg = Math.min(aircraft.fuelKg, performance?.fuelCapacityKg ?? 0);
+        const payloadKg = performance
+          ? Math.max(
+              Math.min(
+                aircraft.payloadKg,
+                performance.maxTakeoffMassKg - performance.emptyMassKg - fuelKg,
+              ),
+              0,
+            )
+          : 0;
+        this.aircraft.set(aircraft.id, {
+          ...aircraft,
+          performance,
+          performanceMissing: performance ? [] : command.performanceMissing,
+          fuelKg,
+          payloadKg,
+        });
+        return { aircraftId: aircraft.id };
       }
 
       case 'startMaintenance': {

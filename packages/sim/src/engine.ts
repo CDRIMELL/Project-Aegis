@@ -19,7 +19,7 @@ import {
 } from './world';
 
 /** Commands the application issues itself, not the player (ADR 0018). */
-const SYSTEM_COMMANDS: ReadonlySet<string> = new Set(['seedStarterFleet']);
+const SYSTEM_COMMANDS: ReadonlySet<string> = new Set(['seedStarterFleet', 'updatePerformance']);
 
 /** The first simulation model that kept a log. */
 const FIRST_LOGGED_MODEL_VERSION = 3;
