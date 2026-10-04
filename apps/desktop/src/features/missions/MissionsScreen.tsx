@@ -107,7 +107,7 @@ export function MissionsScreen() {
           />
           <div className="grid grid-cols-2 gap-2">
             <SelectField
-              label="Type"
+              label="Mission type"
               value={filter.type}
               options={[
                 { value: 'all', label: 'All types' },
@@ -180,6 +180,12 @@ export function MissionsScreen() {
                 void navigate(`/missions/${selected.id}/edit`);
               }}
             />
+          ) : all.length > 0 ? (
+            <EmptyState icon={Route} title="No mission matches these filters">
+              {all.length === 1 ? 'There is 1 mission' : `There are ${all.length} missions`}, hidden
+              by the filters on the left. Set "Show" to All and "Mission type" to All types to see
+              {all.length === 1 ? ' it.' : ' them.'}
+            </EmptyState>
           ) : (
             <EmptyState icon={Route} title="No missions yet">
               Create a mission, or let the simulation run: the world offers opportunities from time
