@@ -77,6 +77,42 @@ export function NumberField({
   );
 }
 
+export interface TextFieldProps {
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+  readonly maxLength?: number;
+  readonly hint?: string;
+}
+
+/** A labelled single line of text. */
+export function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  maxLength,
+  hint,
+}: TextFieldProps) {
+  const id = useId();
+  return (
+    <FieldFrame id={id} label={label} hint={hint}>
+      <input
+        id={id}
+        type="text"
+        className={cn(FIELD, 'cursor-text select-text')}
+        value={value}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+      />
+    </FieldFrame>
+  );
+}
+
 export interface SelectOption {
   readonly value: string;
   readonly label: string;
