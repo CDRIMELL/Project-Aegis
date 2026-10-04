@@ -174,7 +174,7 @@
     {
       "type": "b787-9",
       "key": "height_m",
-      "sourceValue": 17.0,
+      "sourceValue": 17,
       "sourceUnit": "m",
       "sourceText": "Height 17.0 m (55 ft 10 in) [787-9 column]",
       "sourceName": "Boeing, 787 Dreamliner page",
@@ -356,6 +356,153 @@
       "key": "length_m",
       "sourceValue": null,
       "reason": "The De Havilland Canada Dash 8-400 page retrieved on 2026-10-04 did not present specifications in its page text."
+    },
+    {
+      "type": "typhoon",
+      "key": "fuel_capacity_kg",
+      "sourceValue": 4500,
+      "sourceUnit": "kg",
+      "sourceText": "fuel capacity = Internal 4500 kg (approx), including external stores 7600 kg",
+      "sourceName": "Wikipedia, \"Eurofighter Typhoon\", revision 1377610122",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?title=Eurofighter_Typhoon&oldid=1377610122",
+      "retrievedAt": "2026-10-04",
+      "note": "Internal fuel only; the article describes the figure as approximate and cites Eurofighter. Hand-entered from a tertiary source (CC BY-SA 4.0); not cross-checked."
+    },
+    {
+      "type": "a400m",
+      "key": "fuel_capacity_kg",
+      "sourceValue": 51,
+      "sourceUnit": "t",
+      "sourceText": "51 tonnes of Basic Fuel Capacity",
+      "sourceName": "Airbus, A400M product page",
+      "sourceUrl": "https://www.airbus.com/en/products-services/defence/military-aircraft/a400m",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "c-17",
+      "key": "fuel_capacity_l",
+      "sourceValue": 35546,
+      "sourceUnit": "USgal",
+      "sourceText": "fuel capacity=35546 USgal",
+      "sourceName": "Wikipedia, \"Boeing C-17 Globemaster III\", revision 1376719976",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?title=Boeing_C-17_Globemaster_III&oldid=1376719976",
+      "retrievedAt": "2026-10-04",
+      "note": "Published as a volume. Hand-entered from a tertiary source (CC BY-SA 4.0); not cross-checked."
+    },
+    {
+      "type": "voyager",
+      "key": "fuel_capacity_kg",
+      "sourceValue": 111,
+      "sourceUnit": "t",
+      "sourceText": "The Airbus A330 MRTT's fuel capacity is 111 tonnes (or about 245,000 lbs).",
+      "sourceName": "Airbus, A330 MRTT product page",
+      "sourceUrl": "https://www.airbus.com/en/products-services/defence/military-aircraft/a330-mrtt",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "voyager",
+      "key": "ferry_range_km",
+      "sourceValue": 8700,
+      "sourceUnit": "nmi",
+      "sourceText": "Up to 8,700nm (16,000km) of range for global coverage.",
+      "sourceName": "Airbus, A330 MRTT product page",
+      "sourceUrl": "https://www.airbus.com/en/products-services/defence/military-aircraft/a330-mrtt",
+      "retrievedAt": "2026-10-04",
+      "note": "Published as an upper bound (\"up to\"), with no loading stated; recorded as ferry range."
+    },
+    {
+      "type": "merlin",
+      "key": "fuel_capacity_kg",
+      "sourceValue": null,
+      "reason": "Neither the Leonardo AW101 product page nor the Wikipedia specification template retrieved on 2026-10-04 states a fuel capacity."
+    },
+    {
+      "type": "voyager",
+      "key": "empty_mass_kg",
+      "sourceValue": null,
+      "reason": "The Airbus A330 MRTT page retrieved on 2026-10-04 gives no empty mass, and the RAF Voyager page could not be retrieved."
+    },
+    {
+      "type": "voyager",
+      "key": "cruise_speed_kmh",
+      "sourceValue": null,
+      "reason": "The Airbus A330 MRTT page retrieved on 2026-10-04 gives no cruise or maximum speed, and the RAF Voyager page could not be retrieved."
+    },
+    {
+      "type": "chinook",
+      "key": "max_takeoff_mass_kg",
+      "sourceValue": 54000,
+      "sourceUnit": "lb",
+      "sourceText": "Max Gross Weight: 54,000 pounds (24,494 kilograms)",
+      "sourceName": "Boeing, H-47 Chinook page (CH-47F Block II specifications)",
+      "sourceUrl": "https://www.boeing.com/defense/military-rotorcraft/h-47-chinook",
+      "retrievedAt": "2026-10-04",
+      "note": "Published as maximum gross weight, for the CH-47F Block II."
+    },
+    {
+      "type": "chinook",
+      "key": "fuel_capacity_l",
+      "sourceValue": 4088,
+      "sourceUnit": "l",
+      "sourceText": "Fuel Capacity: 1,080 gallons (4,088 liters)",
+      "sourceName": "Boeing, H-47 Chinook page (CH-47F Block II specifications)",
+      "sourceUrl": "https://www.boeing.com/defense/military-rotorcraft/h-47-chinook",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "hawk-t2",
+      "key": "empty_mass_kg",
+      "sourceValue": 4480,
+      "sourceUnit": "kg",
+      "sourceText": "empty weight alt=4,480 kg",
+      "sourceName": "Wikipedia, \"BAE Systems Hawk\", revision 1376370940",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?title=BAE_Systems_Hawk&oldid=1376370940",
+      "retrievedAt": "2026-10-04",
+      "note": "From \"Specifications (Hawk 128)\"; the Hawk 128 is the T2. Hand-entered from a tertiary source (CC BY-SA 4.0); not cross-checked."
+    },
+    {
+      "type": "hawk-t2",
+      "key": "max_takeoff_mass_kg",
+      "sourceValue": 9100,
+      "sourceUnit": "kg",
+      "sourceText": "max takeoff weight alt=9,100 kg",
+      "sourceName": "Wikipedia, \"BAE Systems Hawk\", revision 1376370940",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?title=BAE_Systems_Hawk&oldid=1376370940",
+      "retrievedAt": "2026-10-04",
+      "note": "From \"Specifications (Hawk 128)\"; the Hawk 128 is the T2. Hand-entered from a tertiary source (CC BY-SA 4.0); not cross-checked."
+    },
+    {
+      "type": "hawk-t2",
+      "key": "range_km",
+      "sourceValue": 2520,
+      "sourceUnit": "km",
+      "sourceText": "range main=1,360 nmi, 1,565 mi | range alt=2,520 km",
+      "sourceName": "Wikipedia, \"BAE Systems Hawk\", revision 1376370940",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?title=BAE_Systems_Hawk&oldid=1376370940",
+      "retrievedAt": "2026-10-04",
+      "note": "From \"Specifications (Hawk 128)\"; the Hawk 128 is the T2. Hand-entered from a tertiary source (CC BY-SA 4.0); not cross-checked."
+    },
+    {
+      "type": "f-35a",
+      "key": "max_speed_kmh",
+      "sourceValue": 1976,
+      "sourceUnit": "kmh",
+      "sourceText": "max speed mach = 1.6 at high altitude (1,228 mph / 1,976 km/h)",
+      "sourceName": "Wikipedia, \"Lockheed Martin F-35 Lightning II\", revision 1377683481",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?title=Lockheed_Martin_F-35_Lightning_II&oldid=1377683481",
+      "retrievedAt": "2026-10-04",
+      "note": "From \"Specifications (F-35A)\". Hand-entered from a tertiary source (CC BY-SA 4.0); not cross-checked."
+    },
+    {
+      "type": "f-35a",
+      "key": "fuel_capacity_kg",
+      "sourceValue": 18250,
+      "sourceUnit": "lb",
+      "sourceText": "fuel capacity = 18250 lb internal",
+      "sourceName": "Wikipedia, \"Lockheed Martin F-35 Lightning II\", revision 1377683481",
+      "sourceUrl": "https://en.wikipedia.org/w/index.php?title=Lockheed_Martin_F-35_Lightning_II&oldid=1377683481",
+      "retrievedAt": "2026-10-04",
+      "note": "Internal fuel. From \"Specifications (F-35A)\". Hand-entered from a tertiary source (CC BY-SA 4.0); not cross-checked."
     }
   ]
 }

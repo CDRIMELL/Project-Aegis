@@ -18,7 +18,10 @@ import type { CuratedAircraftType } from './aircraft';
  * by hand. A value that could not be established is recorded as `null` with the reason.
  */
 
-type Dimension = 'm' | 'kg' | 'kmh' | 'km';
+type Dimension = 'm' | 'kg' | 'kmh' | 'km' | 'l';
+
+/** Exact, by definition of the US gallon. */
+const LITRES_PER_US_GALLON = 3.785411784;
 
 /** Units a source may use, and how each converts to the stored unit of its dimension. */
 const SOURCE_UNITS = {
@@ -31,6 +34,8 @@ const SOURCE_UNITS = {
   kt: { dimension: 'kmh', factor: METRES_PER_NAUTICAL_MILE / 1000 },
   km: { dimension: 'km', factor: 1 },
   nmi: { dimension: 'km', factor: METRES_PER_NAUTICAL_MILE / 1000 },
+  l: { dimension: 'l', factor: 1 },
+  USgal: { dimension: 'l', factor: LITRES_PER_US_GALLON },
 } as const satisfies Record<string, { dimension: Dimension; factor: number }>;
 
 type SourceUnit = keyof typeof SOURCE_UNITS;
@@ -48,6 +53,8 @@ const DECIMALS: Readonly<Record<schema.AircraftAttributeKey, number>> = {
   range_km: 0,
   ferry_range_km: 0,
   service_ceiling_m: 0,
+  fuel_capacity_kg: 0,
+  fuel_capacity_l: 0,
 };
 
 function dimensionOf(key: schema.AircraftAttributeKey): Dimension {

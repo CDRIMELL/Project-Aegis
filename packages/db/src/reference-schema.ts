@@ -236,6 +236,9 @@ export const AIRCRAFT_ATTRIBUTE_KEYS = [
   'range_km',
   'ferry_range_km',
   'service_ceiling_m',
+  'fuel_capacity_kg',
+  /** Fuel capacity where the source gives a volume. Stored as published; never converted here. */
+  'fuel_capacity_l',
 ] as const;
 export type AircraftAttributeKey = (typeof AIRCRAFT_ATTRIBUTE_KEYS)[number];
 

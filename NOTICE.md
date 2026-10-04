@@ -35,6 +35,10 @@ quotation that identifies the figure. Content from UK government publishers is u
 [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
 where the publisher states it applies. Entries are marked unverified until cross-checked.
 
+Some entries in this file are single figures taken by hand from an English Wikipedia article where
+the automatic extraction could not read them. Each names the article and revision, and is made
+available under CC BY-SA 4.0 like the file above.
+
 ## Data downloaded at build time (not in this repository)
 
 | Dataset       | Publisher                                  | Licence       |
