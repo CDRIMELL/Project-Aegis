@@ -1,0 +1,32 @@
+{
+  "files": {
+    "airports": {
+      "url": "https://davidmegginson.github.io/ourairports-data/airports.csv",
+      "file": "ourairports/airports.csv",
+      "sha256": "ee5a1ebce3661288cec7297f6bb21112b7448e7dc41f62cda1f2315989a57d21",
+      "bytes": 12735652,
+      "retrievedAt": "2026-10-04T10:42:21.726Z"
+    },
+    "cities": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_populated_places_simple.geojson",
+      "file": "natural-earth/ne_10m_populated_places_simple.geojson",
+      "sha256": "fd3fa867a320cbd5c5b6bb5bc550afeec2939fb2cef688e508007282a55ac42f",
+      "bytes": 4932147,
+      "retrievedAt": "2026-10-04T10:42:22.496Z"
+    },
+    "countries": {
+      "url": "https://davidmegginson.github.io/ourairports-data/countries.csv",
+      "file": "ourairports/countries.csv",
+      "sha256": "2a9dbee691125b0cdb8ceb5fe227c48c903f99c488963b8e53e2ab366521c639",
+      "bytes": 24583,
+      "retrievedAt": "2026-10-04T10:42:21.266Z"
+    },
+    "runways": {
+      "url": "https://davidmegginson.github.io/ourairports-data/runways.csv",
+      "file": "ourairports/runways.csv",
+      "sha256": "916f14a3fb44388df07bb708e514b4fffc10b38765821ee5765857664b4082df",
+      "bytes": 3967102,
+      "retrievedAt": "2026-10-04T10:42:21.863Z"
+    }
+  }
+}

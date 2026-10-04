@@ -1,0 +1,1346 @@
+{
+  "retrievedAt": "2026-10-04T10:52:08.066Z",
+  "types": {
+    "a350-900": {
+      "page": "Airbus A350",
+      "revisionId": 1378020960,
+      "revisionTimestamp": "2026-10-02T13:50:19Z",
+      "heading": "Specifications (A350-941, with Trent XWB-84 engines)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 66.8,
+          "sourceText": "length m=66.80"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 64.75,
+          "sourceText": "span m=64.75"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 115700,
+          "sourceText": "empty weight kg=115700"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 283000,
+          "sourceText": "max takeoff weight kg=283000"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 950,
+          "sourceText": "max speed kmh=950"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 903,
+          "sourceText": "cruise speed kmh=903"
+        },
+        {
+          "key": "range_km",
+          "value": 15750,
+          "sourceText": "range km=15750"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 13137,
+          "sourceText": "ceiling ft=43100"
+        }
+      ]
+    },
+    "a400m": {
+      "page": "Airbus A400M Atlas",
+      "revisionId": 1371476720,
+      "revisionTimestamp": "2026-08-26T17:49:59Z",
+      "heading": "Specifications",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 45.1,
+          "sourceText": "length m=45.1"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 42.4,
+          "sourceText": "span m=42.4"
+        },
+        {
+          "key": "height_m",
+          "value": 14.7,
+          "sourceText": "height m=14.7"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 78600,
+          "sourceText": "empty weight kg=78600"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 141000,
+          "sourceText": "max takeoff weight kg=141000"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 781,
+          "sourceText": "cruise speed kmh=781"
+        },
+        {
+          "key": "range_km",
+          "value": 3300,
+          "sourceText": "range km=3300"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 8700,
+          "sourceText": "ferry range km=8700"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 12200,
+          "sourceText": "ceiling m=12200"
+        }
+      ]
+    },
+    "apache": {
+      "page": "Boeing AH-64 Apache",
+      "revisionId": 1378216495,
+      "revisionTimestamp": "2026-10-03T14:48:05Z",
+      "heading": "Specifications (AH-64A/D)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 17.73,
+          "sourceText": "length m=17.73"
+        },
+        {
+          "key": "rotor_diameter_m",
+          "value": 14.63,
+          "sourceText": "rot dia m=14.63"
+        },
+        {
+          "key": "height_m",
+          "value": 3.87,
+          "sourceText": "height m=3.87"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 5165,
+          "sourceText": "empty weight lb=11387"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 10433,
+          "sourceText": "max takeoff weight lb=23000"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 293,
+          "sourceText": "max speed kts=158"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 265,
+          "sourceText": "cruise speed kts=143"
+        },
+        {
+          "key": "range_km",
+          "value": 476,
+          "sourceText": "range nmi=257"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 1896,
+          "sourceText": "ferry range nmi=1024"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 6096,
+          "sourceText": "ceiling ft=20000"
+        }
+      ]
+    },
+    "b737-800": {
+      "page": "Boeing 737 Next Generation",
+      "revisionId": 1375380191,
+      "revisionTimestamp": "2026-09-17T13:12:14Z",
+      "heading": "Specifications (Boeing 737-800 with CFM56-7B26)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 39.47,
+          "sourceText": "length m=39.47"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 35.79,
+          "sourceText": "span m=35.79"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 41413,
+          "sourceText": "empty weight kg=41413"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 79016,
+          "sourceText": "max takeoff weight kg=79016"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 837,
+          "sourceText": "cruise speed kts=452"
+        },
+        {
+          "key": "range_km",
+          "value": 5421,
+          "sourceText": "range nmi=2927"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 12497,
+          "sourceText": "ceiling ft=41000"
+        }
+      ]
+    },
+    "black-hawk": {
+      "page": "Sikorsky UH-60 Black Hawk",
+      "revisionId": 1376062965,
+      "revisionTimestamp": "2026-09-21T20:38:23Z",
+      "heading": "Specifications (UH-60M)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 19.76,
+          "sourceText": "length ft=64 | length in=10"
+        },
+        {
+          "key": "rotor_diameter_m",
+          "value": 16.36,
+          "sourceText": "rot dia ft=53 | rot dia in=8"
+        },
+        {
+          "key": "height_m",
+          "value": 5.13,
+          "sourceText": "height ft=16 | height in=10"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 5675,
+          "sourceText": "empty weight lb=12511"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 9979,
+          "sourceText": "max takeoff weight lb=22000"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 294,
+          "sourceText": "max speed kts=159"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 282,
+          "sourceText": "cruise speed kts=152"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 2221,
+          "sourceText": "ferry range nmi=1199"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 5791,
+          "sourceText": "ceiling ft=19000"
+        }
+      ]
+    },
+    "c-130j": {
+      "page": "Lockheed Martin C-130J Super Hercules",
+      "revisionId": 1377214978,
+      "revisionTimestamp": "2026-09-28T09:49:46Z",
+      "heading": "Specifications (C-130J)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 29.79,
+          "sourceText": "length ft=97 | length in=9"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 40.41,
+          "sourceText": "span ft=132 | span in=7"
+        },
+        {
+          "key": "height_m",
+          "value": 11.84,
+          "sourceText": "height ft=38 | height in=10"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 34274,
+          "sourceText": "empty weight lb=75562"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 74389,
+          "sourceText": "max takeoff weight lb=164000"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 670,
+          "sourceText": "max speed kts=362"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 644,
+          "sourceText": "cruise speed kts=348"
+        },
+        {
+          "key": "range_km",
+          "value": 3334,
+          "sourceText": "range nmi=1800"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 8534,
+          "sourceText": "ceiling ft=28000"
+        }
+      ]
+    },
+    "c-17": {
+      "page": "Boeing C-17 Globemaster III",
+      "revisionId": 1376719976,
+      "revisionTimestamp": "2026-09-25T21:30:43Z",
+      "heading": "Specifications (C-17A)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 53.04,
+          "sourceText": "length ft=174"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 51.76,
+          "sourceText": "span ft=169 | span in=9.6"
+        },
+        {
+          "key": "height_m",
+          "value": 16.79,
+          "sourceText": "height ft=55 | height in=1"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 128140,
+          "sourceText": "empty weight lb=282500"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 265352,
+          "sourceText": "max takeoff weight lb=585000"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 833,
+          "sourceText": "cruise speed kts=450"
+        },
+        {
+          "key": "range_km",
+          "value": 4482,
+          "sourceText": "range nmi=2420"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 11538,
+          "sourceText": "ferry range nmi=6230"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 13716,
+          "sourceText": "ceiling ft=45000"
+        }
+      ]
+    },
+    "chinook": {
+      "page": "Boeing CH-47 Chinook",
+      "revisionId": 1378210319,
+      "revisionTimestamp": "2026-10-03T14:10:52Z",
+      "heading": "Specifications (CH-47F)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 30.14,
+          "sourceText": "length ft=98 | length in=10.7"
+        },
+        {
+          "key": "rotor_diameter_m",
+          "value": 18.29,
+          "sourceText": "rot dia ft=60"
+        },
+        {
+          "key": "height_m",
+          "value": 5.68,
+          "sourceText": "height ft=18 | height in=7.8"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 11148,
+          "sourceText": "empty weight lb=24578"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 315,
+          "sourceText": "max speed kts=170"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 291,
+          "sourceText": "cruise speed kts=157"
+        },
+        {
+          "key": "range_km",
+          "value": 741,
+          "sourceText": "range nmi=400"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 2252,
+          "sourceText": "ferry range nmi=1216"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 6096,
+          "sourceText": "ceiling ft=20000"
+        }
+      ]
+    },
+    "e-3": {
+      "page": "Boeing E-3 Sentry",
+      "revisionId": 1378217304,
+      "revisionTimestamp": "2026-10-03T14:53:41Z",
+      "heading": "Specifications (USAF/NATO)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 46.61,
+          "sourceText": "length ft=152 | length in=11"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 44.42,
+          "sourceText": "span ft=145 | span in=9"
+        },
+        {
+          "key": "height_m",
+          "value": 12.6,
+          "sourceText": "height ft=41 | height in=4"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 83915,
+          "sourceText": "empty weight lb=185000"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 157397,
+          "sourceText": "max takeoff weight lb=347000"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 854,
+          "sourceText": "max speed kts=461"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 579,
+          "sourceText": "cruise speed mph=360"
+        },
+        {
+          "key": "range_km",
+          "value": 7408,
+          "sourceText": "range nmi=4000"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 8839,
+          "sourceText": "ceiling ft=29000"
+        }
+      ]
+    },
+    "e-7": {
+      "page": "Boeing E-7 Wedgetail",
+      "revisionId": 1378367230,
+      "revisionTimestamp": "2026-10-04T04:08:29Z",
+      "heading": "Specifications",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 33.6,
+          "sourceText": "length m=33.6"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 35.8,
+          "sourceText": "span m=35.8"
+        },
+        {
+          "key": "height_m",
+          "value": 12.5,
+          "sourceText": "height m=12.5"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 46606,
+          "sourceText": "empty weight kg=46606"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 77600,
+          "sourceText": "max takeoff weight kg=77600"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 853,
+          "sourceText": "cruise speed kmh=853"
+        },
+        {
+          "key": "range_km",
+          "value": 6500,
+          "sourceText": "range km=6500"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 12500,
+          "sourceText": "ceiling m=12500"
+        }
+      ]
+    },
+    "envoy": {
+      "page": "Dassault Falcon 900",
+      "revisionId": 1376537842,
+      "revisionTimestamp": "2026-09-24T19:45:50Z",
+      "heading": "Specifications (Falcon 900B)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 20.21,
+          "sourceText": "length m=20.21"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 19.33,
+          "sourceText": "span m=19.33"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 10255,
+          "sourceText": "empty weight kg=10255"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 20640,
+          "sourceText": "max takeoff weight kg=20640"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 950,
+          "sourceText": "cruise speed kmh=950"
+        },
+        {
+          "key": "range_km",
+          "value": 7400,
+          "sourceText": "range km=7400"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 15500,
+          "sourceText": "ceiling m=15500"
+        }
+      ]
+    },
+    "f-16": {
+      "page": "General Dynamics F-16 Fighting Falcon",
+      "revisionId": 1378065267,
+      "revisionTimestamp": "2026-10-02T19:37:10Z",
+      "heading": "Specifications (F-16C Block 50 and 52)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 15.06,
+          "sourceText": "length ft=49 | length in=5"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 9.96,
+          "sourceText": "span ft=32 | span in=8"
+        },
+        {
+          "key": "height_m",
+          "value": 4.88,
+          "sourceText": "height ft=16"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 8573,
+          "sourceText": "empty weight lb=18900"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 19187,
+          "sourceText": "max takeoff weight lb=42300"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 933,
+          "sourceText": "cruise speed kts=504"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 4217,
+          "sourceText": "ferry range nmi=2277"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 15240,
+          "sourceText": "ceiling ft=50000"
+        }
+      ]
+    },
+    "f-35a": {
+      "page": "Lockheed Martin F-35 Lightning II",
+      "revisionId": 1377683481,
+      "revisionTimestamp": "2026-09-30T15:17:53Z",
+      "heading": "Specifications (F-35A)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 15.67,
+          "sourceText": "length ft=51.4"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 10.67,
+          "sourceText": "span ft=35"
+        },
+        {
+          "key": "height_m",
+          "value": 4.39,
+          "sourceText": "height ft=14.4"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 13290,
+          "sourceText": "empty weight lb=29300"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 29900,
+          "sourceText": "max takeoff weight lb=65918"
+        },
+        {
+          "key": "range_km",
+          "value": 2778,
+          "sourceText": "range nmi=1500"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 15240,
+          "sourceText": "ceiling ft=50000"
+        }
+      ]
+    },
+    "global-hawk": {
+      "page": "Northrop Grumman RQ-4 Global Hawk",
+      "revisionId": 1377672081,
+      "revisionTimestamp": "2026-09-30T13:37:33Z",
+      "heading": "Specifications (RQ-4B Block 30/40)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 14.5,
+          "sourceText": "length m=14.5"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 39.9,
+          "sourceText": "span ft=130.9"
+        },
+        {
+          "key": "height_m",
+          "value": 4.66,
+          "sourceText": "height ft=15.3"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 6781,
+          "sourceText": "empty weight lb=14,950"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 629,
+          "sourceText": "max speed kmh=629"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 570,
+          "sourceText": "cruise speed kmh=570"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 18288,
+          "sourceText": "ceiling ft=60,000"
+        }
+      ]
+    },
+    "gripen": {
+      "page": "Saab JAS 39 Gripen",
+      "revisionId": 1378367962,
+      "revisionTimestamp": "2026-10-04T04:14:00Z",
+      "heading": "JAS 39C/D",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 14.9,
+          "sourceText": "length m=14.9"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 8.4,
+          "sourceText": "span m=8.4"
+        },
+        {
+          "key": "height_m",
+          "value": 4.5,
+          "sourceText": "height m=4.5"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 6800,
+          "sourceText": "empty weight kg=6800"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 14000,
+          "sourceText": "max takeoff weight kg=14000"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 3200,
+          "sourceText": "ferry range km=3200"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 15240,
+          "sourceText": "ceiling m=15,240"
+        }
+      ]
+    },
+    "juno": {
+      "page": "Eurocopter EC135",
+      "revisionId": 1373321906,
+      "revisionTimestamp": "2026-09-05T08:19:48Z",
+      "heading": "Specifications (EC135 P2+/T2+)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 10.2,
+          "sourceText": "length m=10.2"
+        },
+        {
+          "key": "rotor_diameter_m",
+          "value": 10.2,
+          "sourceText": "rot dia m=10.2"
+        },
+        {
+          "key": "height_m",
+          "value": 3.51,
+          "sourceText": "height m=3.51"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 1455,
+          "sourceText": "empty weight kg=1,455"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 2910,
+          "sourceText": "max takeoff weight kg=2,910"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 254,
+          "sourceText": "cruise speed kmh=254"
+        },
+        {
+          "key": "range_km",
+          "value": 635,
+          "sourceText": "range km=635"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 6096,
+          "sourceText": "ceiling m=6,096"
+        }
+      ]
+    },
+    "kc-135": {
+      "page": "Boeing KC-135 Stratotanker",
+      "revisionId": 1375087844,
+      "revisionTimestamp": "2026-09-15T20:14:48Z",
+      "heading": "Specifications (KC-135R)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 41.53,
+          "sourceText": "length ft=136 | length in=3"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 39.88,
+          "sourceText": "span ft=130 | span in=10"
+        },
+        {
+          "key": "height_m",
+          "value": 12.7,
+          "sourceText": "height ft=41 | height in=8"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 44630,
+          "sourceText": "empty weight kg=44630"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 146284,
+          "sourceText": "max takeoff weight lb=322500"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 933,
+          "sourceText": "max speed kts=504"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 853,
+          "sourceText": "cruise speed mph=530"
+        },
+        {
+          "key": "range_km",
+          "value": 2414,
+          "sourceText": "range miles=1500"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 17727,
+          "sourceText": "ferry range nmi=9572"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 15240,
+          "sourceText": "ceiling ft=50000"
+        }
+      ]
+    },
+    "merlin": {
+      "page": "AgustaWestland AW101",
+      "revisionId": 1375358778,
+      "revisionTimestamp": "2026-09-17T09:36:13Z",
+      "heading": "Specifications (Merlin HM1)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 19.53,
+          "sourceText": "length m=19.53"
+        },
+        {
+          "key": "rotor_diameter_m",
+          "value": 18.59,
+          "sourceText": "rot dia m=18.59"
+        },
+        {
+          "key": "height_m",
+          "value": 6.62,
+          "sourceText": "height m=6.62"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 10500,
+          "sourceText": "empty weight kg=10500"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 15600,
+          "sourceText": "max takeoff weight kg=15600"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 278,
+          "sourceText": "cruise speed kmh=278"
+        },
+        {
+          "key": "range_km",
+          "value": 1389,
+          "sourceText": "range km=1389"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 4575,
+          "sourceText": "ceiling m=4575"
+        }
+      ]
+    },
+    "phenom": {
+      "page": "Embraer Phenom 100",
+      "revisionId": 1370610125,
+      "revisionTimestamp": "2026-08-22T02:31:25Z",
+      "heading": "Specifications (Phenom 100EV)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 12.82,
+          "sourceText": "length m=12.82"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 12.3,
+          "sourceText": "span m=12.3"
+        },
+        {
+          "key": "height_m",
+          "value": 4.35,
+          "sourceText": "height m=4.35"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 4800,
+          "sourceText": "max takeoff weight lb=10,582"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 750,
+          "sourceText": "cruise speed kmh=750"
+        },
+        {
+          "key": "range_km",
+          "value": 2182,
+          "sourceText": "range km=2,182"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 12497,
+          "sourceText": "ceiling m=12,497"
+        }
+      ]
+    },
+    "poseidon": {
+      "page": "Boeing P-8 Poseidon",
+      "revisionId": 1377465392,
+      "revisionTimestamp": "2026-09-29T14:45:59Z",
+      "heading": "Specifications (P-8A)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 39.47,
+          "sourceText": "length m=39.47"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 37.64,
+          "sourceText": "span m=37.64"
+        },
+        {
+          "key": "height_m",
+          "value": 12.83,
+          "sourceText": "height m=12.83"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 62730,
+          "sourceText": "empty weight kg=62730"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 85820,
+          "sourceText": "max takeoff weight kg=85820"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 907,
+          "sourceText": "max speed kmh=907"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 815,
+          "sourceText": "cruise speed kmh=815"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 8300,
+          "sourceText": "ferry range km=8300"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 12497,
+          "sourceText": "ceiling ft=41000"
+        }
+      ]
+    },
+    "prefect": {
+      "page": "Grob G 120TP",
+      "revisionId": 1367279421,
+      "revisionTimestamp": "2026-08-02T03:29:06Z",
+      "heading": "Specifications",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 8.4,
+          "sourceText": "length m=8.4"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 10.3,
+          "sourceText": "span m=10.3"
+        },
+        {
+          "key": "height_m",
+          "value": 2.7,
+          "sourceText": "height m=2.7"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 1095,
+          "sourceText": "empty weight kg=1095"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 1590,
+          "sourceText": "max takeoff weight kg=1590"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 454,
+          "sourceText": "max speed kts=245"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 435,
+          "sourceText": "cruise speed kts=235"
+        },
+        {
+          "key": "range_km",
+          "value": 1074,
+          "sourceText": "range nmi=580"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 1361,
+          "sourceText": "ferry range nmi=735"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 7620,
+          "sourceText": "ceiling ft=25000"
+        }
+      ]
+    },
+    "rafale": {
+      "page": "Dassault Rafale",
+      "revisionId": 1377238412,
+      "revisionTimestamp": "2026-09-28T12:57:04Z",
+      "heading": "Specifications (Rafale C, B and M)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 15.27,
+          "sourceText": "length m=15.27"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 10.9,
+          "sourceText": "span m=10.90"
+        },
+        {
+          "key": "height_m",
+          "value": 5.34,
+          "sourceText": "height m=5.34"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 10300,
+          "sourceText": "empty weight kg=10300"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 24500,
+          "sourceText": "max takeoff weight kg=24500"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 1912,
+          "sourceText": "max speed kmh=1912"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 3700,
+          "sourceText": "ferry range km=3700"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 15835,
+          "sourceText": "ceiling m=15835"
+        }
+      ]
+    },
+    "rc-135w": {
+      "page": "Boeing RC-135",
+      "revisionId": 1368721505,
+      "revisionTimestamp": "2026-08-10T18:43:23Z",
+      "heading": "Specifications (RC-135)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 41.53,
+          "sourceText": "length ft=136 | length in=3"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 39.88,
+          "sourceText": "span ft=130 | span in=10"
+        },
+        {
+          "key": "height_m",
+          "value": 12.7,
+          "sourceText": "height ft=41 | height in=8"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 56245,
+          "sourceText": "empty weight lb=124000"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 146284,
+          "sourceText": "max takeoff weight lb=322500"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 933,
+          "sourceText": "max speed kts=504"
+        },
+        {
+          "key": "range_km",
+          "value": 5552,
+          "sourceText": "range nmi=2998"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 15240,
+          "sourceText": "ceiling ft=50000"
+        }
+      ]
+    },
+    "super-hornet": {
+      "page": "Boeing F/A-18E/F Super Hornet",
+      "revisionId": 1378284456,
+      "revisionTimestamp": "2026-10-03T20:37:09Z",
+      "heading": "Specifications (F/A-18E/F)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 18.31,
+          "sourceText": "length m=18.31"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 13.62,
+          "sourceText": "span m=13.62"
+        },
+        {
+          "key": "height_m",
+          "value": 4.88,
+          "sourceText": "height m=4.88"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 14552,
+          "sourceText": "empty weight kg=14,552"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 29937,
+          "sourceText": "max takeoff weight kg=29,937"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 893,
+          "sourceText": "cruise speed kts=482"
+        },
+        {
+          "key": "range_km",
+          "value": 2346,
+          "sourceText": "range km=2,346"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 3330,
+          "sourceText": "ferry range km=3,330"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 15940,
+          "sourceText": "ceiling m=15940"
+        }
+      ]
+    },
+    "texan": {
+      "page": "Beechcraft T-6 Texan II",
+      "revisionId": 1375155876,
+      "revisionTimestamp": "2026-09-16T03:19:33Z",
+      "heading": "Specifications (T-6A)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 10.16,
+          "sourceText": "length ft=33 | length in=4"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 10.19,
+          "sourceText": "span ft=33 | span in=5"
+        },
+        {
+          "key": "height_m",
+          "value": 3.25,
+          "sourceText": "height ft=10 | height in=8"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 2135,
+          "sourceText": "empty weight lb=4707"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 2948,
+          "sourceText": "max takeoff weight lb=6500"
+        },
+        {
+          "key": "cruise_speed_kmh",
+          "value": 515,
+          "sourceText": "cruise speed mph=320"
+        },
+        {
+          "key": "range_km",
+          "value": 1667,
+          "sourceText": "range nmi=900"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 9449,
+          "sourceText": "ceiling ft=31000"
+        }
+      ]
+    },
+    "typhoon": {
+      "page": "Eurofighter Typhoon",
+      "revisionId": 1377610122,
+      "revisionTimestamp": "2026-09-30T04:24:38Z",
+      "heading": "Specifications",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 15.96,
+          "sourceText": "length m=15.96"
+        },
+        {
+          "key": "wingspan_m",
+          "value": 10.95,
+          "sourceText": "span m=10.95"
+        },
+        {
+          "key": "height_m",
+          "value": 5.28,
+          "sourceText": "height m=5.28"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 11000,
+          "sourceText": "empty weight kg=11000"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 23500,
+          "sourceText": "max takeoff weight kg=23500"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 2495,
+          "sourceText": "max speed kmh=2,495"
+        },
+        {
+          "key": "range_km",
+          "value": 2900,
+          "sourceText": "range km=2900"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 3790,
+          "sourceText": "ferry range km=3790"
+        },
+        {
+          "key": "service_ceiling_m",
+          "value": 16764,
+          "sourceText": "ceiling m=16,764"
+        }
+      ]
+    },
+    "wildcat": {
+      "page": "AgustaWestland AW159 Wildcat",
+      "revisionId": 1375952232,
+      "revisionTimestamp": "2026-09-21T02:38:56Z",
+      "heading": "Specifications (AW159)",
+      "attributes": [
+        {
+          "key": "length_m",
+          "value": 15.24,
+          "sourceText": "length m=15.24"
+        },
+        {
+          "key": "rotor_diameter_m",
+          "value": 12.8,
+          "sourceText": "rot dia m=12.8"
+        },
+        {
+          "key": "height_m",
+          "value": 3.73,
+          "sourceText": "height m=3.73"
+        },
+        {
+          "key": "empty_mass_kg",
+          "value": 3300,
+          "sourceText": "empty weight kg=3,300"
+        },
+        {
+          "key": "max_takeoff_mass_kg",
+          "value": 6000,
+          "sourceText": "max takeoff weight kg=6,000"
+        },
+        {
+          "key": "max_speed_kmh",
+          "value": 311,
+          "sourceText": "max speed kmh=311"
+        },
+        {
+          "key": "range_km",
+          "value": 777,
+          "sourceText": "range km=777"
+        },
+        {
+          "key": "ferry_range_km",
+          "value": 963,
+          "sourceText": "ferry range km=963"
+        }
+      ]
+    }
+  }
+}

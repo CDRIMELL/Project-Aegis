@@ -1,0 +1,19 @@
+{
+  "name": "@aegis/ingest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aegis/db": "*",
+    "@aegis/domain": "*",
+    "drizzle-orm": "0.45.3",
+    "zod": "4.6.5"
+  }
+}

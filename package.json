@@ -20,14 +20,18 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:generate": "npm run generate -w @aegis/db",
+    "db:generate": "npm run generate -w @aegis/db --",
     "verify:world": "tsx tools/verify-world.ts",
     "rust:fmt": "cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
     "rust:lint": "cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings",
     "rust:test": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
-    "check:rust": "npm run rust:fmt && npm run rust:lint && npm run rust:test",
-    "ci": "npm run check && npm run check:rust"
+    "check:rust": "npm run rust:prepare && npm run rust:fmt && npm run rust:lint && npm run rust:test",
+    "ci": "npm run check && npm run check:rust",
+    "data:fetch": "tsx packages/ingest/src/node/cli.ts fetch",
+    "data:aircraft-specs": "tsx packages/ingest/src/node/cli.ts aircraft-specs",
+    "data:import": "tsx packages/ingest/src/node/cli.ts import",
+    "rust:prepare": "npm run build -w @aegis/desktop && tsx tools/make-parity-db.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

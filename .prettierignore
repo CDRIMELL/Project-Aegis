@@ -5,3 +5,5 @@ gen
 package-lock.json
 Cargo.lock
 packages/db/migrations
+data/sources.lock.json
+data/curated/*.wikipedia.json
