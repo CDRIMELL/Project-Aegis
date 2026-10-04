@@ -8,7 +8,7 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 4 of 10 complete.
+Phase 5 of 10 complete.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -23,7 +23,13 @@ Phase 4 of 10 complete.
   between real aerodromes on the map, with fuel, wear and maintenance. The flight model is
   calibrated to each type's published range and states its assumptions.
 
-There is no mission system, weather, traffic or economy yet.
+- **Missions:** ten mission types as templates over one framework. Missions are created by hand
+  or offered by the simulated world, routed with the flight planner, judged by objectives as the
+  flight progresses, and recorded with their outcome. Risk is shown with the reasons for it.
+- **Command and event log:** an append-only record of every action and what the world did in
+  response, from which a saved world can be re-derived.
+
+There is no weather, traffic or economy yet.
 
 ## Requirements
 
@@ -46,7 +52,7 @@ npm run dev          # run the desktop app with hot reload
 ```sh
 npm run ci               # format, lint, type-check and all tests (TypeScript and Rust)
 npm run build            # data:build, then the release executable and installer
-npm run verify:world     # replay the saved world from its seed and confirm it matches
+npm run verify:world     # replay the saved world from its seed and log and confirm it matches
 npm run verify:reference # check and fingerprint the reference data in the database
 ```
 

@@ -100,8 +100,49 @@ Coverage of the 13 types that had no characteristics after phase 2:
 | Embraer E190        | none established | —                                                  |
 | Dash 8-400          | none established | —                                                  |
 
-The last five have no characteristics at all. For those, either the official page could not be
-retrieved or it did not state the figures in its text.
+Four of the last five still have no characteristics at all. For those, either the official page
+could not be retrieved or it did not state the figures in its text.
+
+### Phase 5 additions
+
+Fuel capacity became a characteristic (`fuel_capacity_kg`, and `fuel_capacity_l` where the source
+gives a volume; a volume is stored as published and never converted in the reference data). The
+flight model uses a sourced capacity where there is one and says so
+([ADR 0019](adr/0019-sourced-fuel-capacity.md)).
+
+| Type                | Source used                            | Values added                                |
+| ------------------- | -------------------------------------- | ------------------------------------------- |
+| Eurofighter Typhoon | Wikipedia (cites Eurofighter)          | fuel capacity (internal)                    |
+| Airbus A400M        | Airbus                                 | fuel capacity                               |
+| Boeing C-17         | Wikipedia                              | fuel capacity, as a volume                  |
+| Voyager (A330 MRTT) | Airbus                                 | fuel capacity, ferry range                  |
+| AW101 Merlin        | none established                       | fuel capacity: no retrieved source gives it |
+| Boeing Chinook      | Boeing                                 | maximum gross weight, fuel capacity         |
+| Hawk T2             | Wikipedia, "Specifications (Hawk 128)" | empty mass, max take-off mass, range        |
+| F-35A               | Wikipedia, "Specifications (F-35A)"    | max speed, fuel capacity (internal)         |
+
+Where the automatic extractor cannot read an article (an older template, or a figure with text
+around it), a single figure may be entered by hand in the curated file, naming the article and the
+revision. Such an entry carries a note and is therefore imported at medium confidence.
+
+Voyager still cannot fly: no retrieved source gives its empty mass or a speed, and the only
+maximum take-off mass published is for a different variant. Those gaps are recorded as not
+established.
+
+**25 of the 40 types can fly.** `npx tsx tools/flyable-types.ts` lists them, the basis of each
+type's fuel capacity, and what each of the other 15 lacks:
+
+| Cannot fly yet                    | Lacks                                       |
+| --------------------------------- | ------------------------------------------- |
+| Voyager                           | empty mass, max take-off mass, speed        |
+| F-35B, Protector                  | empty mass, max take-off mass, range, speed |
+| Shadow R1                         | empty mass, max take-off mass, range        |
+| Phenom                            | empty mass                                  |
+| Gripen                            | speed                                       |
+| Global Hawk                       | max take-off mass, range                    |
+| C295                              | empty mass, max take-off mass, range        |
+| A320neo, 787-9, 777-300ER, ATR 72 | empty mass, speed                           |
+| A380, E190, Dash 8-400            | empty mass, max take-off mass, range, speed |
 
 ## How reference data reaches an installation
 

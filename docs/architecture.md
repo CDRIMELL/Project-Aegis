@@ -1,14 +1,16 @@
 # AEGIS architecture
 
-This document describes how AEGIS is built as of phase 4. It is the map; the
+This document describes how AEGIS is built as of phase 5. It is the map; the
 [ADRs](adr/README.md) are the reasons. Product intent lives in the master handover specification.
 
 ## What exists today
 
 Three things:
 
-- **A simulated world**: a clock, seeded random streams, an integrity digest, and a fleet of
-  aircraft that fly planned routes between real aerodromes, all persisted and restored exactly.
+- **A simulated world**: a clock, seeded random streams, an integrity digest, a fleet of aircraft
+  that fly planned routes between real aerodromes, missions that give those flights a purpose,
+  opportunities the world generates, and an append-only log of everything that happened, all
+  persisted and restored exactly.
 - **Real reference data** (countries, aerodromes, runways, cities, aircraft types) with provenance,
   shipped inside the application and installed on first launch. See
   [reference-data.md](reference-data.md).
@@ -25,7 +27,7 @@ The simulated world is deliberately small. What matters is that the full path is
 user command -> worker -> engine step -> checkpoint -> SQL batch -> Rust -> SQLite -> restart -> same world
 ```
 
-Every later feature (flight, missions, weather, events) adds state and rules to this path. None of
+Every later feature (weather, events, traffic) adds state and rules to this path. None of
 them should need to change its shape.
 
 ## Runtime layout
@@ -64,8 +66,8 @@ launch without touching the real profile.
 
 | Package         | Responsibility                                                             | May depend on        |
 | --------------- | -------------------------------------------------------------------------- | -------------------- |
-| `@aegis/domain` | Value types and pure rules: time, speed, RNG, digest, units, geodesy       | nothing              |
-| `@aegis/sim`    | Engine, runner, world snapshot, persistence port (`WorldStore`)            | `domain`             |
+| `@aegis/domain` | Value types and pure rules: time, RNG, geodesy, flight, missions           | nothing              |
+| `@aegis/sim`    | Engine, runner, fleet, missions, log, persistence port (`WorldStore`)      | `domain`             |
 | `@aegis/db`     | Drizzle schema, migrations, SQL transport, `SqliteWorldStore`              | `domain`, `sim`      |
 | `@aegis/ingest` | Reference pipeline: normalise, load, data pack, basemap preparation, CLI   | `domain`, `db`       |
 | `@aegis/ui`     | Design tokens, token resolver for canvas renderers, every shared component | React, Radix, Lucide |
@@ -94,8 +96,22 @@ platform or persistence code and from using `Date.now`, `Math.random` or timers.
   screen, prove a world continued exactly across a restart.
 
 Adding a subsystem means: add its state to `WorldSnapshot`, call it from `SimulationEngine.step()` in
-a fixed position, give it its own RNG stream, persist its state in the same checkpoint batch, and
-bump `SIM_MODEL_VERSION` if existing worlds would behave differently.
+a fixed position, give it its own RNG stream, persist its state in the same checkpoint batch, log
+its commands and events, and bump `SIM_MODEL_VERSION` if existing worlds would behave differently.
+
+The step order is fixed: the fleet moves aircraft, then missions read where they are, then the
+integrity digest is updated.
+
+### Command and event log
+
+Every command that changed the world is recorded with its whole payload, and everything the world
+did in response is recorded as an event, in one append-only table written in the checkpoint
+transaction ([ADR 0018](adr/0018-command-log.md)). Rejected commands, commands with no effect and
+pacing (pause, resume, speed) are not logged.
+
+Because commands carry complete payloads, a world can be re-derived from its seed and its log
+(`replayWorld`). That is used for verification, by the test suite and by `npm run verify:world`;
+there is no replay feature.
 
 ## Fleet and flight
 
@@ -106,9 +122,10 @@ The decisions and every assumption are in [ADR 0016](adr/0016-fleet-and-flight-m
 - **Reference data reaches the simulation in one place**, `apps/desktop/src/fleet/catalogue.ts`,
   and as a copy. An aircraft stores the performance model it was acquired with; a flight stores the
   coordinates of its route. The engine never reads `ref_*`.
-- **Performance model** (`derivePerformance`): sourced mass, range, speed and ceiling, plus named
-  assumptions for everything the reference data lacks. A type missing a required characteristic
-  has no model and cannot fly; nothing is substituted.
+- **Performance model** (`derivePerformance`): sourced mass, range, speed, ceiling and, where a
+  source gives one, fuel capacity, plus named assumptions for everything the reference data lacks.
+  A type missing a required characteristic has no model and cannot fly; nothing is substituted.
+  Flight model 2 ([ADR 0019](adr/0019-sourced-fuel-capacity.md)).
 - **Flight step** (`advanceFlight`): take-off, climb, cruise, descent, landing along great-circle
   legs, one simulation step at a time, inside the engine step.
 - **Fuel**: the Breguet range equation, calibrated per type to its published range. Burn depends on
@@ -116,7 +133,10 @@ The decisions and every assumption are in [ADR 0016](adr/0016-fleet-and-flight-m
 - **Planning** (`evaluatePlan`): runs the same step function over the whole route, so the estimate
   equals the outcome in still air. Constraints are `block`, `warning` or `note`.
 - **Commands**: `acquireAircraft`, `seedStarterFleet`, `setHome`, `setLoad`, `launchFlight`,
-  `startMaintenance`. A refused command throws `CommandRejected` and changes nothing.
+  `startMaintenance`, `updatePerformance`. A refused command throws `CommandRejected` and changes
+  nothing.
+- **Model migration**: `updatePerformance` moves a grounded aircraft to the current flight model.
+  An airborne aircraft is refused and finishes its flight under the model it departed with.
 - **Maintenance**: flying wears condition and accumulates hours; a due aircraft cannot launch until
   maintained, which takes simulated time.
 
@@ -135,6 +155,9 @@ There is one draft, in `state/plan-store.ts`. The panel's controls and the map's
 change it through the same pure functions, and both render from it, so they cannot disagree. The
 estimate and constraints are recomputed from the draft on every change.
 
+A mission's route is edited in the same planner, on the same draft. The only difference is where
+the draft goes when the player is done: saved to the mission, instead of launched.
+
 ### Drawing flights
 
 The simulation publishes state about ten times a second. `flight-binding.ts` writes routes and
@@ -142,12 +165,59 @@ aircraft straight into MapLibre sources and, between updates, interpolates each 
 own route every animation frame. Interpolation is display only. React renders the panels; it never
 renders a frame of aircraft movement.
 
+## Missions
+
+The decisions are in [ADR 0017](adr/0017-missions.md).
+
+| Thing       | Owns                                        |
+| ----------- | ------------------------------------------- |
+| Mission     | Intent: type, objectives, timing, outcome   |
+| Flight plan | Route, cruise altitude and speed, load      |
+| Flight      | The simulated movement of one aircraft      |
+| Aircraft    | Persistent state: fuel, condition, location |
+
+- **One framework, ten templates.** A mission type is a `MissionTemplate`: route shape, suitable
+  aircraft categories, default objectives, priority and timing. There is one mission
+  implementation. Types are simulation categories; nothing is modelled beyond the flight.
+- **Lifecycle.** `draft`, `planned`, `accepted`, `active`, then `completed` or `failed`;
+  `cancelled` before launch. Generated opportunities start `offered` and may be `rejected` or
+  `expired`. "Ready" is derived from the aircraft, not stored.
+- **A mission never moves an aircraft.** `launchMission` launches a flight through the fleet,
+  which validates it like any other. An aircraft committed to an accepted mission cannot be flown
+  on anything else until it is released.
+- **Objectives** are judged each step by a pure function of the mission's flight
+  (`evaluateObjective`). The planner runs the same function over the planned flight, so the
+  player sees what each objective will do before committing.
+- **Validation** (`evaluateMission`) is the flight planner's constraints plus the mission's own,
+  at the same three severities. A mission cannot relax a flight constraint.
+- **Risk** is an index of named contributors, each with the reason for its value. It explains a
+  plan and decides nothing.
+- **Outcome.** When the flight ends the mission is completed if every required objective is
+  complete, failed otherwise. A delivered payload is unloaded; a successful ferry rebases the
+  aircraft. `MissionOutcome` is where later systems attach.
+- **Opportunities.** Once per simulated hour the world may generate one, from its own seeded
+  stream, anchored on an aircraft that can fly it. At most three wait for an answer; each expires.
+  The places come from the **operating area**: public aerodromes the application copies into the
+  world once, chosen by OurAirports size class and distance only.
+
+| Layer                           | Where                                                            |
+| ------------------------------- | ---------------------------------------------------------------- |
+| Templates, objectives, risk     | `packages/domain/src/mission/`                                   |
+| Mission state, commands, events | `packages/sim/src/missions.ts`                                   |
+| Log and replay                  | `packages/sim/src/log.ts`, `replay.ts`                           |
+| Persistence                     | `packages/db/src/mission-schema.ts`, `log-schema.ts`             |
+| Form, readiness, operating area | `apps/desktop/src/missions/`                                     |
+| Screens                         | `apps/desktop/src/features/missions/`                            |
+| Map features and binding        | `apps/desktop/src/map/mission-features.ts`, `mission-binding.ts` |
+
 ## Persistence model
 
 - **Checkpoint.** One transaction writes the clock, every RNG stream, the digest, the checkpoint
-  sequence number, every aircraft, every flight in memory and the identifier counters. The database always describes a single simulation instant.
+  sequence number, every aircraft, mission and flight in memory, the identifier counters and the
+  log entries not yet on disk. The database always describes a single simulation instant, and
+  never holds state without the log entries that explain it.
 - **When.** Every 2 s of real time while the world is changing; immediately on pause, resume,
-  speed change and every fleet command; and when the window closes.
+  speed change and every command; and when the window closes.
 - **Ordering.** Writes never overlap. If one is in flight, the newest capture waits and replaces any
   older capture still waiting.
 - **Failure.** A failed write is reported in the view, the world keeps running, and the next
@@ -158,15 +228,18 @@ renders a frame of aircraft movement.
 
 ### Schema
 
-| Table            | Rows | Contents                                               |
-| ---------------- | ---- | ------------------------------------------------------ |
-| `sim_world`      | 1    | seed, simulation model version, epoch                  |
-| `sim_clock`      | 1    | simulation time, tick, speed, running                  |
-| `sim_checkpoint` | 1    | sequence number, wall-clock time, integrity digest     |
-| `sim_rng_stream` | n    | one row per named RNG stream                           |
-| `sim_aircraft`   | n    | one row per simulated aircraft                         |
-| `sim_flight`     | n    | active and finished flights; finished ones are history |
-| `sim_counter`    | n    | next sequence number per identifier prefix             |
+| Table            | Rows | Contents                                                 |
+| ---------------- | ---- | -------------------------------------------------------- |
+| `sim_world`      | 1    | seed, simulation model version, epoch                    |
+| `sim_clock`      | 1    | simulation time, tick, speed, running                    |
+| `sim_checkpoint` | 1    | sequence number, wall-clock time, integrity digest       |
+| `sim_rng_stream` | n    | one row per named RNG stream                             |
+| `sim_aircraft`   | n    | one row per simulated aircraft                           |
+| `sim_flight`     | n    | active and finished flights; finished ones are history   |
+| `sim_counter`    | n    | next sequence number per identifier prefix               |
+| `sim_mission`    | n    | every mission and opportunity; finished ones are history |
+| `sim_place`      | n    | the operating area: aerodromes copied into the world     |
+| `sim_log`        | n    | append-only command and event log                        |
 
 Singleton tables enforce `id = 1` with a CHECK constraint. Table prefixes separate families:
 `ref_` (sourced reference data), `sim_` (simulated world), `sys_` (application records).
@@ -211,45 +284,54 @@ into the simulation.
 ### Shell and routing
 
 Seven areas: Overview, Operations, Fleet, Missions, Reports, Data, System. Operations (the map),
-Fleet, Data and System exist and have routes. The others are listed in the rail, disabled, with the phase
+Fleet, Missions, Data and System exist and have routes. The others are listed in the rail, disabled, with the phase
 that delivers them; there are no placeholder screens. The simulation clock stays in the top bar on
 every screen (ADR 0015).
 
 ### Map
 
-| Tier        | Content                                                   | Fed by                      |
-| ----------- | --------------------------------------------------------- | --------------------------- |
-| basemap     | Land, water, borders, graticule, country names            | Bundled Natural Earth files |
-| reference   | Aerodromes, runways, cities (teal)                        | `ref_*` tables, read once   |
-| simulation  | Aircraft and flight routes (green); events, weather later | Simulation state, per frame |
-| interaction | Selection; the draft flight plan and its handles          | UI state                    |
+| Tier        | Content                                                  | Fed by                      |
+| ----------- | -------------------------------------------------------- | --------------------------- |
+| basemap     | Land, water, borders, graticule, country names           | Bundled Natural Earth files |
+| reference   | Aerodromes, runways, cities (teal)                       | `ref_*` tables, read once   |
+| simulation  | Aircraft, flight routes, missions (green); weather later | Simulation state            |
+| interaction | Selection; the draft flight plan and its handles         | UI state                    |
 
 Tiers are separated by slot layers and cannot interleave. The map is driven by `MapController`
 methods, not by rendering components, so data updates never re-render React; that is the path
 aircraft positions will take. Each location carries the lowest zoom at which it appears, so the
 world view shows a few hundred places and all 55,000 arrive progressively. Details in ADR 0014.
 
-`map/density.ts`, `map/features.ts` and `map/style.ts` are pure and unit tested. `map/controller.ts`
+Aircraft are redrawn every frame. Mission routes, waypoints and objective areas are redrawn only
+when a mission is created, edited or changes state, through `addSimulationSource`.
+
+`map/density.ts`, `map/features.ts`, `map/mission-features.ts` and `map/style.ts` are pure and unit
+tested. `map/controller.ts`
 needs a GPU and is verified by running the application.
 
 ## Testing
 
-| Layer       | Tool                   | What it proves                                                               |
-| ----------- | ---------------------- | ---------------------------------------------------------------------------- |
-| Domain      | Vitest, fast-check     | RNG reference vector, stream isolation, bounds, time and digest helpers      |
-| Simulation  | Vitest                 | Determinism, every speed, pause/resume, catch-up cap, checkpoint policy      |
-| Persistence | Vitest + `node:sqlite` | Round trip, atomic rollback, constraints, restart continuity, crash recovery |
-| Native core | `cargo test`           | Batch atomicity, statement guard, value conversion, migrations, backup, gate |
-| Ingestion   | Vitest + `node:sqlite` | Normalisation, idempotency, reproducibility, atomic failure, data pack       |
-| Map         | Vitest                 | Tier order, density rules, feature building, style uses only palette colours |
-| Flight      | Vitest                 | Fuel calibration, phases, constraints, determinism, 1x equals 100x           |
-| Scenario    | Vitest + `node:sqlite` | Starter fleet, plan, edit, launch, fly, save, reload, land, end to end       |
+| Layer            | Tool                   | What it proves                                                               |
+| ---------------- | ---------------------- | ---------------------------------------------------------------------------- |
+| Domain           | Vitest, fast-check     | RNG reference vector, stream isolation, bounds, time and digest helpers      |
+| Simulation       | Vitest                 | Determinism, every speed, pause/resume, catch-up cap, checkpoint policy      |
+| Persistence      | Vitest + `node:sqlite` | Round trip, atomic rollback, constraints, restart continuity, crash recovery |
+| Native core      | `cargo test`           | Batch atomicity, statement guard, value conversion, migrations, backup, gate |
+| Ingestion        | Vitest + `node:sqlite` | Normalisation, idempotency, reproducibility, atomic failure, data pack       |
+| Map              | Vitest                 | Tier order, density rules, feature building, style uses only palette colours |
+| Flight           | Vitest                 | Fuel calibration, phases, constraints, determinism, 1x equals 100x           |
+| Scenario         | Vitest + `node:sqlite` | Starter fleet, plan, edit, launch, fly, save, reload, land, end to end       |
+| Missions         | Vitest                 | Lifecycle, objectives, validation, risk, seeded generation, consequences     |
+| Log              | Vitest + `node:sqlite` | Append-only, atomic with state, deterministic order, replay from seed        |
+| Mission scenario | Vitest + `node:sqlite` | Create, route, edit, accept, launch, complete, reopen, generated offer       |
 
 Persistence tests use the same Drizzle driver and SQL as production; only the transport differs.
 
 Two tools check a real database independently of the code that wrote it:
-`npm run verify:world` replays the saved world from its seed, and `npm run verify:reference`
-checks integrity, provenance and source hashes and fingerprints the reference tables.
+`npm run verify:world` checks a saved world's continuity and re-derives the whole world from its
+seed and its logged commands, and `npm run verify:reference` checks integrity, provenance and
+source hashes and fingerprints the reference tables. `npx tsx tools/flyable-types.ts` lists which
+reference types the flight model can fly and what each of the others lacks.
 
 ## Commands
 

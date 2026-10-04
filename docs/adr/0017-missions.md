@@ -53,8 +53,8 @@ offered ──accept──▶ planned ──accept──▶ accepted ──launc
 - `planned`: has an aircraft, a route and a load.
 - `accepted`: committed. The aircraft is assigned and cannot be used for another flight.
 - `active`: its flight is airborne.
-- `completed` / `failed`: decided by objectives when the flight ends, or earlier if a required
-  objective fails.
+- `completed` / `failed`: decided by objectives when the flight ends. An objective may fail
+  earlier, and is shown as failed, but the mission stays active until its aircraft is down.
 - `cancelled`: withdrawn by the player before launch. `accepted` missions whose deadline passes
   unlaunched fail.
 - `offered`, `rejected`, `expired`: generated opportunities only.
@@ -64,6 +64,11 @@ the origin, and its plan has no blocking constraint. It depends on state that ch
 
 **There is no in-flight abort.** A flight cannot be re-planned after launch (ADR 0016), so an abort
 would need diversion, which is a flight-model feature for a later phase.
+
+Commands: `createMission`, `updateMission`, `acceptOffer`, `rejectOffer`, `acceptMission`,
+`releaseMission`, `cancelMission`, `launchMission`, and `setOperatingArea` (issued by the
+application). A mission is edited only while `draft` or `planned`; an accepted one is released
+first.
 
 ### Objectives
 
