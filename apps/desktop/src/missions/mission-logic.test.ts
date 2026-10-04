@@ -40,7 +40,12 @@ import {
   suggestedTarget,
   tickInstant,
 } from './mission-logic';
-import { chooseOperatingArea } from './operating-area';
+import {
+  RECENTRE_DISTANCE_M,
+  chooseOperatingArea,
+  fleetCentre,
+  needsRecentre,
+} from './operating-area';
 
 const { places } = FIXTURES;
 const AREA = { name: 'Area 1', lat: 49.4, lon: -7.2 };
@@ -564,5 +569,72 @@ describe('editing a mission route with the flight planner', () => {
     expect(names(two)).toEqual(['Newquay', 'WP1', 'Area 1', 'WP2', 'Newquay']);
     // Removing the first leaves the second numbered from one again, and the named point as it was.
     expect(names(removeWaypoint(two, 1))).toEqual(['Newquay', 'Area 1', 'WP1', 'Newquay']);
+  });
+});
+
+describe('re-centring the operating area', () => {
+  it('finds the centre of the fleet’s homes on the sphere', () => {
+    expect(fleetCentre([])).toBeNull();
+    expect(fleetCentre([{ lat: 50, lon: -5 }])).toEqual({ lat: 50, lon: -5 });
+    // Midway between two homes on the same meridian.
+    expect(
+      fleetCentre([
+        { lat: 50, lon: -5 },
+        { lat: 56, lon: -5 },
+      ]),
+    ).toEqual({ lat: 53, lon: -5 });
+    // Across the antimeridian the centre is on it, not on the far side of the world.
+    const across = fleetCentre([
+      { lat: 0, lon: 179 },
+      { lat: 0, lon: -179 },
+    ]);
+    expect(Math.abs(across?.lon ?? 0)).toBe(180);
+    expect(across?.lat).toBe(0);
+    // Homes that cancel out exactly have no centre.
+    expect(
+      fleetCentre([
+        { lat: 0, lon: 0 },
+        { lat: 0, lon: 180 },
+      ]),
+    ).toBeNull();
+  });
+
+  it('weights every aircraft equally: where most of the fleet lives pulls the centre', () => {
+    const centre = fleetCentre([
+      places.prestwick,
+      places.prestwick,
+      places.prestwick,
+      places.newquay,
+    ]);
+    expect(centre?.lat).toBeGreaterThan(54);
+  });
+
+  it('does not depend on the order of the fleet', () => {
+    const homes = [places.prestwick, places.newquay, places.exeter];
+    expect(fleetCentre([...homes].reverse())).toEqual(fleetCentre(homes));
+  });
+
+  it('asks for a new area only once the centre has moved 250 km', () => {
+    const chosen = { lat: 53, lon: -4.8 };
+    expect(RECENTRE_DISTANCE_M).toBe(250_000);
+    expect(needsRecentre(chosen, null)).toBe(true);
+    expect(needsRecentre(chosen, chosen)).toBe(false);
+    // About 220 km north: not yet. About 280 km: yes.
+    expect(needsRecentre({ lat: 55, lon: -4.8 }, chosen)).toBe(false);
+    expect(needsRecentre({ lat: 55.6, lon: -4.8 }, chosen)).toBe(true);
+  });
+
+  it('is not triggered by one aircraft of several changing home nearby', () => {
+    const before = fleetCentre([
+      places.prestwick,
+      places.prestwick,
+      places.newquay,
+      places.newquay,
+    ]);
+    const after = fleetCentre([places.prestwick, places.prestwick, places.newquay, places.exeter]);
+    expect(needsRecentre(after as NonNullable<typeof after>, before)).toBe(false);
+    // The whole fleet moving to Cyprus is another matter.
+    const cyprus = fleetCentre([places.akrotiri, places.akrotiri]);
+    expect(needsRecentre(cyprus as NonNullable<typeof cyprus>, before)).toBe(true);
   });
 });

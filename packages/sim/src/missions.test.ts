@@ -635,6 +635,39 @@ describe('world-generated opportunities', () => {
     );
   });
 
+  it('replaces the operating area when the fleet has moved, keeping what was already offered', () => {
+    const engine = withArea('recentre');
+    const offer = runUntilOffer(engine);
+    const moved = [places.akrotiri, places.exeter];
+    expect(
+      engine.applyCommand({
+        type: 'setOperatingArea',
+        places: moved,
+        centre: { lat: 40, lon: 15 },
+      }),
+    ).toBe(true);
+    expect(engine.snapshot().missions).toMatchObject({
+      places: moved,
+      areaCentre: { lat: 40, lon: 15 },
+    });
+    // The opportunity offered from the old area is still there to be taken up.
+    expect(missionOf(engine, offer.id).status).toBe('offered');
+    expect(log(engine).at(-1)).toMatchObject({
+      type: 'setOperatingArea',
+      actor: 'system',
+      payload: { places: moved, centre: { lat: 40, lon: 15 } },
+    });
+
+    // From now on the world draws its places from the new area, and still replays.
+    engine.runSteps(GENERATION.intervalTicks * 40);
+    const later = offers(engine).filter((mission) => mission.createdTick > offer.createdTick);
+    for (const mission of later) {
+      if (mission.brief.destination) expect(moved).toContainEqual(mission.brief.destination);
+    }
+    const replayed = replayWorld(newWorld('recentre'), log(engine), engine.clock.tick);
+    expect(replayComparable(replayed.snapshot())).toEqual(replayComparable(engine.snapshot()));
+  });
+
   it('generates nothing in a world with no operating area', () => {
     const engine = world();
     engine.runSteps(GENERATION.intervalTicks * 200);

@@ -4,7 +4,7 @@ import { loadLargeAerodromes } from '../reference/queries';
 import { simClient } from '../sim/client';
 import { useReferenceStore } from '../state/reference-store';
 import { useSimStore } from '../state/sim-store';
-import { chooseOperatingArea } from './operating-area';
+import { chooseOperatingArea, fleetCentre, needsRecentre } from './operating-area';
 
 /*
  * Application-side mission services: the one-time operating area, and the commands the screens
@@ -12,31 +12,45 @@ import { chooseOperatingArea } from './operating-area';
  * simulation never reads it (ADR 0016, ADR 0017).
  */
 
+/** The fleet's homes as last examined, so the area is reconsidered only when a home changes. */
+let examinedHomes: string | null = null;
 let areaRequested = false;
 
 /**
- * Gives a world its operating area, once it has a fleet to centre it on and reference data to
- * take it from. A world keeps the area it was given.
+ * Gives a world its operating area once it has a fleet to centre it on and reference data to take
+ * it from, and chooses it afresh when the fleet's homes have moved 250 km or more (ADR 0022).
+ * The replacement is one logged command; opportunities already offered are kept.
  */
 async function setOperatingAreaIfNeeded(): Promise<void> {
   const view = useSimStore.getState().view;
   if (
     areaRequested ||
     !view ||
-    view.missions.operatingAreaSize > 0 ||
     view.fleet.aircraft.length === 0 ||
     useReferenceStore.getState().phase !== 'ready'
   ) {
     return;
   }
+  // Look again only when a home aerodrome has changed, never on every update.
+  const homes = view.fleet.aircraft.map((aircraft) => aircraft.home);
+  const homesKey = homes.map((home) => home.refId ?? `${home.lat},${home.lon}`).join('|');
+  const hasArea = view.missions.operatingAreaSize > 0;
+  if (hasArea && homesKey === examinedHomes) return;
+  examinedHomes = homesKey;
+
+  const centre = fleetCentre(homes);
+  if (!centre) return;
+  // A world gets an area once, and a new one only when its fleet has materially moved.
+  if (hasArea && !needsRecentre(centre, view.missions.areaCentre)) return;
+
   areaRequested = true;
   try {
-    const homes = view.fleet.aircraft.map((aircraft) => aircraft.home);
     const places = chooseOperatingArea(await loadLargeAerodromes(), homes);
-    if (places.length > 0) simClient.send({ type: 'setOperatingArea', places });
-    else areaRequested = false;
+    if (places.length > 0) simClient.send({ type: 'setOperatingArea', places, centre });
   } catch {
-    // Try again on the next state update; without an area the world simply generates nothing.
+    // Look again on the next change of home; until then the world keeps the area it has.
+    examinedHomes = null;
+  } finally {
     areaRequested = false;
   }
 }

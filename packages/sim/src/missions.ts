@@ -420,9 +420,15 @@ export class Missions {
             throw new CommandRejected('An operating area holds valid aerodromes only.');
           }
         }
-        if (JSON.stringify(command.places) === JSON.stringify(this.places)) return null;
+        const centre = command.centre ?? null;
+        if (
+          JSON.stringify(command.places) === JSON.stringify(this.places) &&
+          JSON.stringify(centre) === JSON.stringify(this.areaCentre)
+        ) {
+          return null;
+        }
         this.places = [...command.places];
-        this.areaCentre = command.centre ?? null;
+        this.areaCentre = centre;
         return {};
       }
 
