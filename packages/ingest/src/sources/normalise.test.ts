@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AIRCRAFT_ATTRIBUTES_JSON,
+  AIRCRAFT_CHARACTERISTICS_JSON,
   AIRCRAFT_TYPES_JSON,
   AIRPORTS_CSV,
   CITIES_GEOJSON,
@@ -9,6 +10,7 @@ import {
   rawFixture,
 } from '../testing';
 import { normaliseAircraftAttributes, normaliseAircraftTypes, readCuratedTypes } from './aircraft';
+import { normaliseCuratedCharacteristics } from './aircraft-curated';
 import { normaliseCities } from './natural-earth';
 import { normaliseAirports, normaliseCountries, normaliseRunways } from './ourairports';
 
@@ -132,6 +134,10 @@ describe('OurAirports runways', () => {
       highEndIdent: '27R',
       lowEndHeadingDeg: 89.6,
       highEndHeadingDeg: 269.7,
+      lowEndLat: 51.4775,
+      lowEndLon: -0.489428,
+      highEndLat: 51.4777,
+      highEndLon: -0.433264,
     });
   });
 
@@ -268,5 +274,125 @@ describe('aircraft characteristics', () => {
     expect(orphan.issues).toContainEqual(
       expect.objectContaining({ code: 'unknown_aircraft_type', recordKey: 'typhoon' }),
     );
+  });
+});
+
+describe('runway threshold positions', () => {
+  const header =
+    'id,airport_ref,length_ft,width_ft,surface,lighted,closed,le_ident,he_ident,le_latitude_deg,le_longitude_deg,he_latitude_deg,he_longitude_deg';
+  const run = (rows: string) =>
+    normaliseRunways(rawFixture(`${header}\n${rows}\n`), new Set(['1']));
+
+  it('keeps both ends or neither', () => {
+    const result = run(
+      '10,1,5000,100,ASP,1,0,09,27,51.1,-1.2,51.1,-1.1\n11,1,5000,100,ASP,1,0,18,36,,,,',
+    );
+    expect(result.rows[0]).toMatchObject({
+      lowEndLat: 51.1,
+      lowEndLon: -1.2,
+      highEndLat: 51.1,
+      highEndLon: -1.1,
+    });
+    expect(result.rows[1]).toMatchObject({
+      lowEndLat: null,
+      lowEndLon: null,
+      highEndLat: null,
+      highEndLon: null,
+    });
+    expect(result.issues).toEqual([]);
+  });
+
+  it('drops incomplete or impossible positions with a warning, keeping the runway', () => {
+    const result = run(
+      '12,1,5000,100,ASP,1,0,09,27,51.1,-1.2,,\n13,1,5000,100,ASP,1,0,09,27,95,-1.2,51.1,-1.1',
+    );
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows.every((row) => row.lowEndLat === null && row.highEndLon === null)).toBe(
+      true,
+    );
+    expect(result.issues.map((issue) => [issue.severity, issue.code, issue.recordKey])).toEqual([
+      ['warning', 'invalid_runway_position', '12'],
+      ['warning', 'invalid_runway_position', '13'],
+    ]);
+  });
+});
+
+describe('curated aircraft characteristics', () => {
+  const curated = readCuratedTypes(AIRCRAFT_TYPES_JSON).types;
+  const result = normaliseCuratedCharacteristics(
+    rawFixture(AIRCRAFT_CHARACTERISTICS_JSON),
+    curated,
+  );
+  const row = (key: string) => result.rows.find((candidate) => candidate.key === key);
+
+  it('keeps the publisher wording and marks hand-entered values unverified', () => {
+    expect(row('length_m')).toEqual({
+      sourceKey: 'a380/length_m',
+      confidence: 'high',
+      verification: 'unverified',
+      typeId: 'aegis-curated:a380',
+      key: 'length_m',
+      value: 72.72,
+      sourceText: 'Overall length 72.72 m',
+      sourceUrl: 'https://example.org/aircraft/a380',
+      note: 'Example Air Force, aircraft page, retrieved 2026-10-04.',
+    });
+  });
+
+  it('converts from the unit the source used', () => {
+    expect(row('max_speed_kmh')?.value).toBe(1028);
+    expect(row('service_ceiling_m')?.value).toBe(12802);
+    expect(row('max_takeoff_mass_kg')?.value).toBe(79000);
+  });
+
+  it('lowers confidence when the entry carries a caveat', () => {
+    expect(row('max_speed_kmh')).toMatchObject({
+      confidence: 'medium',
+      note: 'Example Air Force, aircraft page, retrieved 2026-10-04. Rounded by the source.',
+    });
+  });
+
+  it('reports a value that could not be established instead of inventing one', () => {
+    expect(result.rows.some((candidate) => candidate.typeId === 'aegis-curated:f-35b')).toBe(false);
+    expect(result.issues).toEqual([
+      {
+        severity: 'warning',
+        code: 'value_not_established',
+        recordKey: 'f-35b/length_m',
+        message: 'No official page retrieved.',
+      },
+    ]);
+  });
+
+  it('rejects unit mismatches, unknown types and fields outside the agreed scope', () => {
+    const base = {
+      type: 'a380',
+      key: 'length_m',
+      sourceValue: 10,
+      sourceUnit: 'm',
+      sourceText: 'x',
+      sourceName: 'x',
+      sourceUrl: 'https://example.org/',
+      retrievedAt: '2026-10-04',
+    };
+    const file = JSON.stringify({
+      revisedAt: '2026-10-04',
+      entries: [
+        { ...base, sourceUnit: 'kg' },
+        { ...base, type: 'not-curated' },
+        { ...base, payloadKg: 1000 },
+        { ...base, key: 'weapon_stations' },
+        { ...base, sourceValue: -1 },
+      ],
+    });
+    const bad = normaliseCuratedCharacteristics(rawFixture(file), curated);
+    expect(bad.rows).toEqual([]);
+    expect(codes(bad.issues)).toEqual([
+      'invalid_characteristic',
+      'invalid_characteristic',
+      'invalid_characteristic',
+      'unit_mismatch',
+      'unknown_aircraft_type',
+    ]);
   });
 });

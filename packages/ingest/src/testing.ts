@@ -138,6 +138,52 @@ export const AIRCRAFT_TYPES_JSON = JSON.stringify({
   ],
 });
 
+const OFFICIAL = {
+  sourceName: 'Example Air Force, aircraft page',
+  sourceUrl: 'https://example.org/aircraft/a380',
+  retrievedAt: '2026-10-04',
+};
+
+export const AIRCRAFT_CHARACTERISTICS_JSON = JSON.stringify({
+  revisedAt: '2026-10-04',
+  entries: [
+    {
+      type: 'a380',
+      key: 'length_m',
+      sourceValue: 72.72,
+      sourceUnit: 'm',
+      sourceText: 'Overall length 72.72 m',
+      ...OFFICIAL,
+    },
+    {
+      type: 'a380',
+      key: 'max_speed_kmh',
+      sourceValue: 555,
+      sourceUnit: 'kt',
+      sourceText: 'Maximum speed 555kt',
+      note: 'Rounded by the source.',
+      ...OFFICIAL,
+    },
+    {
+      type: 'a380',
+      key: 'service_ceiling_m',
+      sourceValue: 42000,
+      sourceUnit: 'ft',
+      sourceText: 'Maximum altitude 42,000ft',
+      ...OFFICIAL,
+    },
+    {
+      type: 'a380',
+      key: 'max_takeoff_mass_kg',
+      sourceValue: 79,
+      sourceUnit: 't',
+      sourceText: 'Max take-off weight 79.00 tonnes',
+      ...OFFICIAL,
+    },
+    { type: 'f-35b', key: 'length_m', sourceValue: null, reason: 'No official page retrieved.' },
+  ],
+});
+
 export const AIRCRAFT_ATTRIBUTES_JSON = JSON.stringify({
   retrievedAt: '2026-10-04T10:00:00.000Z',
   types: {

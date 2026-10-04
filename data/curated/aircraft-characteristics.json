@@ -1,0 +1,361 @@
+{
+  "revisedAt": "2026-10-04",
+  "entries": [
+    {
+      "type": "hawk-t2",
+      "key": "length_m",
+      "sourceValue": 12.43,
+      "sourceUnit": "m",
+      "sourceText": "Length 12.43m",
+      "sourceName": "Royal Air Force, Hawk T2 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/hawk-t2/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "hawk-t2",
+      "key": "height_m",
+      "sourceValue": 3.98,
+      "sourceUnit": "m",
+      "sourceText": "Height 3.98m",
+      "sourceName": "Royal Air Force, Hawk T2 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/hawk-t2/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "hawk-t2",
+      "key": "wingspan_m",
+      "sourceValue": 9.94,
+      "sourceUnit": "m",
+      "sourceText": "Wingspan 9.94m",
+      "sourceName": "Royal Air Force, Hawk T2 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/hawk-t2/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "hawk-t2",
+      "key": "max_speed_kmh",
+      "sourceValue": 555,
+      "sourceUnit": "kt",
+      "sourceText": "Maximum speed 555kt",
+      "sourceName": "Royal Air Force, Hawk T2 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/hawk-t2/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "hawk-t2",
+      "key": "service_ceiling_m",
+      "sourceValue": 42000,
+      "sourceUnit": "ft",
+      "sourceText": "Maximum altitude 42,000ft",
+      "sourceName": "Royal Air Force, Hawk T2 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/hawk-t2/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "shadow-r1",
+      "key": "length_m",
+      "sourceValue": 14.26,
+      "sourceUnit": "m",
+      "sourceText": "Length 14.26m",
+      "sourceName": "Royal Air Force, Shadow R1 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/shadow-r1/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "shadow-r1",
+      "key": "height_m",
+      "sourceValue": 4.48,
+      "sourceUnit": "m",
+      "sourceText": "Height 4.48m",
+      "sourceName": "Royal Air Force, Shadow R1 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/shadow-r1/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "shadow-r1",
+      "key": "wingspan_m",
+      "sourceValue": 17.4,
+      "sourceUnit": "m",
+      "sourceText": "Wingspan 17.40m",
+      "sourceName": "Royal Air Force, Shadow R1 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/shadow-r1/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "shadow-r1",
+      "key": "max_speed_kmh",
+      "sourceValue": 245,
+      "sourceUnit": "kt",
+      "sourceText": "Maximum speed 245kt",
+      "sourceName": "Royal Air Force, Shadow R1 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/shadow-r1/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "shadow-r1",
+      "key": "service_ceiling_m",
+      "sourceValue": 35000,
+      "sourceUnit": "ft",
+      "sourceText": "Maximum altitude 35,000ft",
+      "sourceName": "Royal Air Force, Shadow R1 aircraft page",
+      "sourceUrl": "https://www.raf.mod.uk/aircraft/shadow-r1/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "a320neo",
+      "key": "length_m",
+      "sourceValue": 37.57,
+      "sourceUnit": "m",
+      "sourceText": "Overall length 37.57 m",
+      "sourceName": "Airbus, A320neo aircraft page",
+      "sourceUrl": "https://aircraft.airbus.com/en/aircraft/a320-family/a320neo",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "a320neo",
+      "key": "wingspan_m",
+      "sourceValue": 35.8,
+      "sourceUnit": "m",
+      "sourceText": "Wing span (geometric) 35.80 m",
+      "sourceName": "Airbus, A320neo aircraft page",
+      "sourceUrl": "https://aircraft.airbus.com/en/aircraft/a320-family/a320neo",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "a320neo",
+      "key": "height_m",
+      "sourceValue": 11.76,
+      "sourceUnit": "m",
+      "sourceText": "Height 11.76 m",
+      "sourceName": "Airbus, A320neo aircraft page",
+      "sourceUrl": "https://aircraft.airbus.com/en/aircraft/a320-family/a320neo",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "a320neo",
+      "key": "max_takeoff_mass_kg",
+      "sourceValue": 79,
+      "sourceUnit": "t",
+      "sourceText": "Max take-off weight 79.00 tonnes",
+      "sourceName": "Airbus, A320neo aircraft page",
+      "sourceUrl": "https://aircraft.airbus.com/en/aircraft/a320-family/a320neo",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "a320neo",
+      "key": "range_km",
+      "sourceValue": 6300,
+      "sourceUnit": "km",
+      "sourceText": "Range 6,300 km",
+      "sourceName": "Airbus, A320neo aircraft page",
+      "sourceUrl": "https://aircraft.airbus.com/en/aircraft/a320-family/a320neo",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b787-9",
+      "key": "length_m",
+      "sourceValue": 62.8,
+      "sourceUnit": "m",
+      "sourceText": "Length 62.8 m (206 ft, 1 in) [787-9 column]",
+      "sourceName": "Boeing, 787 Dreamliner page",
+      "sourceUrl": "https://www.boeing.com/commercial/787",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b787-9",
+      "key": "wingspan_m",
+      "sourceValue": 60.1,
+      "sourceUnit": "m",
+      "sourceText": "Wingspan 60.1 m (197 ft, 3 in) [787-9 column]",
+      "sourceName": "Boeing, 787 Dreamliner page",
+      "sourceUrl": "https://www.boeing.com/commercial/787",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b787-9",
+      "key": "height_m",
+      "sourceValue": 17.0,
+      "sourceUnit": "m",
+      "sourceText": "Height 17.0 m (55 ft 10 in) [787-9 column]",
+      "sourceName": "Boeing, 787 Dreamliner page",
+      "sourceUrl": "https://www.boeing.com/commercial/787",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b787-9",
+      "key": "max_takeoff_mass_kg",
+      "sourceValue": 259220,
+      "sourceUnit": "kg",
+      "sourceText": "Maximum takeoff weight 259,220 kg (571,500 lbs) [787-9 column]",
+      "sourceName": "Boeing, 787 Dreamliner page",
+      "sourceUrl": "https://www.boeing.com/commercial/787",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b787-9",
+      "key": "range_km",
+      "sourceValue": 15370,
+      "sourceUnit": "km",
+      "sourceText": "Range Up to 8,300 nmi (15,370 km) [787-9 column]",
+      "sourceName": "Boeing, 787 Dreamliner page",
+      "sourceUrl": "https://www.boeing.com/commercial/787",
+      "retrievedAt": "2026-10-04",
+      "note": "The source states an upper bound (\"up to\")."
+    },
+    {
+      "type": "b777-300er",
+      "key": "length_m",
+      "sourceValue": 73.9,
+      "sourceUnit": "m",
+      "sourceText": "Length 73.9 m (242 ft 4 in) [third column, 777-300ER]",
+      "sourceName": "Boeing, 777 page",
+      "sourceUrl": "https://www.boeing.com/commercial/777",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b777-300er",
+      "key": "wingspan_m",
+      "sourceValue": 64.8,
+      "sourceUnit": "m",
+      "sourceText": "Wingspan 64.8 m (212 ft 7 in) [third column, 777-300ER]",
+      "sourceName": "Boeing, 777 page",
+      "sourceUrl": "https://www.boeing.com/commercial/777",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b777-300er",
+      "key": "height_m",
+      "sourceValue": 18.5,
+      "sourceUnit": "m",
+      "sourceText": "Height 18.5 m (60 ft 8 in) [third column, 777-300ER]",
+      "sourceName": "Boeing, 777 page",
+      "sourceUrl": "https://www.boeing.com/commercial/777",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b777-300er",
+      "key": "max_takeoff_mass_kg",
+      "sourceValue": 351530,
+      "sourceUnit": "kg",
+      "sourceText": "Maximum takeoff weight 351,530 kg (775,000 lb) [third column, 777-300ER]",
+      "sourceName": "Boeing, 777 page",
+      "sourceUrl": "https://www.boeing.com/commercial/777",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "b777-300er",
+      "key": "range_km",
+      "sourceValue": 13890,
+      "sourceUnit": "km",
+      "sourceText": "Range Up to 7,500 nmi (13,890 km) [third column, 777-300ER]",
+      "sourceName": "Boeing, 777 page",
+      "sourceUrl": "https://www.boeing.com/commercial/777",
+      "retrievedAt": "2026-10-04",
+      "note": "The source states an upper bound (\"up to\"). The page's columns are not labelled in the extracted text; the third column was identified as the 777-300ER by its length."
+    },
+    {
+      "type": "atr-72",
+      "key": "length_m",
+      "sourceValue": 27.17,
+      "sourceUnit": "m",
+      "sourceText": "Overall Length 27.17m",
+      "sourceName": "ATR, ATR 72-600 aircraft page",
+      "sourceUrl": "https://www.atr-aircraft.com/our-aircraft/atr-72-600/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "atr-72",
+      "key": "wingspan_m",
+      "sourceValue": 27.05,
+      "sourceUnit": "m",
+      "sourceText": "Wingspan 27.05m",
+      "sourceName": "ATR, ATR 72-600 aircraft page",
+      "sourceUrl": "https://www.atr-aircraft.com/our-aircraft/atr-72-600/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "atr-72",
+      "key": "max_takeoff_mass_kg",
+      "sourceValue": 23000,
+      "sourceUnit": "kg",
+      "sourceText": "Maximum Take-off Weight 23,000kg",
+      "sourceName": "ATR, ATR 72-600 aircraft page",
+      "sourceUrl": "https://www.atr-aircraft.com/our-aircraft/atr-72-600/",
+      "retrievedAt": "2026-10-04"
+    },
+    {
+      "type": "atr-72",
+      "key": "range_km",
+      "sourceValue": 1370,
+      "sourceUnit": "km",
+      "sourceText": "Range (max pax) 740NM / 1,370km",
+      "sourceName": "ATR, ATR 72-600 aircraft page",
+      "sourceUrl": "https://www.atr-aircraft.com/our-aircraft/atr-72-600/",
+      "retrievedAt": "2026-10-04",
+      "note": "Range with maximum passengers."
+    },
+    {
+      "type": "c295",
+      "key": "cruise_speed_kmh",
+      "sourceValue": 260,
+      "sourceUnit": "kt",
+      "sourceText": "a maximum cruise speed of 260 knots",
+      "sourceName": "Airbus, C295 product page",
+      "sourceUrl": "https://www.airbus.com/en/products-services/defence/military-aircraft/c295",
+      "retrievedAt": "2026-10-04",
+      "note": "Maximum cruise speed."
+    },
+    {
+      "type": "c295",
+      "key": "service_ceiling_m",
+      "sourceValue": 30000,
+      "sourceUnit": "ft",
+      "sourceText": "can cruise at altitudes up to 30,000 ft",
+      "sourceName": "Airbus, C295 product page",
+      "sourceUrl": "https://www.airbus.com/en/products-services/defence/military-aircraft/c295",
+      "retrievedAt": "2026-10-04",
+      "note": "The source gives a maximum cruising altitude, recorded here as the ceiling."
+    },
+    {
+      "type": "protector",
+      "key": "wingspan_m",
+      "sourceValue": 24,
+      "sourceUnit": "m",
+      "sourceText": "a longer wingspan than its predecessors at 79 ft (24m)",
+      "sourceName": "General Atomics Aeronautical Systems, MQ-9B SkyGuardian page",
+      "sourceUrl": "https://www.ga-asi.com/remotely-piloted-aircraft/mq-9b-skyguardian",
+      "retrievedAt": "2026-10-04",
+      "note": "The source gives a rounded figure."
+    },
+    {
+      "type": "voyager",
+      "key": "max_takeoff_mass_kg",
+      "sourceValue": null,
+      "reason": "The Airbus A330 MRTT page retrieved on 2026-10-04 gives a figure only for the newer A330 MRTT+, not the variant in UK service. The RAF Voyager page could not be retrieved."
+    },
+    {
+      "type": "f-35b",
+      "key": "length_m",
+      "sourceValue": null,
+      "reason": "No official page with F-35B dimensions could be retrieved on 2026-10-04."
+    },
+    {
+      "type": "a380",
+      "key": "length_m",
+      "sourceValue": null,
+      "reason": "The Airbus A380 page retrieved on 2026-10-04 did not present a specification table in its page text."
+    },
+    {
+      "type": "e190",
+      "key": "length_m",
+      "sourceValue": null,
+      "reason": "No Embraer page with E190 specifications could be retrieved on 2026-10-04."
+    },
+    {
+      "type": "dash-8-400",
+      "key": "length_m",
+      "sourceValue": null,
+      "reason": "The De Havilland Canada Dash 8-400 page retrieved on 2026-10-04 did not present specifications in its page text."
+    }
+  ]
+}

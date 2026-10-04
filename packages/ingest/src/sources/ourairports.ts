@@ -279,6 +279,49 @@ function dimension(
   return feetAsMetres(parsed, 1);
 }
 
+const NO_THRESHOLDS = {
+  lowEndLat: null,
+  lowEndLon: null,
+  highEndLat: null,
+  highEndLon: null,
+} as const;
+
+/**
+ * Threshold positions of both runway ends, or all null. Many small fields give none, which is not
+ * a defect. Giving only some, or giving an impossible position, is reported.
+ */
+function thresholds(
+  values: Readonly<Record<string, string>>,
+  key: string,
+  log: IssueLog,
+): Pick<RunwayRecord, 'lowEndLat' | 'lowEndLon' | 'highEndLat' | 'highEndLon'> {
+  const [lowEndLat, lowEndLon, highEndLat, highEndLon] = [
+    values.le_latitude_deg,
+    values.le_longitude_deg,
+    values.he_latitude_deg,
+    values.he_longitude_deg,
+  ].map(number);
+
+  const given = [lowEndLat, lowEndLon, highEndLat, highEndLon].filter((part) => part !== null);
+  if (given.length === 0) return NO_THRESHOLDS;
+  if (
+    lowEndLat == null ||
+    lowEndLon == null ||
+    highEndLat == null ||
+    highEndLon == null ||
+    !isValidLatLon(lowEndLat, lowEndLon) ||
+    !isValidLatLon(highEndLat, highEndLon)
+  ) {
+    log.warning(
+      'invalid_runway_position',
+      key,
+      'Runway end positions were incomplete or impossible and were dropped',
+    );
+    return NO_THRESHOLDS;
+  }
+  return { lowEndLat, lowEndLon, highEndLat, highEndLon };
+}
+
 /**
  * @param importedAirportKeys Source ids of the aerodromes that were imported. Runways of any other
  * aerodrome (heliports, closed fields and so on) are out of scope and skipped.
@@ -332,6 +375,7 @@ export function normaliseRunways(
       highEndIdent: text(values.he_ident),
       lowEndHeadingDeg: heading(values.le_heading_degT, key, 'Low-end', log),
       highEndHeadingDeg: heading(values.he_heading_degT, key, 'High-end', log),
+      ...thresholds(values, key, log),
     });
   }
   return {
