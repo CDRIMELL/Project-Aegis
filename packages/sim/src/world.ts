@@ -1,6 +1,7 @@
 import type { RngState, SimInstant, SpeedMultiplier } from '@aegis/domain';
 import type { FleetSnapshot } from './fleet';
 import type { LogSnapshot } from './log';
+import type { MissionsSnapshot } from './missions';
 
 /**
  * Version of the simulation rules. A saved world records the version that produced it;
@@ -39,6 +40,8 @@ export interface WorldSnapshot {
   readonly integrityDigest: number;
   /** Simulated aircraft and flights. */
   readonly fleet: FleetSnapshot;
+  /** Missions, the operating area and the state of opportunity generation (ADR 0017). */
+  readonly missions: MissionsSnapshot;
   /** Recent entries of the command and event log (ADR 0018). */
   readonly log: LogSnapshot;
 }

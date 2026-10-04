@@ -1,6 +1,7 @@
 import { isSpeedMultiplier, type SimInstant, type SpeedMultiplier } from '@aegis/domain';
-import { SimulationEngine } from './engine';
-import type { FleetCommand, FleetView } from './fleet';
+import { SimulationEngine, type WorldCommand } from './engine';
+import type { FleetView } from './fleet';
+import type { MissionsView } from './missions';
 import {
   SIM_STEP_MS,
   type Checkpoint,
@@ -21,7 +22,7 @@ export type SimCommand =
   | { readonly type: 'resume' }
   | { readonly type: 'pause' }
   | { readonly type: 'setSpeed'; readonly speed: SpeedMultiplier }
-  | FleetCommand;
+  | WorldCommand;
 
 /** What a user interface needs to present the simulation. Plain data, safe to post across threads. */
 export interface SimView {
@@ -31,6 +32,7 @@ export interface SimView {
   readonly clock: ClockState;
   readonly integrityDigest: number;
   readonly fleet: FleetView;
+  readonly missions: MissionsView;
   /** Number of entries in the command and event log. The entries are read from the database. */
   readonly logLength: number;
   readonly checkpoint: {
@@ -178,7 +180,7 @@ export class SimulationRunner {
         this.engine.setSpeed(command.speed);
         break;
       default:
-        // Fleet commands. A rejected command throws and leaves nothing to save.
+        // World commands. A rejected command throws and leaves nothing to save.
         if (!this.engine.applyCommand(command)) return;
         break;
     }
@@ -204,6 +206,7 @@ export class SimulationRunner {
       clock: snapshot.clock,
       integrityDigest: snapshot.integrityDigest,
       fleet: this.engine.fleetView(),
+      missions: this.engine.missionsView(),
       logLength: snapshot.log.nextSeq - 1,
       checkpoint: {
         persistedSeq: this.persisted?.seq ?? 0,

@@ -11,6 +11,7 @@ import {
   type FlightPlan,
   type FlightProfile,
   type FlightProgress,
+  type LatLon,
   type PerformanceModel,
   type Rng,
   type RouteGeometry,
@@ -95,6 +96,8 @@ export interface FlightState {
   readonly id: string;
   readonly aircraftId: string;
   readonly status: FlightStatus;
+  /** The mission this flight carries out; `null` for a flight launched on its own. */
+  readonly missionId: string | null;
   readonly plan: FlightPlan;
   readonly payloadKg: number;
   readonly fuelAtDepartureKg: number;
@@ -330,6 +333,106 @@ export class Fleet {
   }
 
   /**
+   * Launches a flight, or throws {@link CommandRejected} leaving the fleet as it was. Used by the
+   * `launchFlight` command and by a mission launching its flight: both are validated the same way.
+   */
+  launch(
+    aircraftId: string,
+    plan: FlightPlan,
+    load: FlightLoad,
+    tick: number,
+    missionId: string | null,
+  ): string {
+    const aircraft = this.require(aircraftId);
+    const location = this.onGround(aircraft, 'launch');
+    if (aircraft.status !== 'available') {
+      throw new CommandRejected(
+        `${aircraft.id} is not available (${aircraft.status.replaceAll('_', ' ')}).`,
+      );
+    }
+    const model = aircraft.performance;
+    if (!model) {
+      throw new CommandRejected(
+        `${aircraft.id} cannot fly: the reference data lacks ${aircraft.performanceMissing.join(', ')}.`,
+      );
+    }
+    const origin = plan.points[0];
+    if (!origin || !samePlace(origin, location)) {
+      throw new CommandRejected(
+        `${aircraft.id} is at ${location.name}; the flight must start there.`,
+      );
+    }
+    const evaluation = evaluatePlan(model, plan, load);
+    const blocked = evaluation.constraints.find((constraint) => constraint.severity === 'block');
+    if (blocked || !evaluation.estimate) {
+      throw new CommandRejected(blocked?.message ?? 'The flight plan cannot be flown.');
+    }
+    const profile = flightProfile(model, plan, load.payloadKg);
+    const flight: FlightState = {
+      id: this.nextId('FLT', 6),
+      aircraftId: aircraft.id,
+      status: 'active',
+      missionId,
+      plan,
+      payloadKg: load.payloadKg,
+      fuelAtDepartureKg: load.fuelKg,
+      departedTick: tick,
+      arrivedTick: null,
+      estimatedDurationS: evaluation.estimate.durationS,
+      estimatedFuelUsedKg: evaluation.estimate.fuelUsedKg,
+      progress: initialProgress(profile, load.fuelKg),
+    };
+    this.flights.set(flight.id, flight);
+    this.activate(flight, model);
+    this.aircraft.set(aircraft.id, {
+      ...aircraft,
+      status: 'in_flight',
+      location: null,
+      fuelKg: load.fuelKg,
+      payloadKg: load.payloadKg,
+      activeFlightId: flight.id,
+    });
+    return flight.id;
+  }
+
+  aircraftById(id: string): AircraftState | undefined {
+    return this.aircraft.get(id);
+  }
+
+  /** Aircraft on the ground, in identifier order. */
+  groundedAircraft(): AircraftState[] {
+    return [...this.aircraft.values()]
+      .filter((aircraft) => aircraft.location !== null)
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  flightById(id: string): FlightState | undefined {
+    return this.flights.get(id);
+  }
+
+  /** Where a flight is now, or where it ended, and the length of its route. */
+  flightTrack(flight: FlightState): { position: LatLon; totalM: number } {
+    const route = this.active.get(flight.id)?.route ?? routeGeometry(flight.plan.points);
+    const position = positionAlong(route, flight.progress.distanceM);
+    return { position: { lat: position.lat, lon: position.lon }, totalM: route.totalM };
+  }
+
+  /** Removes the payload from an aircraft on the ground. */
+  unload(aircraftId: string): void {
+    const aircraft = this.aircraft.get(aircraftId);
+    if (aircraft && aircraft.location !== null && aircraft.payloadKg !== 0) {
+      this.aircraft.set(aircraftId, { ...aircraft, payloadKg: 0 });
+    }
+  }
+
+  rebase(aircraftId: string, home: RoutePoint): void {
+    const aircraft = this.aircraft.get(aircraftId);
+    if (aircraft && home.kind === 'aerodrome') {
+      this.aircraft.set(aircraftId, { ...aircraft, home });
+    }
+  }
+
+  /**
    * Applies a command. Returns what it touched, or `null` if it had no effect (so nothing needs
    * saving or logging); throws {@link CommandRejected} if it cannot be carried out, leaving the
    * fleet exactly as it was.
@@ -385,57 +488,8 @@ export class Fleet {
       }
 
       case 'launchFlight': {
-        const aircraft = this.require(command.aircraftId);
-        const location = this.onGround(aircraft, 'launch');
-        if (aircraft.status !== 'available') {
-          throw new CommandRejected(
-            `${aircraft.id} is not available (${aircraft.status.replaceAll('_', ' ')}).`,
-          );
-        }
-        const model = aircraft.performance;
-        if (!model) {
-          throw new CommandRejected(
-            `${aircraft.id} cannot fly: the reference data lacks ${aircraft.performanceMissing.join(', ')}.`,
-          );
-        }
-        const origin = command.plan.points[0];
-        if (!origin || !samePlace(origin, location)) {
-          throw new CommandRejected(
-            `${aircraft.id} is at ${location.name}; the flight must start there.`,
-          );
-        }
-        const evaluation = evaluatePlan(model, command.plan, command.load);
-        const blocked = evaluation.constraints.find(
-          (constraint) => constraint.severity === 'block',
-        );
-        if (blocked || !evaluation.estimate) {
-          throw new CommandRejected(blocked?.message ?? 'The flight plan cannot be flown.');
-        }
-        const profile = flightProfile(model, command.plan, command.load.payloadKg);
-        const flight: FlightState = {
-          id: this.nextId('FLT', 6),
-          aircraftId: aircraft.id,
-          status: 'active',
-          plan: command.plan,
-          payloadKg: command.load.payloadKg,
-          fuelAtDepartureKg: command.load.fuelKg,
-          departedTick: tick,
-          arrivedTick: null,
-          estimatedDurationS: evaluation.estimate.durationS,
-          estimatedFuelUsedKg: evaluation.estimate.fuelUsedKg,
-          progress: initialProgress(profile, command.load.fuelKg),
-        };
-        this.flights.set(flight.id, flight);
-        this.activate(flight, model);
-        this.aircraft.set(aircraft.id, {
-          ...aircraft,
-          status: 'in_flight',
-          location: null,
-          fuelKg: command.load.fuelKg,
-          payloadKg: command.load.payloadKg,
-          activeFlightId: flight.id,
-        });
-        return { aircraftId: aircraft.id, flightId: flight.id };
+        const flightId = this.launch(command.aircraftId, command.plan, command.load, tick, null);
+        return { aircraftId: command.aircraftId, flightId };
       }
 
       case 'updatePerformance': {
@@ -515,7 +569,7 @@ export class Fleet {
         this.finish({ ...flight, progress, status: 'completed', arrivedTick: tick });
         emit(
           'flightCompleted',
-          { aircraftId: aircraft.id, flightId },
+          { aircraftId: aircraft.id, flightId, missionId: flight.missionId },
           {
             destination: destination.code ?? destination.name,
             durationS: progress.elapsedS,
@@ -547,7 +601,7 @@ export class Fleet {
         this.finish({ ...flight, progress, status: 'fuel_exhausted', arrivedTick: tick });
         emit(
           'flightFuelExhausted',
-          { aircraftId: aircraft.id, flightId },
+          { aircraftId: aircraft.id, flightId, missionId: flight.missionId },
           { distanceM: progress.distanceM, lat: position.lat, lon: position.lon },
         );
       } else {
@@ -556,24 +610,29 @@ export class Fleet {
       }
     }
 
-    for (const aircraft of [...this.aircraft.values()].sort((a, b) => a.id.localeCompare(b.id))) {
+    const finishing: AircraftState[] = [];
+    for (const aircraft of this.aircraft.values()) {
       if (
         aircraft.status === 'in_maintenance' &&
         aircraft.maintenanceCompleteTick !== null &&
         tick >= aircraft.maintenanceCompleteTick
       ) {
-        this.aircraft.set(aircraft.id, {
-          ...aircraft,
-          status: 'available',
-          conditionPct: 100,
-          flightSecondsSinceMaintenance: 0,
-          maintenanceCompleteTick: null,
-          // An aircraft recovered from a forced landing is returned to its home aerodrome.
-          location: aircraft.location?.kind === 'aerodrome' ? aircraft.location : aircraft.home,
-        });
-        emit('maintenanceCompleted', { aircraftId: aircraft.id });
-        changed = true;
+        finishing.push(aircraft);
       }
+    }
+    // Identifier order, so that the events are logged in the same order every time.
+    for (const aircraft of finishing.sort((x, y) => x.id.localeCompare(y.id))) {
+      this.aircraft.set(aircraft.id, {
+        ...aircraft,
+        status: 'available',
+        conditionPct: 100,
+        flightSecondsSinceMaintenance: 0,
+        maintenanceCompleteTick: null,
+        // An aircraft recovered from a forced landing is returned to its home aerodrome.
+        location: aircraft.location?.kind === 'aerodrome' ? aircraft.location : aircraft.home,
+      });
+      emit('maintenanceCompleted', { aircraftId: aircraft.id });
+      changed = true;
     }
     return changed;
   }

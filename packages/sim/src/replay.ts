@@ -1,5 +1,4 @@
-import { SimulationEngine } from './engine';
-import type { FleetCommand } from './fleet';
+import { SimulationEngine, type WorldCommand } from './engine';
 import type { LogEntry } from './log';
 import type { NewWorldOptions, WorldSnapshot } from './world';
 
@@ -28,7 +27,7 @@ export function replayWorld(
     }
     engine.runSteps(entry.tick - engine.clock.tick);
     // A logged payload is the command exactly as it was applied.
-    if (!engine.applyCommand(entry.payload as unknown as FleetCommand)) {
+    if (!engine.applyCommand(entry.payload as unknown as WorldCommand)) {
       throw new Error(`Logged command ${entry.seq} (${entry.type}) had no effect on replay`);
     }
   }

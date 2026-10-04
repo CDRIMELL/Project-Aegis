@@ -4,3 +4,4 @@ export * from './runner';
 export * from './world';
 export * from './log';
 export * from './replay';
+export * from './missions';

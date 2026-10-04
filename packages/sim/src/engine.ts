@@ -7,7 +7,14 @@ import {
   type SimInstant,
   type SpeedMultiplier,
 } from '@aegis/domain';
-import { EMPTY_FLEET, Fleet, type FleetCommand, type FleetView } from './fleet';
+import { CommandRejected, EMPTY_FLEET, Fleet, type FleetCommand, type FleetView } from './fleet';
+import {
+  EMPTY_MISSIONS,
+  MISSION_COMMAND_TYPES,
+  Missions,
+  type MissionCommand,
+  type MissionsView,
+} from './missions';
 import { EMPTY_LOG, SimLog, type EmitEvent, type LogSnapshot } from './log';
 import {
   OLDEST_LOADABLE_MODEL_VERSION,
@@ -19,10 +26,21 @@ import {
 } from './world';
 
 /** Commands the application issues itself, not the player (ADR 0018). */
-const SYSTEM_COMMANDS: ReadonlySet<string> = new Set(['seedStarterFleet', 'updatePerformance']);
+const SYSTEM_COMMANDS: ReadonlySet<string> = new Set([
+  'seedStarterFleet',
+  'updatePerformance',
+  'setOperatingArea',
+]);
 
 /** The first simulation model that kept a log. */
 const FIRST_LOGGED_MODEL_VERSION = 3;
+
+/** Every command that changes the world. Each effective one is logged (ADR 0018). */
+export type WorldCommand = FleetCommand | MissionCommand;
+
+function isMissionCommand(command: WorldCommand): command is MissionCommand {
+  return MISSION_COMMAND_TYPES.has(command.type);
+}
 
 /** RNG stream consumed by the integrity probe. Persisted name: do not rename (ADR 0006). */
 const INTEGRITY_STREAM = 'core.integrity';
@@ -50,6 +68,7 @@ export class SimulationEngine {
     clock: Pick<ClockState, 'tick' | 'speed' | 'running'>,
     integrityDigest: number,
     private readonly fleet: Fleet,
+    private readonly missions: Missions,
     private readonly log: SimLog,
   ) {
     this.tick = clock.tick;
@@ -69,6 +88,7 @@ export class SimulationEngine {
       { tick: 0, speed: 1, running: true },
       DIGEST_SEED,
       new Fleet(),
+      new Missions(),
       new SimLog(),
     );
   }
@@ -114,6 +134,14 @@ export class SimulationEngine {
     } catch (cause) {
       throw new WorldRestoreError('Saved fleet state is invalid', { cause });
     }
+    let missions: Missions;
+    try {
+      // A world saved before missions existed has none.
+      missions = new Missions((snapshot as Partial<WorldSnapshot>).missions ?? EMPTY_MISSIONS);
+      missions.assertConsistentWith(fleet);
+    } catch (cause) {
+      throw new WorldRestoreError('Saved mission state is invalid', { cause });
+    }
     let log: SimLog;
     try {
       log = new SimLog(restoredLog(snapshot));
@@ -127,6 +155,7 @@ export class SimulationEngine {
       clock,
       snapshot.integrityDigest,
       fleet,
+      missions,
       log,
     );
   }
@@ -170,6 +199,7 @@ export class SimulationEngine {
       rngStreams: this.rng.states(),
       integrityDigest: this.integrityDigest,
       fleet: this.fleet.snapshot(),
+      missions: this.missions.snapshot(),
       log: this.log.snapshot(),
     };
   }
@@ -184,8 +214,22 @@ export class SimulationEngine {
    * changed nothing; throws `CommandRejected` if it cannot be carried out, leaving the world
    * untouched and the log without an entry.
    */
-  applyCommand(command: FleetCommand): boolean {
-    const effect = this.fleet.apply(command, this.tick);
+  applyCommand(command: WorldCommand): boolean {
+    let effect;
+    if (isMissionCommand(command)) {
+      effect = this.missions.apply(command, this.tick, this.fleet);
+    } else {
+      if (command.type === 'launchFlight') {
+        // An aircraft committed to a mission flies that mission, or is released from it first.
+        const mission = this.missions.reservation(command.aircraftId);
+        if (mission) {
+          throw new CommandRejected(
+            `${command.aircraftId} is committed to ${mission.id}. Launch the mission, or release the aircraft from it.`,
+          );
+        }
+      }
+      effect = this.fleet.apply(command, this.tick);
+    }
     if (effect === null) return false;
     this.log.append(
       this.tick,
@@ -202,6 +246,10 @@ export class SimulationEngine {
     return this.fleet.view();
   }
 
+  missionsView(): MissionsView {
+    return this.missions.view();
+  }
+
   /**
    * One fixed step. Subsystems are called here in a fixed, documented order as they are added
    * (flight, environment, events, ...).
@@ -211,7 +259,10 @@ export class SimulationEngine {
     const emit: EmitEvent = (type, subject, payload) => {
       this.log.append(this.tick, 'event', type, 'world', subject, payload);
     };
-    this.fleet.step(this.tick, (stream) => this.rng.stream(stream), emit);
+    const rng = (stream: string) => this.rng.stream(stream);
+    // Fixed order: aircraft move, then missions read where they are.
+    this.fleet.step(this.tick, rng, emit);
+    this.missions.step(this.tick, this.fleet, rng, emit);
     this.updateIntegrityDigest();
   }
 
