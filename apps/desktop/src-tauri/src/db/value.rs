@@ -68,6 +68,25 @@ mod tests {
         assert!(to_sql(&json!(u64::MAX)).is_err());
     }
 
+    /// Numbers arrive as JSON text. Each must become exactly the value that text denotes, or a
+    /// coordinate written by the application would read back as a different number.
+    #[test]
+    fn floats_parsed_from_json_are_exact() {
+        for text in [
+            "38.593101501464844",
+            "52.563899993896484",
+            "-0.461941",
+            "51.4706",
+            "0.1",
+            "1.7976931348623157e308",
+            "5e-324",
+        ] {
+            let parsed: JsonValue = serde_json::from_str(text).unwrap();
+            let expected: f64 = text.parse().unwrap();
+            assert_eq!(to_sql(&parsed).unwrap(), SqlValue::Real(expected), "{text}");
+        }
+    }
+
     #[test]
     fn converts_sql_to_json() {
         assert_eq!(from_sql(ValueRef::Null).unwrap(), json!(null));
