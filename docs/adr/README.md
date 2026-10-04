@@ -16,3 +16,4 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0009](0009-ui-libraries-and-design-system.md) | Token-driven design system; UI library set                       | Accepted |
 | [0010](0010-security-hooks.md)                 | Security hooks from day one; encryption deferred                 | Accepted |
 | [0011](0011-scenario-framing.md)               | Fictional operator and fleet over real reference data            | Accepted |
+| [0012](0012-reference-data-and-ingestion.md)   | Reference data model and ingestion pipeline                      | Accepted |
