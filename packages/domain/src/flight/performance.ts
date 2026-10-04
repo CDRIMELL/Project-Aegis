@@ -6,8 +6,17 @@
  * If a required characteristic is missing, no model is produced: nothing is substituted.
  */
 
-/** Bumped when any assumption or formula changes in a way that alters outcomes. */
-export const FLIGHT_MODEL_VERSION = 1;
+/**
+ * Bumped when any assumption or formula changes in a way that alters outcomes.
+ *
+ * - 1: fuel capacity always assumed; calibrated to published range with full fuel at maximum mass.
+ * - 2: a sourced fuel capacity is used where one exists, and such a type is calibrated to its
+ *   ferry range (ADR 0019).
+ *
+ * An aircraft stores the model it was given, so a version-1 aircraft keeps flying exactly as it
+ * did until it is deliberately migrated on the ground.
+ */
+export const FLIGHT_MODEL_VERSION = 2;
 
 export const GRAVITY_MS2 = 9.80665;
 
@@ -19,11 +28,16 @@ export const FLIGHT_ASSUMPTIONS = {
   fuelCapacity: {
     fractionOfUsefulLoad: 0.5,
     statement:
-      'Fuel capacity is assumed to be half of useful load (maximum take-off mass minus empty mass).',
+      'No source gives a fuel capacity for this type; it is assumed to be half of useful load (maximum take-off mass minus empty mass).',
+  },
+  fuelDensity: {
+    kgPerLitre: 0.8,
+    statement:
+      'The source gives fuel capacity as a volume; its mass assumes 0.80 kg per litre of jet fuel.',
   },
   rangeCondition: {
     statement:
-      'Published range is assumed to be flown with full fuel from maximum take-off mass; ferry range with full fuel and no payload.',
+      'Published range is assumed to be flown from maximum take-off mass with as much fuel as that allows; ferry range with full fuel and no payload. Where fuel capacity is sourced, a transport-class type is calibrated to its ferry range, because that loading is defined. Fast jets, trainers, rotorcraft and uncrewed types are not: their published ferry ranges usually include external or auxiliary fuel that the model does not carry.',
   },
   reserve: {
     fractionOfCapacity: 0.1,
@@ -80,6 +94,22 @@ export const FLIGHT_ASSUMPTIONS = {
   },
 } as const;
 
+/**
+ * Categories whose published ferry range is taken to be flown on internal fuel alone. For the
+ * others a ferry range usually includes drop tanks or auxiliary tanks, which the model does not
+ * carry, so calibrating to it would make the aircraft unrealistically economical.
+ */
+const FERRY_ON_INTERNAL_FUEL: ReadonlySet<string> = new Set([
+  'transport',
+  'tanker',
+  'isr',
+  'maritime_patrol',
+  'airliner',
+  'regional_airliner',
+  'business_jet',
+  'freighter',
+]);
+
 export type AssumptionId = keyof typeof FLIGHT_ASSUMPTIONS;
 
 export type EngineType = 'turbofan' | 'turboprop' | 'turboshaft' | 'piston';
@@ -95,7 +125,14 @@ export interface TypeCharacteristics {
   readonly rangeKm: number | null;
   readonly ferryRangeKm: number | null;
   readonly serviceCeilingM: number | null;
+  /** Fuel capacity published as a mass. */
+  readonly fuelCapacityKg?: number | null;
+  /** Fuel capacity published as a volume. */
+  readonly fuelCapacityL?: number | null;
 }
+
+/** Where a model's fuel capacity came from. */
+export type FuelCapacityBasis = 'sourced_mass' | 'sourced_volume' | 'assumed';
 
 export interface PerformanceModel {
   readonly modelVersion: number;
@@ -111,8 +148,11 @@ export interface PerformanceModel {
   readonly referenceRangeKind: 'range' | 'ferry_range';
   // Sourced or assumed; `assumptions` says which.
   readonly cruiseSpeedKmh: number;
-  // Assumed or derived.
+  // Sourced, converted from a sourced volume, or assumed; `fuelCapacityBasis` says which.
   readonly fuelCapacityKg: number;
+  /** Absent on a version-1 model, where the capacity was always assumed. */
+  readonly fuelCapacityBasis?: FuelCapacityBasis;
+  // Assumed or derived.
   readonly maxPayloadKg: number;
   readonly reserveFuelKg: number;
   readonly cruiseAltitudeM: number;
@@ -130,8 +170,8 @@ export type PerformanceResult =
   | { readonly available: true; readonly model: PerformanceModel }
   | { readonly available: false; readonly missing: readonly string[] };
 
-const positive = (value: number | null): value is number =>
-  value !== null && Number.isFinite(value) && value > 0;
+const positive = (value: number | null | undefined): value is number =>
+  value !== null && value !== undefined && Number.isFinite(value) && value > 0;
 
 export function derivePerformance(type: TypeCharacteristics): PerformanceResult {
   const missing: string[] = [];
@@ -153,7 +193,6 @@ export function derivePerformance(type: TypeCharacteristics): PerformanceResult 
 
   const A = FLIGHT_ASSUMPTIONS;
   const assumptions = new Set<AssumptionId>([
-    'fuelCapacity',
     'rangeCondition',
     'reserve',
     'cruiseAltitude',
@@ -166,7 +205,27 @@ export function derivePerformance(type: TypeCharacteristics): PerformanceResult 
   ]);
 
   const usefulLoadKg = type.maxTakeoffMassKg - type.emptyMassKg;
-  const fuelCapacityKg = Math.round(usefulLoadKg * A.fuelCapacity.fractionOfUsefulLoad);
+  let fuelCapacityBasis: FuelCapacityBasis;
+  let fuelCapacityKg: number;
+  if (positive(type.fuelCapacityKg)) {
+    fuelCapacityBasis = 'sourced_mass';
+    fuelCapacityKg = Math.round(type.fuelCapacityKg);
+  } else if (positive(type.fuelCapacityL)) {
+    fuelCapacityBasis = 'sourced_volume';
+    assumptions.add('fuelDensity');
+    fuelCapacityKg = Math.round(type.fuelCapacityL * A.fuelDensity.kgPerLitre);
+  } else {
+    fuelCapacityBasis = 'assumed';
+    assumptions.add('fuelCapacity');
+    fuelCapacityKg = Math.round(usefulLoadKg * A.fuelCapacity.fractionOfUsefulLoad);
+  }
+  if (fuelCapacityKg >= usefulLoadKg) {
+    // The published figures cannot all hold at once; refuse rather than guess which is wrong.
+    return {
+      available: false,
+      missing: ['a fuel capacity smaller than maximum take-off mass minus empty mass'],
+    };
+  }
   const reserveFuelKg = Math.round(fuelCapacityKg * A.reserve.fractionOfCapacity);
 
   let cruiseSpeedKmh: number;
@@ -190,7 +249,13 @@ export function derivePerformance(type: TypeCharacteristics): PerformanceResult 
   const fastJet = type.category === 'fast_jet';
 
   // Calibrate the Breguet range factor to the published range (see ADR 0016).
-  const useRange = positive(type.rangeKm);
+  // A ferry range states its loading (full fuel, no payload); a plain range does not. With a
+  // sourced capacity the ferry figure is therefore the better calibration point.
+  const preferFerry =
+    fuelCapacityBasis !== 'assumed' &&
+    positive(type.ferryRangeKm) &&
+    FERRY_ON_INTERNAL_FUEL.has(type.category);
+  const useRange = positive(type.rangeKm) && !preferFerry;
   const referenceRangeKm = useRange ? type.rangeKm : (type.ferryRangeKm as number);
   const takeoffMassKg = useRange ? type.maxTakeoffMassKg : type.emptyMassKg + fuelCapacityKg;
   const usableFuelKg = fuelCapacityKg - reserveFuelKg;
@@ -208,6 +273,7 @@ export function derivePerformance(type: TypeCharacteristics): PerformanceResult 
       referenceRangeKind: useRange ? 'range' : 'ferry_range',
       cruiseSpeedKmh,
       fuelCapacityKg,
+      fuelCapacityBasis,
       maxPayloadKg: usefulLoadKg,
       reserveFuelKg,
       cruiseAltitudeM,

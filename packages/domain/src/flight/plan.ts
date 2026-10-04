@@ -106,7 +106,7 @@ export function evaluatePlan(
   if (load.fuelKg > model.fuelCapacityKg + 0.5) {
     block(
       'fuel_over_capacity',
-      `Fuel load ${kg(load.fuelKg)} exceeds the assumed capacity of ${kg(model.fuelCapacityKg)}.`,
+      `Fuel load ${kg(load.fuelKg)} exceeds the capacity of ${kg(model.fuelCapacityKg)}.`,
     );
   }
   const takeoffMassKg = grossMassKg(model, load.fuelKg, load.payloadKg);

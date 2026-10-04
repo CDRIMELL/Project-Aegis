@@ -104,6 +104,7 @@ const performanceJson = z.object({
   referenceRangeKind: z.enum(['range', 'ferry_range']),
   cruiseSpeedKmh: z.number().positive(),
   fuelCapacityKg: quantity,
+  fuelCapacityBasis: z.enum(['sourced_mass', 'sourced_volume', 'assumed']).optional(),
   maxPayloadKg: quantity,
   reserveFuelKg: quantity,
   cruiseAltitudeM: z.number().positive(),
