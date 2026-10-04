@@ -6,10 +6,12 @@ import {
   type FlightPlan,
   type Mission,
   type PerformanceModel,
+  type WorldEvent,
   type RngState,
   type RoutePoint,
 } from '@aegis/domain';
 import {
+  RECENT_EVENTS,
   RECENT_FLIGHTS,
   RECENT_LOG,
   RECENT_MISSIONS,
@@ -24,6 +26,9 @@ import { z } from 'zod';
 import type { AegisDb } from './client';
 import {
   AIRCRAFT_STATUSES,
+  EVENT_SOURCES,
+  EVENT_STATUSES,
+  EVENT_TYPES,
   FLIGHT_STATUSES,
   LOG_ACTORS,
   LOG_KINDS,
@@ -35,6 +40,7 @@ import {
   simCheckpoint,
   simClock,
   simCounter,
+  simEvent,
   simFlight,
   simLog,
   simMission,
@@ -62,6 +68,9 @@ const worldRow = z.object({
   logCompleteFromTick: count,
   nextMissionNumber: z.int().positive(),
   opportunitiesGenerated: count,
+  nextEventNumber: z.int().positive(),
+  areaCentreLat: z.number().min(-90).max(90).nullable(),
+  areaCentreLon: z.number().min(-180).max(180).nullable(),
 });
 const clockRow = z.object({
   simTimeMs: count,
@@ -103,6 +112,28 @@ const progressJson = z.object({
   burnRateKgH: quantity,
   topAltitudeM: z.number(),
   fuelExhausted: z.boolean(),
+  // A flight saved before the environment existed was in still air and had met no weather.
+  environment: z
+    .object({
+      tailwindKmh: z.number(),
+      crosswindKmh: z.number(),
+      temperatureDeviationC: z.number(),
+      precipitation: z.number().min(0).max(1),
+    })
+    .default({ tailwindKmh: 0, crosswindKmh: 0, temperatureDeviationC: 0, precipitation: 0 }),
+  exposure: z
+    .object({
+      tailwindKmhS: z.number(),
+      worstSeverity: z.number().min(0).max(1),
+      lowestVisibilityKm: quantity.nullable(),
+      heaviestPrecipitation: z.number().min(0).max(1),
+    })
+    .default({
+      tailwindKmhS: 0,
+      worstSeverity: 0,
+      lowestVisibilityKm: null,
+      heaviestPrecipitation: 0,
+    }),
 });
 const performanceJson = z.object({
   modelVersion: z.int().positive(),
@@ -156,6 +187,8 @@ const flightRow = z.object({
   fuelAtDepartureKg: quantity,
   estimatedDurationS: quantity,
   estimatedFuelUsedKg: z.number(),
+  stillAirDurationS: quantity.nullable(),
+  stillAirFuelUsedKg: z.number().nullable(),
   plan: z.string(),
   progress: z.string(),
 });
@@ -279,6 +312,24 @@ const placeRow = z.object({
   elevationM: z.number(),
 });
 
+const eventRow = z.object({
+  id: z.string().min(1),
+  type: z.enum(EVENT_TYPES),
+  status: z.enum(EVENT_STATUSES),
+  source: z.enum(EVENT_SOURCES),
+  severity: z.number().min(0).max(1),
+  createdTick: count,
+  startTick: count,
+  endTick: count,
+  place: z.string().nullable(),
+  centre: z.string().nullable(),
+  radiusM: z.number().positive().nullable(),
+  aircraftId: z.string().nullable(),
+  missionId: z.string().nullable(),
+  title: z.string().min(1),
+  description: z.string(),
+});
+
 const logRow = z.object({
   seq: z.int().positive(),
   tick: count,
@@ -358,6 +409,8 @@ function toFlight(row: unknown): FlightState {
     fuelAtDepartureKg: f.fuelAtDepartureKg,
     estimatedDurationS: f.estimatedDurationS,
     estimatedFuelUsedKg: f.estimatedFuelUsedKg,
+    stillAirDurationS: f.stillAirDurationS,
+    stillAirFuelUsedKg: f.stillAirFuelUsedKg,
     plan: json(planJson, f.plan, `sim_flight ${f.id} plan`) as FlightPlan,
     progress: json(progressJson, f.progress, `sim_flight ${f.id} progress`),
   };
@@ -395,6 +448,16 @@ function toMission(row: unknown): Mission {
   };
 }
 
+function toEvent(row: unknown): WorldEvent {
+  const e = parse(eventRow, row, 'sim_event row');
+  const what = `sim_event ${e.id}`;
+  return {
+    ...e,
+    place: e.place === null ? null : (json(routePoint, e.place, `${what} place`) as RoutePoint),
+    centre: e.centre === null ? null : json(namedPoint, e.centre, `${what} centre`),
+  };
+}
+
 function toPlace(row: unknown): RoutePoint {
   const place = parse(placeRow, row, 'sim_place row');
   return {
@@ -417,6 +480,8 @@ function toLogEntry(row: unknown): LogEntry {
 export class SqliteWorldStore implements WorldStore {
   /** Highest log sequence this store knows to be on disk, so a checkpoint inserts only newer ones. */
   private loggedSeq = 0;
+  /** The operating area as last written, so it is rewritten only when it changes. */
+  private savedPlaces: string | null = null;
 
   constructor(private readonly db: AegisDb) {}
 
@@ -434,6 +499,8 @@ export class SqliteWorldStore implements WorldStore {
       openMissionRows,
       finishedMissionRows,
       placeRows,
+      openEventRows,
+      finishedEventRows,
     ] = await this.db.batch([
       this.db.select().from(simWorld),
       this.db.select().from(simClock),
@@ -463,6 +530,16 @@ export class SqliteWorldStore implements WorldStore {
         .orderBy(desc(simMission.id))
         .limit(RECENT_MISSIONS),
       this.db.select().from(simPlace).orderBy(asc(simPlace.ordinal)),
+      this.db
+        .select()
+        .from(simEvent)
+        .where(inArray(simEvent.status, ['scheduled', 'active'])),
+      this.db
+        .select()
+        .from(simEvent)
+        .where(inArray(simEvent.status, ['resolved', 'cancelled']))
+        .orderBy(desc(simEvent.id))
+        .limit(RECENT_EVENTS),
     ]);
 
     if (worlds.length + clocks.length + checkpoints.length + streams.length === 0) {
@@ -489,6 +566,9 @@ export class SqliteWorldStore implements WorldStore {
     const entries = logRows.map(toLogEntry).reverse();
     const nextSeq = (entries.at(-1)?.seq ?? 0) + 1;
     this.loggedSeq = nextSeq - 1;
+
+    const places = placeRows.map(toPlace);
+    this.savedPlaces = JSON.stringify(places);
 
     const byId = <T extends { id: string }>(a: T, b: T) => a.id.localeCompare(b.id);
     return {
@@ -519,9 +599,17 @@ export class SqliteWorldStore implements WorldStore {
         },
         missions: {
           missions: [...openMissionRows, ...finishedMissionRows].map(toMission).sort(byId),
-          places: placeRows.map(toPlace),
+          places,
           nextNumber: world.nextMissionNumber,
           generated: world.opportunitiesGenerated,
+          areaCentre:
+            world.areaCentreLat === null || world.areaCentreLon === null
+              ? null
+              : { lat: world.areaCentreLat, lon: world.areaCentreLon },
+        },
+        events: {
+          events: [...openEventRows, ...finishedEventRows].map(toEvent).sort(byId),
+          nextNumber: world.nextEventNumber,
         },
         log: { nextSeq, completeFromTick: world.logCompleteFromTick, entries },
       },
@@ -530,7 +618,7 @@ export class SqliteWorldStore implements WorldStore {
 
   async save(checkpoint: Checkpoint): Promise<void> {
     const { snapshot } = checkpoint;
-    const { fleet, missions } = snapshot;
+    const { fleet, missions, events } = snapshot;
     const world = {
       seed: snapshot.seed,
       modelVersion: snapshot.modelVersion,
@@ -539,6 +627,9 @@ export class SqliteWorldStore implements WorldStore {
       logCompleteFromTick: snapshot.log.completeFromTick,
       nextMissionNumber: missions.nextNumber,
       opportunitiesGenerated: missions.generated,
+      nextEventNumber: events.nextNumber,
+      areaCentreLat: missions.areaCentre?.lat ?? null,
+      areaCentreLon: missions.areaCentre?.lon ?? null,
     };
     const clock = {
       simTimeMs: snapshot.clock.simTime,
@@ -597,6 +688,19 @@ export class SqliteWorldStore implements WorldStore {
       elevationM: place.elevationM,
     }));
 
+    const eventRows = events.events.map((event) => {
+      const { id, place, centre, ...columns } = event;
+      return {
+        id,
+        ...columns,
+        place: place === null ? null : JSON.stringify(place),
+        centre: centre === null ? null : JSON.stringify(centre),
+      };
+    });
+    // The operating area changes rarely: it is rewritten only when it differs from what is saved.
+    const placesKey = JSON.stringify(missions.places);
+    const placesChanged = placesKey !== this.savedPlaces;
+
     // Entries already on disk are skipped; the conflict clause makes a retry harmless either way.
     const logRows = snapshot.log.entries
       .filter((entry) => entry.seq > this.loggedSeq)
@@ -639,8 +743,20 @@ export class SqliteWorldStore implements WorldStore {
           .values({ id, ...columns })
           .onConflictDoUpdate({ target: simMission.id, set: columns }),
       ),
-      // The operating area is set once and never changes.
-      ...placeRows.map((row) => this.db.insert(simPlace).values(row).onConflictDoNothing()),
+      // The operating area is replaced whole when the fleet has moved (ADR 0022).
+      ...(placesChanged
+        ? [
+            this.db.delete(simPlace),
+            ...placeRows.map((row) => this.db.insert(simPlace).values(row)),
+          ]
+        : []),
+      // Events no longer in memory are left untouched: they are history.
+      ...eventRows.map(({ id, ...columns }) =>
+        this.db
+          .insert(simEvent)
+          .values({ id, ...columns })
+          .onConflictDoUpdate({ target: simEvent.id, set: columns }),
+      ),
       // Flights no longer in memory are left untouched: they are history.
       ...flightRows.map(({ id, ...columns }) =>
         this.db
@@ -658,5 +774,6 @@ export class SqliteWorldStore implements WorldStore {
       ...logRows.map((row) => this.db.insert(simLog).values(row).onConflictDoNothing()),
     ]);
     this.loggedSeq = Math.max(this.loggedSeq, snapshot.log.nextSeq - 1);
+    this.savedPlaces = placesKey;
   }
 }

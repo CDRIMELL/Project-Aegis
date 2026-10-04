@@ -260,6 +260,14 @@ export const refAircraftAttribute = sqliteTable(
     sourceText: text('source_text').notNull(),
     sourceUrl: text('source_url').notNull(),
     note: text('note'),
+    /** The variant the source's figure is for, where the source names one. */
+    variant: text('variant'),
+    /**
+     * JSON: the conditions the source states for the figure (payload, fuel, speed and altitude,
+     * external fuel). A condition the source does not state is recorded as "unknown", never
+     * guessed. NULL where conditions do not apply to the characteristic.
+     */
+    conditions: text('conditions'),
   },
   (t) => [index('ref_aircraft_attribute_type_idx').on(t.typeId, t.key)],
 );

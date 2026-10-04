@@ -7,12 +7,14 @@ import {
   defaultBrief,
   type MissionBrief,
   type MissionType,
+  type PlanContext,
 } from '@aegis/domain';
 import {
   RECENT_MISSIONS,
   SimulationEngine,
   SimulationRunner,
   defaultConfiguration,
+  planContextOf,
   replayComparable,
   replayWorld,
   type AircraftState,
@@ -45,13 +47,20 @@ const transportOf = (aircraft: readonly AircraftState[]): AircraftState => {
   if (!found) throw new Error('no transport');
   return found;
 };
-const createTraining = (aircraft: readonly AircraftState[]): WorldCommand => ({
+/** A training mission planned in the world it will be flown in. */
+const createTraining = (
+  aircraft: readonly AircraftState[],
+  context: PlanContext,
+): WorldCommand => ({
   type: 'createMission',
   missionType: 'training',
   ...defaultConfiguration(
     'training',
     briefFor('training', { target: AREA }),
     transportOf(aircraft),
+    {
+      context,
+    },
   ),
 });
 
@@ -63,18 +72,18 @@ function busyWorld(): SimulationEngine {
   apply(SEED_FLEET);
   apply({ type: 'setOperatingArea', places: OPERATING_AREA });
   // 1: completed. 2: cancelled. 3: draft. 4: active. The world generates 5 at the first hour.
-  apply(createTraining(fleet()));
+  apply(createTraining(fleet(), engine.planContext()));
   apply({ type: 'acceptMission', missionId: 'MSN-000001' });
   apply({ type: 'launchMission', missionId: 'MSN-000001' });
   engine.runSteps(3400);
-  apply(createTraining(fleet()));
+  apply(createTraining(fleet(), engine.planContext()));
   apply({ type: 'cancelMission', missionId: 'MSN-000002' });
   apply({
     type: 'createMission',
     missionType: 'logistics',
     ...defaultConfiguration('logistics', briefFor('logistics', {}), null),
   });
-  apply(createTraining(fleet()));
+  apply(createTraining(fleet(), engine.planContext()));
   apply({ type: 'acceptMission', missionId: 'MSN-000004' });
   apply({ type: 'launchMission', missionId: 'MSN-000004' });
   engine.runSteps(700);
@@ -338,7 +347,9 @@ describe('mission continuity across application restarts', () => {
     const session = await launchApp();
     session.runner.execute({ type: 'setSpeed', speed: 100 });
     session.runner.execute(SEED_FLEET);
-    session.runner.execute(createTraining(session.runner.view().fleet.aircraft));
+    session.runner.execute(
+      createTraining(session.runner.view().fleet.aircraft, planContextOf(session.runner.view())),
+    );
     session.runner.execute({ type: 'acceptMission', missionId: 'MSN-000001' });
     session.runner.execute({ type: 'launchMission', missionId: 'MSN-000001' });
     run(session, 12_000);

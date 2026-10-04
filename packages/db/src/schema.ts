@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { check, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 /*
  * Table families (ADR 0011):
@@ -10,6 +10,7 @@ import { check, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
  * Changing this file requires `npm run db:generate` and committing the generated migration.
  */
 
+export * from './event-schema';
 export * from './fleet-schema';
 export * from './log-schema';
 export * from './mission-schema';
@@ -39,6 +40,11 @@ export const simWorld = sqliteTable(
     nextMissionNumber: integer('next_mission_number').notNull().default(1),
     /** How many opportunities the world has generated. */
     opportunitiesGenerated: integer('opportunities_generated').notNull().default(0),
+    /** Number the next world event will take. */
+    nextEventNumber: integer('next_event_number').notNull().default(1),
+    /** The point the operating area was chosen around; NULL until the world has one. */
+    areaCentreLat: real('area_centre_lat'),
+    areaCentreLon: real('area_centre_lon'),
   },
   (t) => [check('sim_world_singleton', sql`${t.id} = 1`)],
 );

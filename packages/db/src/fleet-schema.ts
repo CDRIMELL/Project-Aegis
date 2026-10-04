@@ -85,6 +85,9 @@ export const simFlight = sqliteTable(
     fuelAtDepartureKg: real('fuel_at_departure_kg').notNull(),
     estimatedDurationS: real('estimated_duration_s').notNull(),
     estimatedFuelUsedKg: real('estimated_fuel_used_kg').notNull(),
+    /** The same plan's estimate in still air; NULL for a flight launched before the environment. */
+    stillAirDurationS: real('still_air_duration_s'),
+    stillAirFuelUsedKg: real('still_air_fuel_used_kg'),
     /** JSON: the approved plan: route points, cruise altitude and speed. */
     plan: text('plan').notNull(),
     /** JSON: phase, distance flown, altitude, speed, fuel, elapsed time. */
