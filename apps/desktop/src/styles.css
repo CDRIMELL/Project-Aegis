@@ -1,0 +1,4 @@
+/* All visual rules come from the design system. Do not add styling here (ADR 0009). */
+@import '@aegis/ui/styles.css';
+
+@source './';
