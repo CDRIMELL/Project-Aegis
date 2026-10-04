@@ -2,27 +2,34 @@
 
 Reference data is the real, sourced part of the AEGIS world: countries, aerodromes, runways, cities
 and aircraft types. It lives in the `ref_*` tables and is written only by the ingestion pipeline
-(`@aegis/ingest`). The decisions behind it are in [ADR 0012](adr/0012-reference-data-and-ingestion.md).
+(`@aegis/ingest`). The decisions behind it are in
+[ADR 0012](adr/0012-reference-data-and-ingestion.md) and
+[ADR 0013](adr/0013-reference-data-pack.md).
 
 ## What is imported
 
-| Dataset                 | Table                    | Source                         | Records |
-| ----------------------- | ------------------------ | ------------------------------ | ------- |
-| `ourairports-countries` | `ref_country`            | OurAirports `countries.csv`    | 249     |
-| `ourairports-airports`  | `ref_location`           | OurAirports `airports.csv`     | 48,052  |
-| `ourairports-runways`   | `ref_runway`             | OurAirports `runways.csv`      | 35,418  |
-| `natural-earth-cities`  | `ref_location`           | Natural Earth populated places | 7,342   |
-| `aircraft-types`        | `ref_aircraft_type`      | `data/curated/` (hand-entered) | 40      |
-| `aircraft-attributes`   | `ref_aircraft_attribute` | Wikipedia specification blocks | 225     |
+| Dataset                            | Table                    | Source                          | Records |
+| ---------------------------------- | ------------------------ | ------------------------------- | ------- |
+| `ourairports-countries`            | `ref_country`            | OurAirports `countries.csv`     | 249     |
+| `ourairports-airports`             | `ref_location`           | OurAirports `airports.csv`      | 48,052  |
+| `ourairports-runways`              | `ref_runway`             | OurAirports `runways.csv`       | 35,418  |
+| `natural-earth-cities`             | `ref_location`           | Natural Earth populated places  | 7,342   |
+| `aircraft-types`                   | `ref_aircraft_type`      | `data/curated/` (hand-entered)  | 40      |
+| `aircraft-attributes`              | `ref_aircraft_attribute` | Wikipedia specification blocks  | 225     |
+| `aircraft-characteristics-curated` | `ref_aircraft_attribute` | Official pages, entered by hand | 32      |
 
-Counts are from the files pinned in `data/sources.lock.json` on 2026-10-04.
+Counts are from the files pinned in `data/sources.lock.json` on 2026-10-04. Of the runways, 14,974
+have both threshold positions and can be drawn on the map.
 
 Deliberately not imported:
 
 - Heliports, seaplane bases, balloonports and closed aerodromes (38,113 records), and their runways.
 - Any military classification of airfields. None is imported or inferred.
 - Anything about an aircraft beyond dimensions, mass, speed, range, ceiling, engine arrangement and
-  coarse role tags. The curated file's schema rejects any other field.
+  coarse role tags. The curated files' schemas reject any other field.
+
+The offline basemap (Natural Earth land, borders and lakes) is not reference data. It is
+presentation, prepared separately by `npm run data:basemap`, and nothing from it enters `ref_*`.
 
 ## Provenance on every record
 
@@ -39,7 +46,7 @@ Deliberately not imported:
 
 From `job_id` you reach `ref_ingestion_job`: the raw file's URL, SHA-256 and retrieval time, and the
 counts for that run. `ref_ingestion_issue` lists every record that run rejected or imported with a
-caveat.
+caveat. The map's detail panel and the Data screen show all of this for any record.
 
 How confidence is assigned today:
 
@@ -48,43 +55,90 @@ How confidence is assigned today:
 | Countries; cities                                           | high       | `source_asserted` |
 | Aerodromes and runways (community-maintained source)        | medium     | `source_asserted` |
 | Aircraft identity (hand-entered)                            | high       | `unverified`      |
-| Aircraft characteristics                                    | medium     | `source_asserted` |
-| Aircraft characteristics, article describes a close variant | low        | `source_asserted` |
+| Aircraft characteristics from Wikipedia                     | medium     | `source_asserted` |
+| The same, where the article describes a close variant       | low        | `source_asserted` |
+| Aircraft characteristics from official pages (hand-entered) | high       | `unverified`      |
+| The same, where the entry carries a caveat                  | medium     | `unverified`      |
 
 ## Aircraft characteristics
 
-Each value is read by a tool from the `{{Aircraft specs}}` template of the type's English Wikipedia
-article, and stored with the exact template parameter (`source_text`), a permanent link to the
-revision read (`source_url`) and the section heading that names the variant (`note`). Nothing is
-typed in from memory.
+Two sources feed `ref_aircraft_attribute`. A type can have rows from both; nothing is reconciled.
 
-Two curated fields control variant mismatches:
+**Wikipedia specification blocks** (`aircraft-attributes`). Read by a tool from each article's
+`{{Aircraft specs}}` template, with the exact template parameter, a permanent link to the revision
+and the section heading naming the variant. Two curated fields control variant mismatches:
+`specCaveat` (close variant: imported at low confidence) and `specsNotApplicable` (materially
+different variant: not imported).
 
-- `specCaveat` — the block describes a close variant. Values are imported at `low` confidence with
-  the caveat attached.
-- `specsNotApplicable` — the block describes a materially different variant. Values are not
-  imported; the gap is reported.
+**Official pages, entered by hand** (`aircraft-characteristics-curated`,
+`data/curated/aircraft-characteristics.json`). For types whose article has no machine-readable
+block. Every entry holds:
 
-**Known gap:** 13 of the 40 types have no characteristics. Eleven articles present specifications as
-tables or other templates the tool does not read; two (F-35B, Protector) are excluded because the
-article describes a different variant. Each is recorded as a `no_characteristics` issue. A second
-source is needed before the flight model (phase 4) can use those types.
+- the value **in the source's own unit**, converted in code, so no arithmetic is done by hand;
+- `sourceText`, the publisher's wording, so the entry can be checked against the page;
+- the publisher, URL and retrieval date.
 
-Types without characteristics: Airbus A320neo, A380-800, A330 MRTT (Voyager), C295; ATR 72-600;
-Boeing 777-300ER, 787-9; Dash 8-400; Embraer E190; BAE Hawk; Beechcraft Shadow R1; F-35B;
-MQ-9B (Protector).
+Entries are `unverified` until someone checks them against the page. A value that could not be
+established is recorded as `null` with the reason, and surfaces as a `value_not_established` issue.
+No value in this file was typed from memory.
+
+Coverage of the 13 types that had no characteristics after phase 2:
+
+| Type                | Source used      | Values                                             |
+| ------------------- | ---------------- | -------------------------------------------------- |
+| Hawk T2             | Royal Air Force  | length, height, wingspan, max speed, ceiling       |
+| Shadow R1           | Royal Air Force  | length, height, wingspan, max speed, ceiling       |
+| Airbus A320neo      | Airbus           | length, wingspan, height, max take-off mass, range |
+| Boeing 787-9        | Boeing           | length, wingspan, height, max take-off mass, range |
+| Boeing 777-300ER    | Boeing           | length, wingspan, height, max take-off mass, range |
+| ATR 72-600          | ATR              | length, wingspan, max take-off mass, range         |
+| Airbus C295         | Airbus           | max cruise speed, ceiling                          |
+| Protector (MQ-9B)   | General Atomics  | wingspan                                           |
+| Voyager (A330 MRTT) | none established | —                                                  |
+| F-35B               | none established | —                                                  |
+| Airbus A380-800     | none established | —                                                  |
+| Embraer E190        | none established | —                                                  |
+| Dash 8-400          | none established | —                                                  |
+
+The last five have no characteristics at all. For those, either the official page could not be
+retrieved or it did not state the figures in its text.
+
+## How reference data reaches an installation
+
+```
+raw sources --fetch--> data/raw/ --normalise--> datasets --+--> database        (npm run data:import)
+   (pinned by data/sources.lock.json)                      |
+                                                           +--> data pack --> bundled in the app
+                                                                               --> installed on first launch
+```
+
+- **Development:** `npm run data:import` normalises and loads straight into the application's
+  database.
+- **Packaged application:** `npm run data:pack` freezes the normalised datasets into a pack with a
+  hashed manifest. The build embeds it. On first launch the application verifies every file against
+  the manifest and installs it through the same loader, then records the pack in
+  `ref_pack_install`. No network is used. See ADR 0013.
+
+Both paths produce identical reference rows. `npm run verify:reference` prints a fingerprint of the
+reference tables; a directly imported database and a pack-installed one give the same value.
 
 ## Commands
 
 ```sh
 npm run data:fetch            # download raw files into data/raw/ and pin them in the lock file
 npm run data:aircraft-specs   # re-read aircraft characteristics from Wikipedia (about 2 minutes)
-npm run data:import           # import everything into the application's database
-npm run data:import -- --db path/to/other.db
+npm run data:import           # normalise and load into the application's database
+npm run data:pack             # build the data pack shipped inside the application
+npm run data:basemap          # build the offline basemap files
+npm run data:build            # data:pack and data:basemap
+npm run data:install-pack     # install the built pack into a database, as the application does
+npm run verify:reference      # check and fingerprint the reference tables of a database
 ```
 
-`data:import` reads only local files. It refuses a raw file whose SHA-256 differs from
-`data/sources.lock.json`, so a given commit always imports the same bytes.
+`data:import`, `data:install-pack` and `verify:reference` accept `-- --db path/to/other.db`
+(`verify:reference` takes the path as its argument). Everything except `data:fetch` and
+`data:aircraft-specs` reads only local files, and refuses a raw file whose SHA-256 differs from
+`data/sources.lock.json`.
 
 ## Guarantees, and the tests that hold them
 
@@ -97,17 +151,17 @@ npm run data:import -- --db path/to/other.db
 | Every record read is imported, skipped or rejected with a reason | `import.test.ts` "full accounting"                    |
 | Vanished records are reported, not deleted                       | `import.test.ts` "reports records that vanished"      |
 | No out-of-scope aircraft field can enter                         | `normalise.test.ts` "rejects any entry carrying"      |
+| A pack is byte-identical for the same input                      | `pack.test.ts` "is deterministic"                     |
+| A pack install equals a direct import                            | `pack.test.ts` "produces exactly the reference state" |
+| A corrupt or incomplete pack writes nothing                      | `pack.test.ts` "refuses a pack with a corrupt file"   |
+| An installed pack is not installed again                         | `pack.test.ts` "does nothing when asked to install"   |
+| An interrupted install is not recorded and resumes               | `pack.test.ts` "does not record a pack whose install" |
 
 ## Adding a source
 
 1. Check the publisher's licence and add it to `packages/ingest/src/sources.ts`.
 2. Write a normaliser: raw text in, validated records and issues out. Keep it pure.
 3. If it is downloaded, add it to `REMOTE_FILES` in `packages/ingest/src/node/raw.ts`.
-4. Add the dataset to `importReferenceData` in dependency order.
+4. Add the dataset to `normaliseReferenceData` in dependency order.
 5. Add fixtures and tests, including bad rows.
-
-## Not yet decided
-
-How reference data reaches a packaged installation. Today `data:import` writes into the
-application's database from a development checkout. A shipped build needs either a bundled data
-pack imported on first run or an in-app import. This is a phase 3 decision.
+6. If normalisation of an existing dataset changes, bump `PIPELINE_VERSION`.

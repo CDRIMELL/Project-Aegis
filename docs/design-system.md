@@ -42,27 +42,53 @@ not from glow, gradients or decoration.
 9. **Nothing pretends.** A control either works or is disabled with a stated reason. An unknown
    value shows the standard placeholder, never a made-up number.
 10. **Simulated values are labelled as simulated** wherever they could be mistaken for real ones.
+11. **Reference and simulated are different colours.** On the map and in badges, teal means
+    real-world reference data and green means a simulated AEGIS entity. A record's detail panel
+    carries a "Reference" badge with its verification level and confidence.
+12. **Canvas renderers use the same tokens.** The map (and later charts) cannot read CSS variables.
+    They ask `resolveColorTokens` for the resolved values, so no colour is ever written outside
+    `aegis.css`. A test asserts the map style contains no colour that is not in its palette.
 
-## Components (milestone 1)
+## Map tokens
 
-| Component               | Use                                                       |
-| ----------------------- | --------------------------------------------------------- |
-| `AppFrame`              | Application shell: rail, top bar, content region          |
-| `NavItem`               | Primary navigation entry, with an unavailable state       |
-| `Wordmark`              | AEGIS mark and name                                       |
-| `Panel`                 | Titled container for related information                  |
-| `DataList`, `DataField` | Labelled values with units, hints and a placeholder       |
-| `TimeReadout`           | Date and time with stable width                           |
-| `StatusBadge`           | Compact semantic state label                              |
-| `SegmentedControl`      | Exclusive choice among a few options (Radix toggle group) |
-| `Button`                | Primary, secondary and ghost actions                      |
-| `Notice`                | Inline information, warning or critical message           |
-| `Icon`                  | The one way to render a Lucide icon                       |
+`--color-map-*` tokens define the map: `water`, `land`, `coast`, `border`, `graticule`, `label`,
+`label-halo`, `place` (cities), `reference`, `reference-dim`, `simulated`, `selection`. Geography
+uses the darkest neutrals so data stands out from it. Map text uses the bundled IBM Plex files
+through `SANS_FONT_FILES` and `MONO_FONT_FILES`: labels in the sans face, codes in the mono face.
+
+## Components
+
+| Component                                  | Use                                                       |
+| ------------------------------------------ | --------------------------------------------------------- |
+| `AppFrame`                                 | Application shell: rail, top bar, content region          |
+| `NavItem`                                  | Primary navigation entry, with an unavailable state       |
+| `Wordmark`                                 | AEGIS mark and name                                       |
+| `Panel`                                    | Titled container for related information                  |
+| `DataList`, `DataField`                    | Labelled values with units, hints and a placeholder       |
+| `TimeReadout`                              | Date and time with stable width                           |
+| `StatusBadge`                              | Compact semantic state label                              |
+| `SegmentedControl`                         | Exclusive choice among a few options (Radix toggle group) |
+| `Button`                                   | Primary, secondary and ghost actions                      |
+| `Notice`                                   | Inline information, warning or critical message           |
+| `Icon`                                     | The one way to render a Lucide icon                       |
+| `IconButton`                               | Icon-only action with a required accessible name          |
+| `SwitchRow`                                | Labelled on/off setting on one line                       |
+| `SearchField`                              | Text search input with a clear action                     |
+| `ProgressBar`                              | Determinate progress                                      |
+| `FloatingPanel`                            | Surface floating above another, such as map tools         |
+| `DetailPanel`                              | Side panel describing the selected entity                 |
+| `Breadcrumb`                               | Path through a hierarchy, with navigable levels           |
+| `SectionLabel`, `Hint`                     | Group heading and secondary explanatory text              |
+| `ListRow`, `ResultList`                    | Selectable lines in a result list                         |
+| `DataTable`                                | Compact read-only table for short lists                   |
+| `ReadoutStrip`, `ReadoutItem`, `ScaleRule` | Line of small technical readouts, written by ref          |
+| `EmptyState`                               | Nothing to show, and what to do next                      |
+
+`AppFrame` takes `bleed` for full-surface screens such as the map.
 
 ## Planned
 
-- Tables (TanStack Table and Virtual), dialogs, drawers, tooltips, selects, tabs, toasts: added as
-  the first screen that needs each one is built, wrapping Radix primitives.
-- A token export for canvas renderers, so the MapLibre style and the ECharts theme are generated
-  from the same values as the CSS.
+- A virtualised table (TanStack Table and Virtual) for long lists; dialogs, tooltips, selects, tabs
+  and toasts, wrapping Radix primitives. Each is added by the first screen that needs it.
+- An ECharts theme generated from tokens through the same resolver the map uses.
 - A component gallery route in development builds for visual review.
