@@ -292,3 +292,37 @@ export function loadIssueSummary(): Promise<IssueSummary[]> {
     .groupBy(refIngestionJob.dataset, refIngestionIssue.severity, refIngestionIssue.code)
     .orderBy(asc(refIngestionJob.id), desc(sql`count(*)`));
 }
+
+export type AircraftTypeRecord = typeof schema.refAircraftType.$inferSelect;
+export type AircraftAttributeRecord = typeof schema.refAircraftAttribute.$inferSelect;
+
+/** Every reference aircraft type with every characteristic any source asserts for it. */
+export async function loadAircraftTypes(): Promise<{
+  types: AircraftTypeRecord[];
+  attributes: AircraftAttributeRecord[];
+}> {
+  const [types, attributes] = await Promise.all([
+    db.select().from(schema.refAircraftType).orderBy(asc(schema.refAircraftType.name)),
+    db.select().from(schema.refAircraftAttribute),
+  ]);
+  return { types, attributes };
+}
+
+/** One aerodrome by reference id, or by ICAO code. */
+export async function loadAerodrome(
+  key: { readonly id: string } | { readonly icao: string },
+): Promise<LocationRecord | null> {
+  const rows = await db
+    .select()
+    .from(refLocation)
+    .where('id' in key ? eq(refLocation.id, key.id) : eq(refLocation.icao, key.icao))
+    .limit(1);
+  const found = rows[0];
+  return found && found.kind !== 'city' ? found : null;
+}
+
+/** Aerodromes matching a search, for choosing a home or a destination. */
+export async function searchAerodromes(query: string, limit = 8): Promise<SearchResult[]> {
+  const results = await searchLocations(query, limit * 3);
+  return results.filter((result) => result.kind !== 'city').slice(0, limit);
+}
