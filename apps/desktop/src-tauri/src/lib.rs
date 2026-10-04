@@ -16,6 +16,7 @@ use security::SessionGate;
 
 const DATABASE_FILE: &str = "aegis.db";
 const BACKUP_DIR: &str = "backups";
+const DATA_DIR_OVERRIDE: &str = "AEGIS_DATA_DIR";
 
 pub struct AppState {
     db: Database,
@@ -32,7 +33,12 @@ impl AppState {
 }
 
 fn initialise(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> {
-    let data_dir = app.path().app_data_dir()?;
+    // AEGIS_DATA_DIR relocates all application data: for portable use and for testing a first
+    // launch without touching the real profile.
+    let data_dir = match std::env::var_os(DATA_DIR_OVERRIDE) {
+        Some(dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
+        _ => app.path().app_data_dir()?,
+    };
     let db = Database::open(OpenOptions {
         path: data_dir.join(DATABASE_FILE),
         encryption: Encryption::None,
