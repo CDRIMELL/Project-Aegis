@@ -22,6 +22,13 @@
       "when": 1791112354534,
       "tag": "0002_runway_geometry_and_pack_install",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791118276536,
+      "tag": "0003_fleet_and_flights",
+      "breakpoints": true
     }
   ]
 }

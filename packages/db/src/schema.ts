@@ -10,6 +10,7 @@ import { check, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
  * Changing this file requires `npm run db:generate` and committing the generated migration.
  */
 
+export * from './fleet-schema';
 export * from './reference-schema';
 
 /** Identity of the simulated world. Exactly one row. */
@@ -23,6 +24,10 @@ export const simWorld = sqliteTable(
     /** Simulation instant at tick 0, Unix milliseconds. */
     epochMs: integer('epoch_ms').notNull(),
     createdWallMs: integer('created_wall_ms').notNull(),
+    /** Whether this world has been given its starter fleet. It is given one only once. */
+    starterFleetSeeded: integer('starter_fleet_seeded', { mode: 'boolean' })
+      .notNull()
+      .default(false),
   },
   (t) => [check('sim_world_singleton', sql`${t.id} = 1`)],
 );
