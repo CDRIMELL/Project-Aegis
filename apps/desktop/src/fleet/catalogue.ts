@@ -116,6 +116,8 @@ export function buildCatalogue(
       rangeKm: value('range_km'),
       ferryRangeKm: value('ferry_range_km'),
       serviceCeilingM: value('service_ceiling_m'),
+      fuelCapacityKg: value('fuel_capacity_kg'),
+      fuelCapacityL: value('fuel_capacity_l'),
     };
     return { type, sourced, characteristics, performance: derivePerformance(characteristics) };
   });

@@ -1,4 +1,4 @@
-import type { RoutePoint } from '@aegis/domain';
+import { FLIGHT_MODEL_VERSION, type RoutePoint } from '@aegis/domain';
 import { create } from 'zustand';
 import { loadAerodrome, loadAircraftTypes } from '../reference/queries';
 import { simClient } from '../sim/client';
@@ -66,16 +66,63 @@ async function seedStarterFleetIfNeeded(): Promise<void> {
   }
 }
 
+/** Aircraft already asked to take the current model, so a request is not repeated every view. */
+const migrationRequested = new Set<string>();
+
+/**
+ * Moves grounded aircraft onto the current flight model (ADR 0019). An aircraft is migrated when
+ * its stored model is from an older version, or when it had none and the reference data can now
+ * support one. Airborne aircraft are left alone and picked up after they land.
+ */
+function migratePerformanceIfNeeded(): void {
+  const view = useSimStore.getState().view;
+  const { entries } = useCatalogueStore.getState();
+  if (!view || !entries) return;
+  const byType = new Map(entries.map((entry) => [entry.type.id, entry]));
+  for (const aircraft of view.fleet.aircraft) {
+    const entry = byType.get(aircraft.typeId);
+    if (!entry || aircraft.location === null) continue;
+    const latest = entry.performance.available ? entry.performance.model : null;
+    const outdated =
+      aircraft.performance === null
+        ? latest !== null
+        : latest !== null && aircraft.performance.modelVersion < FLIGHT_MODEL_VERSION;
+    if (!outdated) continue;
+    const request = `${aircraft.id}:${FLIGHT_MODEL_VERSION}`;
+    if (migrationRequested.has(request)) continue;
+    migrationRequested.add(request);
+    simClient.send({
+      type: 'updatePerformance',
+      aircraftId: aircraft.id,
+      performance: latest,
+      performanceMissing: [],
+    });
+  }
+}
+
 /** Starts the services. Call once at start-up. */
 export function startFleetServices(): void {
   const onReference = (phase: string) => {
     if (phase === 'ready' && useCatalogueStore.getState().entries === null) {
-      void loadCatalogue().then(seedStarterFleetIfNeeded);
+      void loadCatalogue().then(seedStarterFleetIfNeeded).then(migratePerformanceIfNeeded);
     }
   };
   onReference(useReferenceStore.getState().phase);
   useReferenceStore.subscribe((state) => {
     onReference(state.phase);
+  });
+  // Aircraft that were airborne are migrated once they are back on the ground.
+  let grounded = '';
+  useSimStore.subscribe((state) => {
+    const now =
+      state.view?.fleet.aircraft
+        .filter((aircraft) => aircraft.location !== null)
+        .map((aircraft) => aircraft.id)
+        .join() ?? '';
+    if (now !== grounded) {
+      grounded = now;
+      migratePerformanceIfNeeded();
+    }
   });
   // The simulation may become ready after the catalogue.
   const stop = useSimStore.subscribe((state) => {

@@ -252,10 +252,18 @@ function RecordPanel({ aircraft }: { readonly aircraft: AircraftState }) {
   );
 }
 
+const FUEL_CAPACITY_LABEL = {
+  sourced_mass: 'Fuel capacity',
+  sourced_volume: 'Fuel capacity (from volume)',
+  assumed: 'Fuel capacity (assumed)',
+} as const;
+
 function PerformancePanel({ aircraft }: { readonly aircraft: AircraftState }) {
   const model = aircraft.performance;
   if (!model) return null;
   const assumed = new Set<string>(model.assumptions);
+  // A version-1 model has no basis recorded: its capacity was always assumed.
+  const fuelBasis = model.fuelCapacityBasis ?? 'assumed';
   return (
     <Panel title="Performance model">
       <div className="flex flex-col gap-3">
@@ -299,9 +307,15 @@ function PerformancePanel({ aircraft }: { readonly aircraft: AircraftState }) {
             hint={FLIGHT_ASSUMPTIONS.cruiseAltitude.statement}
           />
           <DataField
-            label="Fuel capacity (assumed)"
+            label={FUEL_CAPACITY_LABEL[fuelBasis]}
             value={formatKg(model.fuelCapacityKg)}
-            hint={FLIGHT_ASSUMPTIONS.fuelCapacity.statement}
+            hint={
+              fuelBasis === 'sourced_mass'
+                ? 'Reference data.'
+                : fuelBasis === 'sourced_volume'
+                  ? `Reference data, published as a volume. ${FLIGHT_ASSUMPTIONS.fuelDensity.statement}`
+                  : FLIGHT_ASSUMPTIONS.fuelCapacity.statement
+            }
           />
           <DataField
             label="Climb rate (assumed)"
@@ -311,7 +325,7 @@ function PerformancePanel({ aircraft }: { readonly aircraft: AircraftState }) {
           <DataField
             label="Range factor (derived)"
             value={`${formatInteger(model.rangeFactorKm)} km`}
-            hint="Cruise fuel per kilometre is the aircraft's mass divided by this. Derived from published range and the assumed fuel capacity."
+            hint="Cruise fuel per kilometre is the aircraft's mass divided by this. Derived from the published range and the fuel capacity."
           />
         </DataList>
         <Hint>

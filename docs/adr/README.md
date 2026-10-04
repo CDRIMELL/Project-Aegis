@@ -23,3 +23,4 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0016](0016-fleet-and-flight-model.md)         | Fleet state and the flight model                                 | Accepted |
 | [0017](0017-missions.md)                       | Missions: one framework, templates, objectives, explained risk   | Accepted |
 | [0018](0018-command-log.md)                    | Append-only command and event log, atomic with state             | Accepted |
+| [0019](0019-sourced-fuel-capacity.md)          | Sourced fuel capacity; flight model 2; grounded-only migration   | Accepted |
