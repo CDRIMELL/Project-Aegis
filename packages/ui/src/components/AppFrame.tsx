@@ -12,11 +12,23 @@ export interface AppFrameProps {
   readonly title: string;
   /** Persistent controls at the right of the top bar. */
   readonly topBar?: ReactNode;
+  /**
+   * Let the content fill the region edge to edge and manage its own scrolling. For full-surface
+   * screens such as the map; ordinary screens keep the standard padding.
+   */
+  readonly bleed?: boolean;
   readonly children: ReactNode;
 }
 
 /** The application shell: navigation rail, top bar and the content region. */
-export function AppFrame({ navigation, railFooter, title, topBar, children }: AppFrameProps) {
+export function AppFrame({
+  navigation,
+  railFooter,
+  title,
+  topBar,
+  bleed = false,
+  children,
+}: AppFrameProps) {
   return (
     <div className="grid h-screen grid-cols-[13rem_minmax(0,1fr)] grid-rows-[3rem_minmax(0,1fr)] bg-canvas">
       <div className="flex items-center border-r border-b border-line bg-surface px-4">
@@ -41,7 +53,9 @@ export function AppFrame({ navigation, railFooter, title, topBar, children }: Ap
           </div>
         )}
       </aside>
-      <main className="min-h-0 overflow-y-auto p-4">{children}</main>
+      <main className={cn('relative min-h-0', bleed ? 'overflow-hidden' : 'overflow-y-auto p-4')}>
+        {children}
+      </main>
     </div>
   );
 }

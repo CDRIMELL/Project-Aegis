@@ -24,6 +24,7 @@
 
 :root {
   /* Graphite: cool neutral, the great majority of every screen. */
+  --aegis-graphite-975: oklch(0.125 0.008 250);
   --aegis-graphite-950: oklch(0.155 0.008 250);
   --aegis-graphite-900: oklch(0.185 0.009 250);
   --aegis-graphite-850: oklch(0.215 0.01 250);
@@ -40,6 +41,7 @@
   --aegis-green-500: oklch(0.7 0.115 158);
   --aegis-green-900: oklch(0.27 0.04 158);
   --aegis-teal-400: oklch(0.76 0.075 205);
+  --aegis-teal-600: oklch(0.56 0.065 205);
   --aegis-teal-900: oklch(0.27 0.03 205);
   --aegis-amber-400: oklch(0.8 0.125 82);
   --aegis-amber-900: oklch(0.29 0.045 82);
@@ -102,6 +104,23 @@
   --color-critical-surface: var(--aegis-red-900);
 
   --color-focus: var(--aegis-teal-400);
+
+  /*
+   * Map. Geography is the quietest thing on screen; data sits above it.
+   * Teal marks real-world reference data. Green is reserved for simulated AEGIS entities.
+   */
+  --color-map-water: var(--aegis-graphite-975);
+  --color-map-land: var(--aegis-graphite-900);
+  --color-map-coast: var(--aegis-graphite-700);
+  --color-map-border: var(--aegis-graphite-600);
+  --color-map-graticule: var(--aegis-graphite-850);
+  --color-map-label: var(--aegis-graphite-400);
+  --color-map-label-halo: var(--aegis-graphite-975);
+  --color-map-place: var(--aegis-graphite-300);
+  --color-map-reference: var(--aegis-teal-400);
+  --color-map-reference-dim: var(--aegis-teal-600);
+  --color-map-simulated: var(--aegis-green-400);
+  --color-map-selection: var(--aegis-graphite-100);
 
   /* Typography: sans for interface text, mono for telemetry and identifiers. */
   --font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
@@ -196,5 +215,35 @@
       transition-duration: 0.01ms !important;
       animation-duration: 0.01ms !important;
     }
+  }
+}
+
+/*
+ * Map surface. MapLibre's own stylesheet is not loaded: its controls are not used, and these are
+ * the only structural rules its canvas needs.
+ */
+@layer components {
+  .maplibregl-map {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--color-map-water);
+  }
+
+  .maplibregl-canvas-container,
+  .maplibregl-canvas {
+    position: absolute;
+    inset: 0;
+  }
+
+  .maplibregl-canvas {
+    outline: none;
+  }
+
+  .maplibregl-canvas-container.maplibregl-interactive {
+    cursor: grab;
+  }
+
+  .maplibregl-canvas-container.maplibregl-interactive:active {
+    cursor: grabbing;
   }
 }
