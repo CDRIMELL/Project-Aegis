@@ -294,104 +294,101 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
             <PriorityBadge priority={mission.priority} />
           </>
         }
-        actions={
-          <>
-            {(mission.plan ?? missionPlace(mission.brief)) && (
-              <Button icon={MapPin} onClick={showOnMap}>
-                Show on map
-              </Button>
-            )}
-            {mission.status === 'offered' && (
-              <>
-                <Button
-                  icon={X}
-                  onClick={() => {
-                    rejectOffer(mission.id);
-                  }}
-                >
-                  Reject
-                </Button>
-                <Button
-                  variant="primary"
-                  icon={Check}
-                  onClick={() => {
-                    acceptOffer(mission.id);
-                    onEdit();
-                  }}
-                >
-                  Take up
-                </Button>
-              </>
-            )}
-            {(mission.status === 'draft' || mission.status === 'planned') && (
-              <>
-                <Button
-                  icon={X}
-                  onClick={() => {
-                    cancelMission(mission.id);
-                  }}
-                >
-                  Cancel mission
-                </Button>
-                <Button icon={Pencil} onClick={onEdit}>
-                  Edit
-                </Button>
-              </>
-            )}
-            {mission.status === 'planned' && (
-              <>
-                <Button icon={Route} onClick={editRoute}>
-                  Edit route
-                </Button>
-                <Button
-                  variant="primary"
-                  icon={Check}
-                  disabled={!evaluation?.acceptable}
-                  title={
-                    evaluation?.acceptable ? undefined : 'Resolve the blocking constraints first.'
-                  }
-                  onClick={() => {
-                    acceptMission(mission.id);
-                  }}
-                >
-                  Accept
-                </Button>
-              </>
-            )}
-            {mission.status === 'accepted' && (
-              <>
-                <Button
-                  icon={X}
-                  onClick={() => {
-                    cancelMission(mission.id);
-                  }}
-                >
-                  Cancel mission
-                </Button>
-                <Button
-                  icon={Undo2}
-                  onClick={() => {
-                    releaseMission(mission.id);
-                  }}
-                >
-                  Release
-                </Button>
-                <Button
-                  variant="primary"
-                  icon={Send}
-                  disabled={!ready.ready}
-                  title={ready.ready ? undefined : ready.issues.join(' ')}
-                  onClick={() => {
-                    launchMission(mission.id);
-                  }}
-                >
-                  Launch
-                </Button>
-              </>
-            )}
-          </>
-        }
       />
+      {/* Up to five actions: on their own row, so the title is never squeezed. */}
+      <div className="flex flex-wrap gap-2">
+        {(mission.plan ?? missionPlace(mission.brief)) && (
+          <Button icon={MapPin} onClick={showOnMap}>
+            Show on map
+          </Button>
+        )}
+        {mission.status === 'offered' && (
+          <>
+            <Button
+              icon={X}
+              onClick={() => {
+                rejectOffer(mission.id);
+              }}
+            >
+              Reject
+            </Button>
+            <Button
+              variant="primary"
+              icon={Check}
+              onClick={() => {
+                acceptOffer(mission.id);
+                onEdit();
+              }}
+            >
+              Take up
+            </Button>
+          </>
+        )}
+        {(mission.status === 'draft' || mission.status === 'planned') && (
+          <>
+            <Button
+              icon={X}
+              onClick={() => {
+                cancelMission(mission.id);
+              }}
+            >
+              Cancel mission
+            </Button>
+            <Button icon={Pencil} onClick={onEdit}>
+              Edit
+            </Button>
+          </>
+        )}
+        {mission.status === 'planned' && (
+          <>
+            <Button icon={Route} onClick={editRoute}>
+              Edit route
+            </Button>
+            <Button
+              variant="primary"
+              icon={Check}
+              disabled={!evaluation?.acceptable}
+              title={evaluation?.acceptable ? undefined : 'Resolve the blocking constraints first.'}
+              onClick={() => {
+                acceptMission(mission.id);
+              }}
+            >
+              Accept
+            </Button>
+          </>
+        )}
+        {mission.status === 'accepted' && (
+          <>
+            <Button
+              icon={X}
+              onClick={() => {
+                cancelMission(mission.id);
+              }}
+            >
+              Cancel mission
+            </Button>
+            <Button
+              icon={Undo2}
+              onClick={() => {
+                releaseMission(mission.id);
+              }}
+            >
+              Release
+            </Button>
+            <Button
+              variant="primary"
+              icon={Send}
+              disabled={!ready.ready}
+              title={ready.ready ? undefined : ready.issues.join(' ')}
+              onClick={() => {
+                launchMission(mission.id);
+              }}
+            >
+              Launch
+            </Button>
+          </>
+        )}
+      </div>
       <p className="cursor-text text-sm text-ink-secondary select-text">{mission.description}</p>
 
       {mission.status === 'accepted' && (
