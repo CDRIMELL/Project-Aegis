@@ -17,3 +17,6 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0010](0010-security-hooks.md)                 | Security hooks from day one; encryption deferred                 | Accepted |
 | [0011](0011-scenario-framing.md)               | Fictional operator and fleet over real reference data            | Accepted |
 | [0012](0012-reference-data-and-ingestion.md)   | Reference data model and ingestion pipeline                      | Accepted |
+| [0013](0013-reference-data-pack.md)            | Reference data ships as a release-time data pack                 | Accepted |
+| [0014](0014-map-architecture.md)               | Map architecture: four tiers, driven outside React               | Accepted |
+| [0015](0015-application-shell-and-routing.md)  | Application shell and routing                                    | Accepted |
