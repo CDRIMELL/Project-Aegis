@@ -34,9 +34,6 @@ import {
   SeverityBadge,
   eventPlace,
   eventTypeLabel,
-  formatCloud,
-  formatPrecipitation,
-  formatWind,
 } from '../shared/weather-display';
 
 /** The forecast is shown at these hours ahead. It is exact: the weather is computed (ADR 0021). */
@@ -84,13 +81,6 @@ function useBaseConditions(): BaseConditions[] {
   }, [weather, fleet, tick]);
 }
 
-function trendWord(now: Conditions, later: Conditions): string {
-  const change = later.severity - now.severity;
-  const word = severityWord(later.severity);
-  if (Math.abs(change) < 0.1) return word;
-  return `${word}, ${change > 0 ? 'worsening' : 'improving'}`;
-}
-
 function ConditionsPanel() {
   const bases = useBaseConditions();
   if (bases.length === 0) {
@@ -102,45 +92,32 @@ function ConditionsPanel() {
   }
   return (
     <Panel title="Conditions at fleet aerodromes">
-      <div className="flex flex-col gap-3 overflow-x-auto">
-        <DataTable<BaseConditions>
-          caption="Simulated surface conditions now and the trend over twelve hours"
-          rows={bases}
-          rowKey={(row) => row.place.refId ?? row.place.name}
-          columns={[
-            {
-              header: 'Aerodrome',
-              cell: (row) => row.place.code ?? row.place.name,
-              numeric: true,
-            },
-            {
-              header: 'Aircraft',
-              numeric: true,
-              align: 'right' as const,
-              cell: (row: BaseConditions) => formatInteger(row.aircraft.length),
-            },
-            { header: 'Now', cell: (row) => <SeverityBadge severity={row.now.severity} /> },
-            { header: 'Wind', numeric: true, cell: (row) => formatWind(row.now) },
-            { header: 'Cloud', cell: (row) => formatCloud(row.now) },
-            {
-              header: 'Vis',
-              numeric: true,
-              align: 'right',
-              cell: (row) => `${row.now.visibilityKm.toFixed(0)} km`,
-            },
-            { header: 'Precip', cell: (row) => formatPrecipitation(row.now.precipitation) },
-            {
-              header: 'Temp',
-              numeric: true,
-              align: 'right',
-              cell: (row) => `${row.now.temperatureC.toFixed(0)} °C`,
-            },
-            ...TREND_HOURS.map((hours, index) => ({
-              header: `+${hours} h`,
-              cell: (row: BaseConditions) => trendWord(row.now, row.trend[index] as Conditions),
-            })),
-          ]}
-        />
+      <div className="flex flex-col gap-3">
+        {/* A block for each aerodrome, not a table: eight readings do not fit across the pane. */}
+        {bases.map((base) => (
+          <section
+            key={base.place.refId ?? base.place.name}
+            className="flex flex-col gap-2.5 border-b border-line-subtle pb-3"
+          >
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h3 className="telemetry text-sm text-ink">{base.place.code ?? base.place.name}</h3>
+              {base.place.code && (
+                <span className="text-sm text-ink-secondary">{base.place.name}</span>
+              )}
+              <SeverityBadge severity={base.now.severity} />
+              <span className="text-xs text-ink-muted">
+                {formatInteger(base.aircraft.length)} aircraft here
+              </span>
+            </div>
+            <ConditionsFields conditions={base.now} columns={3} />
+            <p className="text-xs text-ink-secondary">
+              {TREND_HOURS.map(
+                (hours, index) =>
+                  `In ${hours} h: ${severityWord((base.trend[index] as Conditions).severity).toLowerCase()}`,
+              ).join(' · ')}
+            </p>
+          </section>
+        ))}
         <Hint>
           Simulated weather, computed from the world's seed, the time and the place. It is not real
           weather. The trend is exact: the simulation will fly through these same conditions.
@@ -165,7 +142,7 @@ function EventDetail({ event }: { readonly event: WorldEvent }) {
   const lasting = event.type === 'maintenance_finding';
 
   return (
-    <div className="flex max-w-5xl flex-col gap-4">
+    <div className="flex max-w-6xl flex-col gap-4">
       <PageHeader
         kicker={eventTypeLabel(event)}
         title={event.id}
@@ -204,7 +181,7 @@ function EventDetail({ event }: { readonly event: WorldEvent }) {
 
       <div className="grid grid-cols-2 gap-4">
         <Panel title="Event">
-          <DataList>
+          <DataList columns={1}>
             <DataField label="Type" value={eventTypeLabel(event)} prose />
             <DataField
               label="Source"
@@ -317,7 +294,7 @@ export function OverviewScreen() {
         {selected ? (
           <EventDetail key={selected.id} event={selected} />
         ) : (
-          <div className="flex max-w-5xl flex-col gap-4">
+          <div className="flex max-w-6xl flex-col gap-4">
             <PageHeader
               kicker="Overview"
               title="Environment and events"
