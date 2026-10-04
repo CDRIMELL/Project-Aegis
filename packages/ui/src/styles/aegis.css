@@ -1,0 +1,200 @@
+/*
+ * AEGIS design system: the single source of visual truth (ADR 0009).
+ *
+ * Tier 1 - primitives (`--aegis-*`): raw ramps. Referenced only in this file.
+ * Tier 2 - semantic tokens (`@theme`): what a value is for. These generate the utility classes
+ *          that components use. Tailwind's own palette and scales are removed, so a class such as
+ *          `bg-blue-500` or `rounded-2xl` does not exist in this application.
+ *
+ * To add a visual need: add or extend a token here, then use it from a component in @aegis/ui.
+ */
+@import 'tailwindcss';
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-sans/latin-ext-400.css';
+@import '@fontsource/ibm-plex-sans/latin-ext-500.css';
+@import '@fontsource/ibm-plex-sans/latin-ext-600.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-ext-400.css';
+@import '@fontsource/ibm-plex-mono/latin-ext-500.css';
+
+@source '../';
+
+:root {
+  /* Graphite: cool neutral, the great majority of every screen. */
+  --aegis-graphite-950: oklch(0.155 0.008 250);
+  --aegis-graphite-900: oklch(0.185 0.009 250);
+  --aegis-graphite-850: oklch(0.215 0.01 250);
+  --aegis-graphite-800: oklch(0.25 0.011 250);
+  --aegis-graphite-700: oklch(0.31 0.012 250);
+  --aegis-graphite-600: oklch(0.4 0.012 250);
+  --aegis-graphite-500: oklch(0.52 0.012 250);
+  --aegis-graphite-400: oklch(0.65 0.011 250);
+  --aegis-graphite-300: oklch(0.77 0.009 250);
+  --aegis-graphite-100: oklch(0.93 0.005 250);
+
+  /* Signal hues. Each has a foreground value and a dark tint for filled backgrounds. */
+  --aegis-green-400: oklch(0.78 0.115 158);
+  --aegis-green-500: oklch(0.7 0.115 158);
+  --aegis-green-900: oklch(0.27 0.04 158);
+  --aegis-teal-400: oklch(0.76 0.075 205);
+  --aegis-teal-900: oklch(0.27 0.03 205);
+  --aegis-amber-400: oklch(0.8 0.125 82);
+  --aegis-amber-900: oklch(0.29 0.045 82);
+  --aegis-red-400: oklch(0.68 0.165 25);
+  --aegis-red-900: oklch(0.27 0.06 25);
+
+  /* Motion: fast for feedback, medium for panels, slow for map and environment changes. */
+  --motion-fast: 90ms;
+  --motion-medium: 180ms;
+  --motion-slow: 320ms;
+}
+
+@theme {
+  /* Remove Tailwind defaults so only AEGIS tokens can be used. */
+  --color-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+  --font-weight-*: initial;
+  --tracking-*: initial;
+  --leading-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --blur-*: initial;
+  --ease-*: initial;
+  --animate-*: initial;
+
+  /* Surfaces, from the window background upward. */
+  --color-canvas: var(--aegis-graphite-950);
+  --color-surface: var(--aegis-graphite-900);
+  --color-surface-raised: var(--aegis-graphite-850);
+  --color-surface-hover: var(--aegis-graphite-800);
+
+  /* Borders and dividers. */
+  --color-line-subtle: var(--aegis-graphite-850);
+  --color-line: var(--aegis-graphite-800);
+  --color-line-strong: var(--aegis-graphite-700);
+
+  /* Text and icons. */
+  --color-ink: var(--aegis-graphite-100);
+  --color-ink-secondary: var(--aegis-graphite-300);
+  --color-ink-muted: var(--aegis-graphite-400);
+  --color-ink-disabled: var(--aegis-graphite-600);
+  --color-ink-inverse: var(--aegis-graphite-950);
+
+  /* Identity: used sparingly for the primary action and the active location. */
+  --color-accent: var(--aegis-green-500);
+  --color-accent-strong: var(--aegis-green-400);
+  --color-accent-surface: var(--aegis-green-900);
+
+  /* Status. Colour carries meaning; it is never decoration. */
+  --color-ok: var(--aegis-green-400);
+  --color-ok-surface: var(--aegis-green-900);
+  --color-info: var(--aegis-teal-400);
+  --color-info-surface: var(--aegis-teal-900);
+  --color-warn: var(--aegis-amber-400);
+  --color-warn-surface: var(--aegis-amber-900);
+  --color-critical: var(--aegis-red-400);
+  --color-critical-surface: var(--aegis-red-900);
+
+  --color-focus: var(--aegis-teal-400);
+
+  /* Typography: sans for interface text, mono for telemetry and identifiers. */
+  --font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.25rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.25rem;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --tracking-normal: 0;
+  --tracking-label: 0.08em;
+  --tracking-wordmark: 0.28em;
+
+  /* Shape: small radii, hairline borders, one shadow reserved for floating layers. */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --shadow-overlay: 0 8px 24px oklch(0 0 0 / 0.45);
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --default-transition-duration: var(--motion-fast);
+  --default-transition-timing-function: var(--ease-standard);
+}
+
+/* Telemetry and identifiers: monospaced with fixed-width digits so values do not jitter. */
+@utility telemetry {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'zero' 1;
+}
+
+@utility motion-medium {
+  transition-duration: var(--motion-medium);
+}
+
+@utility motion-slow {
+  transition-duration: var(--motion-slow);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    -webkit-font-smoothing: antialiased;
+    /* Desktop application behaviour: interface chrome is not selectable text. */
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background-color: var(--color-accent-surface);
+    color: var(--color-ink);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
