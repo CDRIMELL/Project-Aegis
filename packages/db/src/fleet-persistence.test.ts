@@ -11,6 +11,7 @@ import {
 } from '@aegis/domain';
 import {
   RECENT_FLIGHTS,
+  SIM_MODEL_VERSION,
   SimulationEngine,
   SimulationRunner,
   type AircraftOrder,
@@ -380,9 +381,13 @@ describe('flight continuity across application restarts', () => {
     session.runner.execute({ type: 'seedStarterFleet', aircraft: ORDERS });
     await session.runner.flush();
     expect(
-      session.database.transport.connection.prepare('SELECT model_version FROM sim_world').get(),
+      session.database.transport.connection
+        .prepare('SELECT model_version, log_complete_from_tick FROM sim_world')
+        .get(),
     ).toEqual({
-      model_version: 2,
+      model_version: SIM_MODEL_VERSION,
+      // The log of an upgraded world starts where it was upgraded, not at tick 0.
+      log_complete_from_tick: 5,
     });
     session.database.close();
   });

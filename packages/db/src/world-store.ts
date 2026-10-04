@@ -10,9 +10,11 @@ import {
 } from '@aegis/domain';
 import {
   RECENT_FLIGHTS,
+  RECENT_LOG,
   type AircraftState,
   type Checkpoint,
   type FlightState,
+  type LogEntry,
   type WorldStore,
 } from '@aegis/sim';
 import { desc, eq, ne, notInArray } from 'drizzle-orm';
@@ -21,11 +23,14 @@ import type { AegisDb } from './client';
 import {
   AIRCRAFT_STATUSES,
   FLIGHT_STATUSES,
+  LOG_ACTORS,
+  LOG_KINDS,
   simAircraft,
   simCheckpoint,
   simClock,
   simCounter,
   simFlight,
+  simLog,
   simRngStream,
   simWorld,
 } from './schema';
@@ -46,6 +51,7 @@ const worldRow = z.object({
   modelVersion: count,
   epochMs: count,
   starterFleetSeeded: z.boolean(),
+  logCompleteFromTick: count,
 });
 const clockRow = z.object({
   simTimeMs: count,
@@ -143,6 +149,19 @@ const flightRow = z.object({
 });
 const counterRow = z.object({ name: z.string().min(1), value: z.int().positive() });
 
+const logRow = z.object({
+  seq: z.int().positive(),
+  tick: count,
+  kind: z.enum(LOG_KINDS),
+  type: z.string().min(1),
+  actor: z.enum(LOG_ACTORS),
+  missionId: z.string().nullable(),
+  aircraftId: z.string().nullable(),
+  flightId: z.string().nullable(),
+  payload: z.string(),
+});
+const logPayload = z.record(z.string(), z.unknown());
+
 function parse<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
   const result = schema.safeParse(value);
   if (!result.success) {
@@ -213,28 +232,47 @@ function toFlight(row: unknown): FlightState {
   };
 }
 
+function toLogEntry(row: unknown): LogEntry {
+  const entry = parse(logRow, row, 'sim_log row');
+  return { ...entry, payload: json(logPayload, entry.payload, `sim_log ${entry.seq} payload`) };
+}
+
 /** {@link WorldStore} over SQLite. Reads and writes a whole checkpoint in one transaction. */
 export class SqliteWorldStore implements WorldStore {
+  /** Highest log sequence this store knows to be on disk, so a checkpoint inserts only newer ones. */
+  private loggedSeq = 0;
+
   constructor(private readonly db: AegisDb) {}
 
   async load(): Promise<Checkpoint | null> {
-    const [worlds, clocks, checkpoints, streams, aircraftRows, activeRows, finishedRows, counters] =
-      await this.db.batch([
-        this.db.select().from(simWorld),
-        this.db.select().from(simClock),
-        this.db.select().from(simCheckpoint),
-        this.db.select().from(simRngStream),
-        this.db.select().from(simAircraft),
-        this.db.select().from(simFlight).where(eq(simFlight.status, 'active')),
-        // Only recent history is held in memory; older flights stay in the table.
-        this.db
-          .select()
-          .from(simFlight)
-          .where(ne(simFlight.status, 'active'))
-          .orderBy(desc(simFlight.id))
-          .limit(RECENT_FLIGHTS),
-        this.db.select().from(simCounter),
-      ]);
+    const [
+      worlds,
+      clocks,
+      checkpoints,
+      streams,
+      aircraftRows,
+      activeRows,
+      finishedRows,
+      counters,
+      logRows,
+    ] = await this.db.batch([
+      this.db.select().from(simWorld),
+      this.db.select().from(simClock),
+      this.db.select().from(simCheckpoint),
+      this.db.select().from(simRngStream),
+      this.db.select().from(simAircraft),
+      this.db.select().from(simFlight).where(eq(simFlight.status, 'active')),
+      // Only recent history is held in memory; older flights stay in the table.
+      this.db
+        .select()
+        .from(simFlight)
+        .where(ne(simFlight.status, 'active'))
+        .orderBy(desc(simFlight.id))
+        .limit(RECENT_FLIGHTS),
+      this.db.select().from(simCounter),
+      // Only the recent tail is held in memory; the whole log stays in the table.
+      this.db.select().from(simLog).orderBy(desc(simLog.seq)).limit(RECENT_LOG),
+    ]);
 
     if (worlds.length + clocks.length + checkpoints.length + streams.length === 0) {
       return null;
@@ -256,6 +294,10 @@ export class SqliteWorldStore implements WorldStore {
         throw new WorldStorageError(`Invalid state for RNG stream "${name}"`, { cause });
       }
     }
+
+    const entries = logRows.map(toLogEntry).reverse();
+    const nextSeq = (entries.at(-1)?.seq ?? 0) + 1;
+    this.loggedSeq = nextSeq - 1;
 
     const byId = <T extends { id: string }>(a: T, b: T) => a.id.localeCompare(b.id);
     return {
@@ -284,6 +326,7 @@ export class SqliteWorldStore implements WorldStore {
           ),
           starterFleetSeeded: world.starterFleetSeeded,
         },
+        log: { nextSeq, completeFromTick: world.logCompleteFromTick, entries },
       },
     };
   }
@@ -296,6 +339,7 @@ export class SqliteWorldStore implements WorldStore {
       modelVersion: snapshot.modelVersion,
       epochMs: snapshot.epoch,
       starterFleetSeeded: fleet.starterFleetSeeded,
+      logCompleteFromTick: snapshot.log.completeFromTick,
     };
     const clock = {
       simTimeMs: snapshot.clock.simTime,
@@ -329,6 +373,11 @@ export class SqliteWorldStore implements WorldStore {
       const { id, plan, progress, ...columns } = flight;
       return { id, ...columns, plan: JSON.stringify(plan), progress: JSON.stringify(progress) };
     });
+
+    // Entries already on disk are skipped; the conflict clause makes a retry harmless either way.
+    const logRows = snapshot.log.entries
+      .filter((entry) => entry.seq > this.loggedSeq)
+      .map((entry) => ({ ...entry, payload: JSON.stringify(entry.payload) }));
 
     await this.db.batch([
       this.db
@@ -372,6 +421,9 @@ export class SqliteWorldStore implements WorldStore {
           .values({ name, value })
           .onConflictDoUpdate({ target: simCounter.name, set: { value } }),
       ),
+      // Append-only: log rows are inserted, never updated or deleted.
+      ...logRows.map((row) => this.db.insert(simLog).values(row).onConflictDoNothing()),
     ]);
+    this.loggedSeq = Math.max(this.loggedSeq, snapshot.log.nextSeq - 1);
   }
 }

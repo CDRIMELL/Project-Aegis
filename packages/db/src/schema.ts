@@ -11,6 +11,7 @@ import { check, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
  */
 
 export * from './fleet-schema';
+export * from './log-schema';
 export * from './reference-schema';
 
 /** Identity of the simulated world. Exactly one row. */
@@ -28,6 +29,11 @@ export const simWorld = sqliteTable(
     starterFleetSeeded: integer('starter_fleet_seeded', { mode: 'boolean' })
       .notNull()
       .default(false),
+    /**
+     * The tick from which `sim_log` records everything (ADR 0018). 0 for a world that has always
+     * had a log; a world created before the log existed records the tick it gained one.
+     */
+    logCompleteFromTick: integer('log_complete_from_tick').notNull().default(0),
   },
   (t) => [check('sim_world_singleton', sql`${t.id} = 1`)],
 );
