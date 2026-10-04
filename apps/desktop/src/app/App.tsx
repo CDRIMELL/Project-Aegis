@@ -9,6 +9,7 @@ import {
 } from 'react-router';
 import { DataScreen } from '../features/data/DataScreen';
 import { FleetScreen } from '../features/fleet/FleetScreen';
+import { MissionsScreen } from '../features/missions/MissionsScreen';
 import { OperationsScreen } from '../features/operations/OperationsScreen';
 import { SimClockBar } from '../features/sim-clock/SimClockBar';
 import { SystemScreen } from '../features/system/SystemScreen';
@@ -57,6 +58,7 @@ const router = createHashRouter([
     children: [
       { path: '/operations', element: <OperationsScreen /> },
       { path: '/fleet/:aircraftId?', element: <FleetScreen /> },
+      { path: '/missions/:missionId?/:mode?', element: <MissionsScreen /> },
       { path: '/data', element: <DataScreen /> },
       { path: '/system', element: <SystemScreen /> },
       { path: '*', element: <Navigate to={HOME_PATH} replace /> },

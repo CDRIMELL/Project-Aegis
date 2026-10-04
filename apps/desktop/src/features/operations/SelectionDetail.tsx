@@ -223,7 +223,7 @@ function Pending({ title, error }: { readonly title: string; readonly error?: st
 export function SelectionDetail({
   selection,
 }: {
-  readonly selection: Exclude<NonNullable<Selection>, { type: 'aircraft' }>;
+  readonly selection: Exclude<NonNullable<Selection>, { type: 'aircraft' | 'mission' }>;
 }) {
   const key =
     selection.type === 'location' ? `location:${selection.id}` : `country:${selection.iso2}`;

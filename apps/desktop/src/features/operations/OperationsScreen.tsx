@@ -17,6 +17,7 @@ import { Building2, Maximize, Minus, Plane, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { focusLocation, focusZoom, startMapBinding } from '../../map/binding';
 import { startFlightBinding } from '../../map/flight-binding';
+import { startMissionBinding } from '../../map/mission-binding';
 import { mapController } from '../../map/controller';
 import { formatCoordinates, scaleBar } from '../../map/features';
 import type { LayerGroup } from '../../map/style';
@@ -28,6 +29,7 @@ import { useSimStore } from '../../state/sim-store';
 import { useAsync } from '../shared/useAsync';
 import { AircraftPanel } from './AircraftPanel';
 import { FlightPlannerPanel } from './FlightPlannerPanel';
+import { MissionPanel } from './MissionPanel';
 import { SelectionDetail } from './SelectionDetail';
 
 /** Mounts the application's single map into this screen. The map itself is not a React tree. */
@@ -38,6 +40,7 @@ function MapSurface() {
     const controller = mapController();
     startMapBinding();
     startFlightBinding();
+    startMissionBinding();
     const element = host.current;
     element?.append(controller.element);
     controller.resize();
@@ -80,7 +83,7 @@ function LayerPanel() {
       ))}
       <SectionLabel className="px-1.5 pt-2 pb-1">Simulation layers</SectionLabel>
       <div className="px-1.5 pb-1">
-        <Hint>Aircraft and flight routes, in green. Always shown.</Hint>
+        <Hint>Aircraft, flight routes and missions, in green. Always shown.</Hint>
       </div>
     </FloatingPanel>
   );
@@ -255,15 +258,30 @@ function ReferenceStatus() {
 function SidePanel() {
   const selection = useMapStore((state) => state.selection);
   const planningId = usePlanStore((state) => state.planningAircraftId);
+  const planningMissionId = usePlanStore((state) => state.missionId);
   const draft = usePlanStore((state) => state.draft);
+  const missionId = planningMissionId ?? (selection?.type === 'mission' ? selection.id : null);
+  const mission = useSimStore(
+    (state) =>
+      state.view?.missions.missions.find((candidate) => candidate.id === missionId) ?? null,
+  );
   const wantedId = planningId ?? (selection?.type === 'aircraft' ? selection.id : null);
   const aircraft = useSimStore(
     (state) => state.view?.fleet.aircraft.find((candidate) => candidate.id === wantedId) ?? null,
   );
 
-  if (planningId && aircraft) return <FlightPlannerPanel aircraft={aircraft} draft={draft} />;
+  if (planningId && aircraft) {
+    return (
+      <FlightPlannerPanel
+        aircraft={aircraft}
+        draft={draft}
+        mission={planningMissionId ? mission : null}
+      />
+    );
+  }
   if (selection?.type === 'aircraft')
     return aircraft ? <AircraftPanel aircraft={aircraft} /> : null;
+  if (selection?.type === 'mission') return mission ? <MissionPanel mission={mission} /> : null;
   return selection ? <SelectionDetail selection={selection} /> : null;
 }
 

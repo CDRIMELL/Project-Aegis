@@ -1,9 +1,65 @@
 import { formatUtc, hex32 } from '@aegis/domain';
-import { DataField, DataList, Notice, Panel, StatusBadge } from '@aegis/ui';
+import type { LogEntry } from '@aegis/sim';
+import { DataField, DataList, DataTable, Hint, Notice, Panel, StatusBadge } from '@aegis/ui';
 import { useEffect, useState } from 'react';
 import { formatInteger, formatWallUtc } from '../../format';
 import { fetchAppInfo, type AppInfo } from '../../platform/tauri';
+import { loadRecentLog } from '../../sim/log-queries';
 import { useSimStore } from '../../state/sim-store';
+import { formatTick } from '../shared/mission-display';
+import { useAsync } from '../shared/useAsync';
+import { useLastReady } from '../shared/useStable';
+
+/** How many log entries the System screen shows. The audit view of a later phase shows them all. */
+const LOG_ROWS = 40;
+
+/** The newest entries of the command and event log (ADR 0018). */
+function LogPanel() {
+  const epoch = useSimStore((state) => state.view?.epoch ?? null);
+  const total = useSimStore((state) => state.view?.logLength ?? 0);
+  const persisted = useSimStore((state) => state.view?.checkpoint.persistedSeq ?? 0);
+  const log = useAsync(`recent-log:${persisted}`, () => loadRecentLog(LOG_ROWS));
+  const entries = useLastReady(log);
+  return (
+    <Panel
+      title="Command and event log"
+      actions={<StatusBadge tone="neutral">{formatInteger(total)} entries</StatusBadge>}
+    >
+      {log.status === 'failed' && <Hint>The log could not be read: {log.error}</Hint>}
+      {entries?.length === 0 && <Hint>Nothing has been recorded in this world yet.</Hint>}
+      {entries && entries.length > 0 && (
+        <DataTable<LogEntry>
+          caption="Most recent log entries, newest first"
+          rows={entries}
+          rowKey={(entry) => String(entry.seq)}
+          columns={[
+            { header: 'Seq', numeric: true, cell: (entry) => formatInteger(entry.seq) },
+            {
+              header: 'Sim time (UTC)',
+              numeric: true,
+              cell: (entry) => formatTick(epoch, entry.tick),
+            },
+            { header: 'Kind', cell: (entry) => entry.kind },
+            { header: 'Type', numeric: true, cell: (entry) => entry.type },
+            { header: 'By', cell: (entry) => entry.actor },
+            {
+              header: 'Concerns',
+              numeric: true,
+              cell: (entry) =>
+                [entry.missionId, entry.aircraftId, entry.flightId].filter(Boolean).join(' · '),
+            },
+          ]}
+        />
+      )}
+      <div className="mt-3">
+        <Hint>
+          Every action that changed the world and everything the world did in response, in order.
+          Append-only. The newest {LOG_ROWS} entries are shown.
+        </Hint>
+      </div>
+    </Panel>
+  );
+}
 
 /** Loads native-core diagnostics once. `error` is set if the core cannot be reached. */
 function useAppInfo(): { info: AppInfo | null; error: string | null } {
@@ -182,6 +238,7 @@ export function SystemScreen() {
           </div>
         </Panel>
       </div>
+      <LogPanel />
     </div>
   );
 }

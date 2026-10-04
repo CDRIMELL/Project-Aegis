@@ -34,9 +34,15 @@ export function startFlightBinding(): void {
 
   const highlighted = (): string | null => {
     const { selection } = useMapStore.getState();
-    return selection?.type === 'aircraft'
-      ? selection.id
-      : usePlanStore.getState().planningAircraftId;
+    if (selection?.type === 'aircraft') return selection.id;
+    if (selection?.type === 'mission') {
+      // A selected mission highlights the aircraft flying it.
+      const mission = useSimStore
+        .getState()
+        .view?.missions.missions.find((candidate) => candidate.id === selection.id);
+      if (mission?.aircraftId) return mission.aircraftId;
+    }
+    return usePlanStore.getState().planningAircraftId;
   };
 
   const drawAircraft = (): void => {

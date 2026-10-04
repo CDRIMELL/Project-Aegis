@@ -10,18 +10,32 @@ import type { PlanDraft } from '../fleet/plan-edit';
 interface PlanState {
   /** The aircraft a flight is being planned for; `null` when the planner is closed. */
   readonly planningAircraftId: string | null;
+  /** The mission whose route is being edited; `null` when planning a flight on its own. */
+  readonly missionId: string | null;
   /** `null` until a destination has been chosen and a plan generated. */
   readonly draft: PlanDraft | null;
 }
 
-export const usePlanStore = create<PlanState>(() => ({ planningAircraftId: null, draft: null }));
+export const usePlanStore = create<PlanState>(() => ({
+  planningAircraftId: null,
+  missionId: null,
+  draft: null,
+}));
 
 export function beginPlanning(aircraftId: string): void {
-  usePlanStore.setState({ planningAircraftId: aircraftId, draft: null });
+  usePlanStore.setState({ planningAircraftId: aircraftId, missionId: null, draft: null });
+}
+
+/**
+ * Opens the planner on a mission's route. It is the same draft and the same editing as any other
+ * flight plan; saving writes the route back to the mission instead of launching it.
+ */
+export function beginMissionPlanning(missionId: string, draft: PlanDraft): void {
+  usePlanStore.setState({ planningAircraftId: draft.aircraftId, missionId, draft });
 }
 
 export function cancelPlanning(): void {
-  usePlanStore.setState({ planningAircraftId: null, draft: null });
+  usePlanStore.setState({ planningAircraftId: null, missionId: null, draft: null });
 }
 
 export function setDraft(draft: PlanDraft | null): void {

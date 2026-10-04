@@ -102,6 +102,15 @@ export function AircraftPanel({ aircraft }: { readonly aircraft: AircraftState }
   );
   const navigate = useNavigate();
   const model = aircraft.performance;
+  // The accepted or active mission this aircraft is committed to, if any.
+  const mission = useSimStore(
+    (state) =>
+      state.view?.missions.missions.find(
+        (candidate) =>
+          candidate.aircraftId === aircraft.id &&
+          (candidate.status === 'accepted' || candidate.status === 'active'),
+      ) ?? null,
+  );
 
   return (
     <DetailPanel
@@ -148,12 +157,36 @@ export function AircraftPanel({ aircraft }: { readonly aircraft: AircraftState }
         </section>
       )}
 
+      {mission && (
+        <section className="flex flex-col gap-2.5">
+          <SectionLabel>Mission</SectionLabel>
+          <DataList columns={1}>
+            <DataField label={mission.id} value={mission.title} prose />
+          </DataList>
+          <div>
+            <Button
+              size="sm"
+              onClick={() => {
+                select({ type: 'mission', id: mission.id });
+              }}
+            >
+              Show mission
+            </Button>
+          </div>
+        </section>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {!flight && (
           <Button
             variant="primary"
             icon={Route}
-            disabled={!model}
+            disabled={!model || mission !== null}
+            title={
+              mission
+                ? `Committed to ${mission.id}. Launch the mission, or release it first.`
+                : undefined
+            }
             onClick={() => {
               beginPlanning(aircraft.id);
             }}

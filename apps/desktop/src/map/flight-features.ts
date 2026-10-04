@@ -33,7 +33,7 @@ export function legCoordinates(
   return out;
 }
 
-function routeCoordinates(points: readonly RoutePoint[]): [number, number][] {
+export function routeCoordinates(points: readonly RoutePoint[]): [number, number][] {
   const route = routeGeometry(points);
   const out: [number, number][] = [];
   for (const leg of route.legs) {

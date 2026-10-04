@@ -1,5 +1,5 @@
-import { addMs, formatUtc, type RoutePoint } from '@aegis/domain';
-import type { AircraftState } from '@aegis/sim';
+import { addMs, evaluateMission, formatUtc, type Mission, type RoutePoint } from '@aegis/domain';
+import { MAINTENANCE_POLICY, type AircraftState } from '@aegis/sim';
 import {
   Button,
   ConstraintList,
@@ -13,8 +13,9 @@ import {
   NumberField,
   SectionLabel,
 } from '@aegis/ui';
-import { ArrowDown, ArrowUp, Fuel, Plus, Send, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Fuel, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router';
 import {
   evaluateDraft,
   generateDraft,
@@ -31,6 +32,8 @@ import {
 import { formatDuration, formatInteger, formatKg, formatKm } from '../../format';
 import { formatCoordinates } from '../../map/features';
 import { mapController } from '../../map/controller';
+import { configurationOf } from '../../missions/mission-logic';
+import { updateMission } from '../../missions/service';
 import { simClient } from '../../sim/client';
 import { select } from '../../state/map-store';
 import { cancelPlanning, editDraft, setDraft } from '../../state/plan-store';
@@ -41,6 +44,8 @@ import {
   SimulatedBadge,
   placeName,
 } from '../shared/fleet-display';
+import { ObjectiveList } from '../shared/mission-display';
+import { useStable } from '../shared/useStable';
 
 interface RouteRow {
   readonly index: number;
@@ -118,8 +123,64 @@ function RouteTable({ draft, legs }: { draft: PlanDraft; legs: readonly { distan
   );
 }
 
-function DraftEditor({ aircraft, draft }: { aircraft: AircraftState; draft: PlanDraft }) {
+/**
+ * What the mission's objectives will do if the draft route is flown. The planner's own estimate
+ * and constraints are unchanged; this adds the mission's view of the same plan.
+ */
+function MissionForecast({
+  mission,
+  aircraft,
+  draft,
+}: {
+  readonly mission: Mission;
+  readonly aircraft: AircraftState;
+  readonly draft: PlanDraft;
+}) {
+  const tick = useSimStore((state) => {
+    const now = state.view?.clock.tick ?? 0;
+    return now - (now % 600);
+  });
+  const stableMission = useStable(mission);
+  const stableAircraft = useStable(aircraft);
+  const evaluation = useMemo(
+    () =>
+      evaluateMission({
+        type: stableMission.type,
+        aircraft: stableAircraft,
+        plan: draft.plan,
+        load: draft.load,
+        objectives: stableMission.objectives,
+        departureTick: tick,
+        completeByTick: stableMission.completeByTick,
+        maintenance: MAINTENANCE_POLICY,
+        stepS: 1,
+      }),
+    [stableMission, stableAircraft, draft, tick],
+  );
+  const missionOnly = evaluation.constraints.filter(
+    (constraint) => !evaluation.plan?.constraints.includes(constraint),
+  );
+  return (
+    <section className="flex flex-col gap-2.5">
+      <SectionLabel>Mission objectives (forecast)</SectionLabel>
+      <ObjectiveList objectives={evaluation.forecast?.objectives ?? stableMission.objectives} />
+      {missionOnly.length > 0 && <ConstraintList items={missionOnly} />}
+      <Hint>What each objective will do if this route is flown, launched now.</Hint>
+    </section>
+  );
+}
+
+function DraftEditor({
+  aircraft,
+  draft,
+  mission,
+}: {
+  aircraft: AircraftState;
+  draft: PlanDraft;
+  mission: Mission | null;
+}) {
   const model = aircraft.performance;
+  const navigate = useNavigate();
   const simTime = useSimStore((state) => state.view?.clock.simTime ?? null);
   const evaluation = useMemo(() => (model ? evaluateDraft(draft, model) : null), [draft, model]);
   if (!model || !evaluation) return null;
@@ -127,6 +188,7 @@ function DraftEditor({ aircraft, draft }: { aircraft: AircraftState; draft: Plan
 
   return (
     <>
+      {mission && <MissionForecast mission={mission} aircraft={aircraft} draft={draft} />}
       <section className="flex flex-col gap-2.5">
         <SectionLabel>Estimate</SectionLabel>
         {estimate ? (
@@ -212,7 +274,7 @@ function DraftEditor({ aircraft, draft }: { aircraft: AircraftState; draft: Plan
             min={0}
             max={model.fuelCapacityKg}
             value={Math.round(draft.load.fuelKg)}
-            hint={`Assumed capacity: ${formatKg(model.fuelCapacityKg)}.`}
+            hint={`Capacity: ${formatKg(model.fuelCapacityKg)}.`}
             onChange={(value) => {
               editDraft((current) => setLoad(current, { fuelKg: value }));
             }}
@@ -253,27 +315,60 @@ function DraftEditor({ aircraft, draft }: { aircraft: AircraftState; draft: Plan
       </section>
 
       <div className="flex gap-2">
-        <Button
-          variant="primary"
-          icon={Send}
-          disabled={!evaluation.flyable}
-          title={evaluation.flyable ? undefined : 'Resolve the blocking constraints first.'}
-          onClick={() => {
-            simClient.send({
-              type: 'launchFlight',
-              aircraftId: aircraft.id,
-              plan: draft.plan,
-              load: draft.load,
-            });
-            cancelPlanning();
-            select({ type: 'aircraft', id: aircraft.id });
-          }}
-        >
-          Launch
-        </Button>
-        <Button variant="ghost" onClick={cancelPlanning}>
-          Discard plan
-        </Button>
+        {mission && (
+          <Button
+            variant="primary"
+            icon={Save}
+            onClick={() => {
+              // The route becomes part of the mission; it is launched from the mission.
+              updateMission(mission, {
+                ...configurationOf(mission),
+                plan: draft.plan,
+                load: draft.load,
+              });
+              cancelPlanning();
+              void navigate(`/missions/${mission.id}`);
+            }}
+          >
+            Save route to mission
+          </Button>
+        )}
+        {mission && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              cancelPlanning();
+              void navigate(`/missions/${mission.id}`);
+            }}
+          >
+            Discard changes
+          </Button>
+        )}
+        {!mission && (
+          <Button
+            variant="primary"
+            icon={Send}
+            disabled={!evaluation.flyable}
+            title={evaluation.flyable ? undefined : 'Resolve the blocking constraints first.'}
+            onClick={() => {
+              simClient.send({
+                type: 'launchFlight',
+                aircraftId: aircraft.id,
+                plan: draft.plan,
+                load: draft.load,
+              });
+              cancelPlanning();
+              select({ type: 'aircraft', id: aircraft.id });
+            }}
+          >
+            Launch
+          </Button>
+        )}
+        {!mission && (
+          <Button variant="ghost" onClick={cancelPlanning}>
+            Discard plan
+          </Button>
+        )}
       </div>
     </>
   );
@@ -283,9 +378,12 @@ function DraftEditor({ aircraft, draft }: { aircraft: AircraftState; draft: Plan
 export function FlightPlannerPanel({
   aircraft,
   draft,
+  mission = null,
 }: {
   readonly aircraft: AircraftState;
   readonly draft: PlanDraft | null;
+  /** The mission whose route is being edited; `null` when planning a flight on its own. */
+  readonly mission?: Mission | null;
 }) {
   const origin = aircraft.location;
   const model = aircraft.performance;
@@ -304,7 +402,7 @@ export function FlightPlannerPanel({
 
   return (
     <DetailPanel
-      kicker="Flight plan"
+      kicker={mission ? `Route of ${mission.id}` : 'Flight plan'}
       title={aircraft.id}
       badges={
         <>
@@ -337,7 +435,14 @@ export function FlightPlannerPanel({
         </Notice>
       )}
 
-      {model && origin && (
+      {mission && (
+        <Hint>
+          Editing the route of {mission.title}. Where the mission goes is set in the mission; here
+          you shape how it gets there.
+        </Hint>
+      )}
+
+      {model && origin && !mission && (
         <section className="flex flex-col gap-2.5">
           <SectionLabel>Destination</SectionLabel>
           {destination && <DataField label="Selected" value={placeName(destination)} prose />}
@@ -346,7 +451,7 @@ export function FlightPlannerPanel({
         </section>
       )}
 
-      {draft && <DraftEditor aircraft={aircraft} draft={draft} />}
+      {draft && <DraftEditor aircraft={aircraft} draft={draft} mission={mission} />}
     </DetailPanel>
   );
 }

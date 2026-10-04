@@ -190,6 +190,11 @@ export class MapController {
   }
 
   /** Resolves once the start-up style is loaded and sources can be filled. */
+  /** The colours the map draws in, resolved from the design tokens. */
+  get colors(): MapPalette {
+    return this.palette;
+  }
+
   whenReady(): Promise<void> {
     return this.ready;
   }
