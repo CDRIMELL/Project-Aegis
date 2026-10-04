@@ -2,6 +2,7 @@ export * from './components/AppFrame';
 export * from './components/Button';
 export * from './components/controls';
 export * from './components/DataField';
+export * from './components/forms';
 export * from './components/Icon';
 export * from './components/Notice';
 export * from './components/Panel';
