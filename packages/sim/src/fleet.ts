@@ -1,6 +1,8 @@
 import {
-  advanceFlight,
+  advanceInWeather,
+  conditionsForFlight,
   evaluatePlan,
+  groundSpeedKmh,
   flightProfile,
   greatCircleDistance,
   grossMassKg,
@@ -13,9 +15,11 @@ import {
   type FlightProgress,
   type LatLon,
   type PerformanceModel,
+  type PlanContext,
   type Rng,
   type RouteGeometry,
   type RoutePoint,
+  type WeatherModel,
 } from '@aegis/domain';
 import type { EmitEvent, LogSubject } from './log';
 
@@ -106,6 +110,9 @@ export interface FlightState {
   /** The planner's estimate at launch, kept for comparison with the outcome. */
   readonly estimatedDurationS: number;
   readonly estimatedFuelUsedKg: number;
+  /** The same plan's estimate in still air, to show what the weather cost; `null` before model 4. */
+  readonly stillAirDurationS: number | null;
+  readonly stillAirFuelUsedKg: number | null;
   readonly progress: FlightProgress;
 }
 
@@ -191,6 +198,15 @@ export interface FlightView {
   readonly etaTick: number;
   readonly estimatedFuelAtDestinationKg: number;
   readonly points: readonly RoutePoint[];
+  /** The weather where the aircraft is now, at its altitude. */
+  readonly groundSpeedKmh: number;
+  readonly tailwindKmh: number;
+  readonly windFromDeg: number;
+  readonly windSpeedKmh: number;
+  readonly outsideTemperatureC: number;
+  readonly visibilityKm: number;
+  readonly precipitation: number;
+  readonly severity: number;
 }
 
 export interface FleetView {
@@ -235,7 +251,11 @@ export class Fleet {
   /** Route geometry and profile of each active flight. Derived from the plan; never persisted. */
   private readonly active = new Map<string, { profile: FlightProfile; route: RouteGeometry }>();
 
-  constructor(snapshot: FleetSnapshot = EMPTY_FLEET) {
+  constructor(
+    snapshot: FleetSnapshot = EMPTY_FLEET,
+    /** The world's weather. `null` flies everything in still air, as tests of other things do. */
+    private readonly weather: WeatherModel | null = null,
+  ) {
     for (const aircraft of snapshot.aircraft) this.aircraft.set(aircraft.id, aircraft);
     for (const flight of snapshot.flights) this.flights.set(flight.id, flight);
     for (const [name, value] of Object.entries(snapshot.counters)) this.counters.set(name, value);
@@ -342,6 +362,7 @@ export class Fleet {
     load: FlightLoad,
     tick: number,
     missionId: string | null,
+    context: PlanContext | null = null,
   ): string {
     const aircraft = this.require(aircraftId);
     const location = this.onGround(aircraft, 'launch');
@@ -362,7 +383,7 @@ export class Fleet {
         `${aircraft.id} is at ${location.name}; the flight must start there.`,
       );
     }
-    const evaluation = evaluatePlan(model, plan, load);
+    const evaluation = evaluatePlan(model, plan, load, context);
     const blocked = evaluation.constraints.find((constraint) => constraint.severity === 'block');
     if (blocked || !evaluation.estimate) {
       throw new CommandRejected(blocked?.message ?? 'The flight plan cannot be flown.');
@@ -380,6 +401,8 @@ export class Fleet {
       arrivedTick: null,
       estimatedDurationS: evaluation.estimate.durationS,
       estimatedFuelUsedKg: evaluation.estimate.fuelUsedKg,
+      stillAirDurationS: evaluation.estimate.weather?.stillAirDurationS ?? null,
+      stillAirFuelUsedKg: evaluation.estimate.weather?.stillAirFuelUsedKg ?? null,
       progress: initialProgress(profile, load.fuelKg),
     };
     this.flights.set(flight.id, flight);
@@ -417,6 +440,17 @@ export class Fleet {
     return { position: { lat: position.lat, lon: position.lon }, totalM: route.totalM };
   }
 
+  /**
+   * Makes an available aircraft on the ground due maintenance, as an inspection finding does.
+   * Returns false, changing nothing, if the aircraft is not available.
+   */
+  flagMaintenanceDue(aircraftId: string): boolean {
+    const aircraft = this.aircraft.get(aircraftId);
+    if (!aircraft || aircraft.status !== 'available' || aircraft.location === null) return false;
+    this.aircraft.set(aircraftId, { ...aircraft, status: 'maintenance_due' });
+    return true;
+  }
+
   /** Removes the payload from an aircraft on the ground. */
   unload(aircraftId: string): void {
     const aircraft = this.aircraft.get(aircraftId);
@@ -437,7 +471,11 @@ export class Fleet {
    * saving or logging); throws {@link CommandRejected} if it cannot be carried out, leaving the
    * fleet exactly as it was.
    */
-  apply(command: FleetCommand, tick: number): CommandEffect | null {
+  apply(
+    command: FleetCommand,
+    tick: number,
+    context: PlanContext | null = null,
+  ): CommandEffect | null {
     switch (command.type) {
       case 'acquireAircraft':
         return { aircraftId: this.acquire(command, tick) };
@@ -488,7 +526,14 @@ export class Fleet {
       }
 
       case 'launchFlight': {
-        const flightId = this.launch(command.aircraftId, command.plan, command.load, tick, null);
+        const flightId = this.launch(
+          command.aircraftId,
+          command.plan,
+          command.load,
+          tick,
+          null,
+          context,
+        );
         return { aircraftId: command.aircraftId, flightId };
       }
 
@@ -541,7 +586,12 @@ export class Fleet {
     )) {
       const flight = this.flights.get(flightId) as FlightState;
       const aircraft = this.aircraft.get(flight.aircraftId) as AircraftState;
-      const progress = advanceFlight(profile, flight.progress, STEP_S);
+      const progress = advanceInWeather(
+        profile,
+        flight.progress,
+        STEP_S,
+        this.weather ? { weather: this.weather, route, departureTick: flight.departedTick } : null,
+      );
       changed = true;
 
       if (progress.phase === 'landed') {
@@ -575,6 +625,14 @@ export class Fleet {
             durationS: progress.elapsedS,
             fuelRemainingKg: progress.fuelKg,
             wearPct: wear,
+            // What the weather cost, against the same plan in still air.
+            ...(flight.stillAirDurationS !== null &&
+              flight.stillAirFuelUsedKg !== null && {
+                weatherDelayS: progress.elapsedS - flight.stillAirDurationS,
+                weatherFuelKg:
+                  flight.fuelAtDepartureKg - progress.fuelKg - flight.stillAirFuelUsedKg,
+                worstSeverity: progress.exposure.worstSeverity,
+              }),
           },
         );
         if (due) emit('maintenanceDue', { aircraftId: aircraft.id });
@@ -669,6 +727,12 @@ export class Fleet {
       const derived = this.active.get(flight.id);
       if (!derived) continue;
       const position = positionAlong(derived.route, flight.progress.distanceM);
+      const conditions = this.weather
+        ? conditionsForFlight(
+            { weather: this.weather, route: derived.route, departureTick: flight.departedTick },
+            flight.progress,
+          )
+        : null;
       activeFlights.push({
         id: flight.id,
         aircraftId: flight.aircraftId,
@@ -686,6 +750,14 @@ export class Fleet {
         etaTick: flight.departedTick + flight.estimatedDurationS / STEP_S,
         estimatedFuelAtDestinationKg: flight.fuelAtDepartureKg - flight.estimatedFuelUsedKg,
         points: flight.plan.points,
+        groundSpeedKmh: groundSpeedKmh(flight.progress.speedKmh, flight.progress.environment),
+        tailwindKmh: flight.progress.environment.tailwindKmh,
+        windFromDeg: conditions?.windFromDeg ?? 0,
+        windSpeedKmh: conditions?.windSpeedKmh ?? 0,
+        outsideTemperatureC: conditions?.temperatureC ?? 15,
+        visibilityKm: conditions?.visibilityKm ?? 40,
+        precipitation: conditions?.precipitation ?? 0,
+        severity: conditions?.severity ?? 0,
       });
     }
     return {

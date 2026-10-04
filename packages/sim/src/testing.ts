@@ -4,6 +4,7 @@ import {
   simInstant,
   suggestedFuelKg,
   type PerformanceModel,
+  type PlanContext,
   type RoutePoint,
   type TypeCharacteristics,
 } from '@aegis/domain';
@@ -164,9 +165,11 @@ export function fixtureLaunch(
   origin: RoutePoint,
   destination: RoutePoint,
   payloadKg = 0,
+  /** The world the flight will leave in, so that its fuel allows for the weather. */
+  context: PlanContext | null = null,
 ): FleetCommand {
   const plan = generatePlan(model, origin, destination);
-  const fuelKg = suggestedFuelKg(model, plan, payloadKg);
+  const fuelKg = suggestedFuelKg(model, plan, payloadKg, context);
   if (fuelKg === null) throw new Error('Fixture route cannot be flown');
   return { type: 'launchFlight', aircraftId, plan, load: { fuelKg, payloadKg } };
 }

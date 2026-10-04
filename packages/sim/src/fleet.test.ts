@@ -101,11 +101,14 @@ function launch(
   payloadKg = 0,
 ) {
   const plan = generatePlan(model, from, to);
-  const fuelKg = suggestedFuelKg(model, plan, payloadKg);
+  // Planned in the world it will be flown in: the same weather, departing at the same tick.
+  const context = engine.planContext();
+  const fuelKg = suggestedFuelKg(model, plan, payloadKg, context);
   if (fuelKg === null) throw new Error('route not flyable');
   const load = { fuelKg, payloadKg };
+  const estimate = evaluatePlan(model, plan, load, context).estimate;
   engine.applyCommand({ type: 'launchFlight', aircraftId, plan, load });
-  return { plan, load, estimate: evaluatePlan(model, plan, load).estimate };
+  return { plan, load, estimate };
 }
 
 /** Runs until the aircraft has no active flight. Returns the number of steps taken. */

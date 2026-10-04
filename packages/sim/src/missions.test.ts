@@ -69,12 +69,10 @@ function create(
   const command: WorldCommand = {
     type: 'createMission',
     missionType: type,
-    ...defaultConfiguration(
-      type,
-      brief,
-      aircraftId ? aircraftOf(engine, aircraftId) : null,
-      options,
-    ),
+    ...defaultConfiguration(type, brief, aircraftId ? aircraftOf(engine, aircraftId) : null, {
+      ...options,
+      context: engine.planContext(),
+    }),
   };
   engine.applyCommand(command);
   return command;
@@ -627,9 +625,11 @@ describe('world-generated opportunities', () => {
   it('copies the operating area into the world once, as a system command', () => {
     const engine = world();
     expect(engine.applyCommand({ type: 'setOperatingArea', places: AREA_PLACES })).toBe(true);
-    expect(engine.applyCommand({ type: 'setOperatingArea', places: [places.exeter] })).toBe(false);
+    // Setting the same area again changes nothing and is not logged.
+    expect(engine.applyCommand({ type: 'setOperatingArea', places: AREA_PLACES })).toBe(false);
     expect(engine.snapshot().missions.places).toEqual(AREA_PLACES);
     expect(log(engine).at(-1)).toMatchObject({ type: 'setOperatingArea', actor: 'system' });
+    expect(log(engine).filter((entry) => entry.type === 'setOperatingArea')).toHaveLength(1);
     expect(() => world().applyCommand({ type: 'setOperatingArea', places: [] })).toThrow(
       CommandRejected,
     );
@@ -821,6 +821,7 @@ describe('missions across save and restore', () => {
       places: [],
       nextNumber: 1,
       generated: 0,
+      areaCentre: null,
     });
   });
 

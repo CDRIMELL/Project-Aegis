@@ -1,4 +1,12 @@
-import { isSpeedMultiplier, type SimInstant, type SpeedMultiplier } from '@aegis/domain';
+import {
+  hazardsFrom,
+  isSpeedMultiplier,
+  type PlanContext,
+  type SimInstant,
+  type SpeedMultiplier,
+  type WeatherModel,
+} from '@aegis/domain';
+import type { EventsView } from './events';
 import { SimulationEngine, type WorldCommand } from './engine';
 import type { FleetView } from './fleet';
 import type { MissionsView } from './missions';
@@ -33,6 +41,9 @@ export interface SimView {
   readonly integrityDigest: number;
   readonly fleet: FleetView;
   readonly missions: MissionsView;
+  readonly events: EventsView;
+  /** Identifies the world's weather, so the interface computes the same weather the engine does. */
+  readonly weather: WeatherModel;
   /** Number of entries in the command and event log. The entries are read from the database. */
   readonly logLength: number;
   readonly checkpoint: {
@@ -42,6 +53,18 @@ export interface SimView {
     readonly persistedTick: number | null;
     /** Message of the most recent failed write, cleared by the next successful one. */
     readonly lastError: string | null;
+  };
+}
+
+/**
+ * The world a plan would be flown in if it departed now, as the interface sees it. It is the same
+ * context the engine checks a launch against, built from the same published state.
+ */
+export function planContextOf(view: SimView): PlanContext {
+  return {
+    weather: view.weather,
+    departureTick: view.clock.tick,
+    hazards: hazardsFrom(view.events.events),
   };
 }
 
@@ -207,6 +230,8 @@ export class SimulationRunner {
       integrityDigest: snapshot.integrityDigest,
       fleet: this.engine.fleetView(),
       missions: this.engine.missionsView(),
+      events: this.engine.eventsView(),
+      weather: this.engine.weather,
       logLength: snapshot.log.nextSeq - 1,
       checkpoint: {
         persistedSeq: this.persisted?.seq ?? 0,

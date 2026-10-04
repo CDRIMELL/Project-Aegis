@@ -3,10 +3,15 @@ import {
   RngStreams,
   addMs,
   foldUint32,
+  hazardsFrom,
   isSpeedMultiplier,
+  weatherModel,
+  type PlanContext,
   type SimInstant,
   type SpeedMultiplier,
+  type WeatherModel,
 } from '@aegis/domain';
+import { EMPTY_EVENTS, Events, type EventsView, type EventsWorld } from './events';
 import { CommandRejected, EMPTY_FLEET, Fleet, type FleetCommand, type FleetView } from './fleet';
 import {
   EMPTY_MISSIONS,
@@ -60,6 +65,8 @@ export class SimulationEngine {
   private speed: SpeedMultiplier;
   private running: boolean;
   private integrityDigest: number;
+  /** The world's weather: a function of its seed and epoch, with no state of its own. */
+  readonly weather: WeatherModel;
 
   private constructor(
     private readonly seed: string,
@@ -69,8 +76,23 @@ export class SimulationEngine {
     integrityDigest: number,
     private readonly fleet: Fleet,
     private readonly missions: Missions,
+    private readonly events: Events,
     private readonly log: SimLog,
   ) {
+    this.weather = weatherModel(seed, epoch);
+    this.eventsWorld = {
+      weather: this.weather,
+      places: () => this.missions.operatingArea(),
+      groundedAircraft: () => this.fleet.groundedAircraft(),
+      aircraftById: (id) => this.fleet.aircraftById(id),
+      flagMaintenanceDue: (aircraftId) =>
+        // An aircraft committed to a mission is left alone: the finding would strand the mission.
+        this.missions.reservation(aircraftId) === undefined &&
+        this.fleet.flagMaintenanceDue(aircraftId),
+      offerUrgentDelivery: (event, tick) =>
+        this.missions.offerUrgentDelivery(event, tick, this.fleet, this.emit),
+      affectableMissions: () => this.missions.affectable(),
+    };
     this.tick = clock.tick;
     this.speed = clock.speed;
     this.running = clock.running;
@@ -87,8 +109,9 @@ export class SimulationEngine {
       new RngStreams(options.seed),
       { tick: 0, speed: 1, running: true },
       DIGEST_SEED,
-      new Fleet(),
+      new Fleet(EMPTY_FLEET, weatherModel(options.seed, options.epoch)),
       new Missions(),
+      new Events(),
       new SimLog(),
     );
   }
@@ -130,7 +153,10 @@ export class SimulationEngine {
     let fleet: Fleet;
     try {
       // A model-1 world has no fleet; it is upgraded to an empty one.
-      fleet = new Fleet((snapshot as Partial<WorldSnapshot>).fleet ?? EMPTY_FLEET);
+      fleet = new Fleet(
+        (snapshot as Partial<WorldSnapshot>).fleet ?? EMPTY_FLEET,
+        weatherModel(snapshot.seed, snapshot.epoch),
+      );
     } catch (cause) {
       throw new WorldRestoreError('Saved fleet state is invalid', { cause });
     }
@@ -141,6 +167,13 @@ export class SimulationEngine {
       missions.assertConsistentWith(fleet);
     } catch (cause) {
       throw new WorldRestoreError('Saved mission state is invalid', { cause });
+    }
+    let events: Events;
+    try {
+      // A world saved before events existed has none.
+      events = new Events((snapshot as Partial<WorldSnapshot>).events ?? EMPTY_EVENTS);
+    } catch (cause) {
+      throw new WorldRestoreError('Saved event state is invalid', { cause });
     }
     let log: SimLog;
     try {
@@ -156,6 +189,7 @@ export class SimulationEngine {
       snapshot.integrityDigest,
       fleet,
       missions,
+      events,
       log,
     );
   }
@@ -200,6 +234,7 @@ export class SimulationEngine {
       integrityDigest: this.integrityDigest,
       fleet: this.fleet.snapshot(),
       missions: this.missions.snapshot(),
+      events: this.events.snapshot(),
       log: this.log.snapshot(),
     };
   }
@@ -216,8 +251,13 @@ export class SimulationEngine {
    */
   applyCommand(command: WorldCommand): boolean {
     let effect;
+    const context = this.planContext();
+    const hazards = context.hazards ?? hazardsFrom(this.events.open());
     if (isMissionCommand(command)) {
-      effect = this.missions.apply(command, this.tick, this.fleet);
+      effect = this.missions.apply(command, this.tick, this.fleet, {
+        weather: this.weather,
+        hazards,
+      });
     } else {
       if (command.type === 'launchFlight') {
         // An aircraft committed to a mission flies that mission, or is released from it first.
@@ -228,7 +268,7 @@ export class SimulationEngine {
           );
         }
       }
-      effect = this.fleet.apply(command, this.tick);
+      effect = this.fleet.apply(command, this.tick, context);
     }
     if (effect === null) return false;
     this.log.append(
@@ -246,8 +286,24 @@ export class SimulationEngine {
     return this.fleet.view();
   }
 
+  /**
+   * The world a plan would be flown in if it departed now: the weather, the tick and the open
+   * events. The planner evaluates against exactly what a launch would be checked against.
+   */
+  planContext(): PlanContext {
+    return {
+      weather: this.weather,
+      departureTick: this.tick,
+      hazards: hazardsFrom(this.events.open()),
+    };
+  }
+
   missionsView(): MissionsView {
     return this.missions.view();
+  }
+
+  eventsView(): EventsView {
+    return this.events.view();
   }
 
   /**
@@ -256,15 +312,22 @@ export class SimulationEngine {
    */
   private step(): void {
     this.tick += 1;
-    const emit: EmitEvent = (type, subject, payload) => {
-      this.log.append(this.tick, 'event', type, 'world', subject, payload);
-    };
-    const rng = (stream: string) => this.rng.stream(stream);
-    // Fixed order: aircraft move, then missions read where they are.
-    this.fleet.step(this.tick, rng, emit);
-    this.missions.step(this.tick, this.fleet, rng, emit);
+    // Fixed order: aircraft move, then missions read where they are, then events.
+    this.fleet.step(this.tick, this.stream, this.emit);
+    this.missions.step(this.tick, this.fleet, this.stream, this.emit);
+    this.events.step(this.tick, this.eventsWorld, this.stream, this.emit);
     this.updateIntegrityDigest();
   }
+
+  /** Records something the world did, at the step it happened. */
+  private readonly emit: EmitEvent = (type, subject, payload) => {
+    this.log.append(this.tick, 'event', type, 'world', subject, payload);
+  };
+
+  private readonly stream = (name: string) => this.rng.stream(name);
+
+  /** What the events subsystem may see and do in the rest of the world. */
+  private readonly eventsWorld: EventsWorld;
 
   /**
    * Folds the tick number and one random draw into a rolling digest.
@@ -285,6 +348,13 @@ export class SimulationEngine {
  */
 function restoredLog(snapshot: WorldSnapshot): LogSnapshot {
   const saved = (snapshot as Partial<WorldSnapshot>).log;
-  if (saved && snapshot.modelVersion >= FIRST_LOGGED_MODEL_VERSION) return saved;
-  return { ...EMPTY_LOG, completeFromTick: snapshot.clock.tick };
+  if (!saved || snapshot.modelVersion < FIRST_LOGGED_MODEL_VERSION) {
+    return { ...EMPTY_LOG, completeFromTick: snapshot.clock.tick };
+  }
+  // The rules changed since this world was saved, so what it logged under the old rules cannot be
+  // replayed under the new ones. The log itself is kept; replay starts from here.
+  if (snapshot.modelVersion < SIM_MODEL_VERSION) {
+    return { ...saved, completeFromTick: Math.max(saved.completeFromTick, snapshot.clock.tick) };
+  }
+  return saved;
 }

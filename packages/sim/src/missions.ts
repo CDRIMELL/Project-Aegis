@@ -21,6 +21,7 @@ import {
   suggestedFuelKg,
   type FlightLoad,
   type FlightPlan,
+  type Hazards,
   type LatLon,
   type MaintenancePolicy,
   type Mission,
@@ -32,8 +33,11 @@ import {
   type Objective,
   type ObjectiveContext,
   type ObjectiveInput,
+  type PlanContext,
   type Rng,
   type RoutePoint,
+  type WeatherModel,
+  type WorldEvent,
 } from '@aegis/domain';
 import {
   CommandRejected,
@@ -42,6 +46,7 @@ import {
   type CommandEffect,
   type FlightState,
 } from './fleet';
+import type { AffectableMission } from './events';
 import type { EmitEvent } from './log';
 
 /*
@@ -80,6 +85,8 @@ export interface MissionsSnapshot {
   readonly nextNumber: number;
   /** How many opportunities the world has generated. */
   readonly generated: number;
+  /** The point the operating area was chosen around; `null` until it has one. */
+  readonly areaCentre: LatLon | null;
 }
 
 export const EMPTY_MISSIONS: MissionsSnapshot = {
@@ -87,6 +94,7 @@ export const EMPTY_MISSIONS: MissionsSnapshot = {
   places: [],
   nextNumber: 1,
   generated: 0,
+  areaCentre: null,
 };
 
 /** The player's configuration of a mission. The application builds it from a template. */
@@ -109,6 +117,8 @@ export interface ConfigurationOptions {
   readonly priority?: MissionPriority;
   readonly plannedStartTick?: number | null;
   readonly completeByTick?: number | null;
+  /** The world the mission would be flown in, so that the fuel offered allows for the weather. */
+  readonly context?: PlanContext | null;
 }
 
 /**
@@ -131,7 +141,7 @@ export function defaultConfiguration(
   let load: FlightLoad | null = null;
   if (model && plan) {
     const fuelKg =
-      suggestedFuelKg(model, plan, brief.payloadKg) ??
+      suggestedFuelKg(model, plan, brief.payloadKg, options.context ?? null) ??
       // The route is beyond the aircraft: offer the most it can carry and let validation say so.
       Math.max(
         Math.min(
@@ -163,8 +173,15 @@ export function defaultConfiguration(
 }
 
 export type MissionCommand =
-  /** Copies the operating area into the world. Has an effect once per world. */
-  | { readonly type: 'setOperatingArea'; readonly places: readonly RoutePoint[] }
+  /**
+   * Copies the operating area into the world, or replaces it when the fleet has moved (ADR 0022).
+   * `centre` is the point it was chosen around. Has no effect if the area is unchanged.
+   */
+  | {
+      readonly type: 'setOperatingArea';
+      readonly places: readonly RoutePoint[];
+      readonly centre?: LatLon;
+    }
   | ({ readonly type: 'createMission'; readonly missionType: MissionType } & MissionConfiguration)
   /** Replaces the configuration of a mission that has not been accepted. */
   | ({ readonly type: 'updateMission'; readonly missionId: string } & MissionConfiguration)
@@ -204,6 +221,7 @@ export interface FleetPort {
     load: FlightLoad,
     tick: number,
     missionId: string | null,
+    context: PlanContext | null,
   ): string;
   /** Removes the payload from an aircraft on the ground. */
   unload(aircraftId: string): void;
@@ -214,6 +232,14 @@ export interface MissionsView {
   /** Newest first. */
   readonly missions: readonly Mission[];
   readonly operatingAreaSize: number;
+  /** The point the operating area was chosen around. */
+  readonly areaCentre: LatLon | null;
+}
+
+/** The world a mission is planned and flown in: its weather and its open events. */
+export interface MissionWorld {
+  readonly weather: WeatherModel | null;
+  readonly hazards: Hazards;
 }
 
 const isTick = (value: number | null) =>
@@ -265,6 +291,7 @@ export class Missions {
   private places: readonly RoutePoint[];
   private nextNumber: number;
   private generated: number;
+  private areaCentre: LatLon | null;
 
   constructor(snapshot: MissionsSnapshot = EMPTY_MISSIONS) {
     if (!Number.isSafeInteger(snapshot.nextNumber) || snapshot.nextNumber < 1) {
@@ -279,6 +306,29 @@ export class Missions {
     this.places = snapshot.places;
     this.nextNumber = snapshot.nextNumber;
     this.generated = snapshot.generated;
+    this.areaCentre = snapshot.areaCentre ?? null;
+  }
+
+  /** The operating area. */
+  operatingArea(): readonly RoutePoint[] {
+    return this.places;
+  }
+
+  /** Missions that are accepted or flying, which an event may bear on. */
+  affectable(): AffectableMission[] {
+    const out: AffectableMission[] = [];
+    for (const mission of this.missions.values()) {
+      if ((mission.status === 'accepted' || mission.status === 'active') && mission.plan) {
+        out.push({
+          missionId: mission.id,
+          aircraftId: mission.aircraftId,
+          flightId: mission.flightId,
+          active: mission.status === 'active',
+          plan: mission.plan,
+        });
+      }
+    }
+    return out;
   }
 
   /** Checks saved missions against the fleet they refer to. */
@@ -323,7 +373,7 @@ export class Missions {
     return undefined;
   }
 
-  private evaluate(mission: Mission, fleet: FleetPort, tick: number) {
+  private evaluate(mission: Mission, fleet: FleetPort, tick: number, world: MissionWorld) {
     const aircraft = mission.aircraftId ? fleet.aircraftById(mission.aircraftId) : undefined;
     return evaluateMission({
       type: mission.type,
@@ -335,6 +385,8 @@ export class Missions {
       completeByTick: mission.completeByTick,
       maintenance: MAINTENANCE_POLICY,
       stepS: STEP_S,
+      weather: world.weather,
+      hazards: world.hazards,
     });
   }
 
@@ -342,10 +394,17 @@ export class Missions {
    * Applies a command. Returns what it touched, or `null` if it had no effect; throws
    * {@link CommandRejected} if it cannot be carried out, leaving everything exactly as it was.
    */
-  apply(command: MissionCommand, tick: number, fleet: FleetPort): CommandEffect | null {
+  apply(
+    command: MissionCommand,
+    tick: number,
+    fleet: FleetPort,
+    world: MissionWorld = { weather: null, hazards: { closures: [], disruptions: [] } },
+  ): CommandEffect | null {
+    const context: PlanContext | null = world.weather
+      ? { weather: world.weather, departureTick: tick, hazards: world.hazards }
+      : null;
     switch (command.type) {
       case 'setOperatingArea': {
-        if (this.places.length > 0) return null;
         if (command.places.length === 0 || command.places.length > MAX_OPERATING_AREA) {
           throw new CommandRejected(
             `An operating area holds between 1 and ${MAX_OPERATING_AREA} aerodromes.`,
@@ -361,7 +420,9 @@ export class Missions {
             throw new CommandRejected('An operating area holds valid aerodromes only.');
           }
         }
+        if (JSON.stringify(command.places) === JSON.stringify(this.places)) return null;
         this.places = [...command.places];
+        this.areaCentre = command.centre ?? null;
         return {};
       }
 
@@ -452,7 +513,7 @@ export class Missions {
         if (other) {
           throw new CommandRejected(`${aircraft.id} is already committed to ${other.id}.`);
         }
-        const evaluation = this.evaluate(mission, fleet, tick);
+        const evaluation = this.evaluate(mission, fleet, tick, world);
         const assessment = missionAssessment(evaluation, tick);
         if (!assessment) {
           const blocked = evaluation.constraints.find((c) => c.severity === 'block');
@@ -506,9 +567,14 @@ export class Missions {
           throw new CommandRejected(`${mission.id} is not fully planned.`);
         }
         // The fleet validates the flight as it would any other, and throws if it cannot be flown.
-        const flightId = fleet.launch(aircraftId, plan, load, tick, mission.id);
+        const flightId = fleet.launch(aircraftId, plan, load, tick, mission.id, context);
+        // The estimate depends on when the flight leaves (ADR 0021), so the figures recorded at
+        // acceptance are refreshed for the actual departure. They are what the flight will do.
+        const assessment =
+          missionAssessment(this.evaluate(mission, fleet, tick, world), tick) ?? mission.assessment;
         this.missions.set(mission.id, {
           ...mission,
+          assessment,
           status: 'active',
           flightId,
           actualStartTick: tick,
@@ -522,8 +588,9 @@ export class Missions {
   /** Judges active missions, expires what has run out of time, and may generate an opportunity. */
   step(tick: number, fleet: FleetPort, rng: (stream: string) => Rng, emit: EmitEvent): void {
     // Missions are held in the order they were created, which is identifier order, so iterating
-    // the map is deterministic. Copied because a mission may be removed while stepping.
-    for (const mission of [...this.missions.values()]) {
+    // the map is deterministic. A map may be changed while it is iterated: replacing a mission
+    // keeps its place, and a removed one is simply not visited.
+    for (const mission of this.missions.values()) {
       if (mission.status === 'active') {
         this.stepActive(mission, tick, fleet, emit);
       } else if (mission.status === 'offered') {
@@ -698,6 +765,85 @@ export class Missions {
     );
   }
 
+  /**
+   * Offers an urgent delivery to the place of a logistics disruption (ADR 0022), if an aircraft
+   * in the fleet could fly it from where it is. Nothing is rolled: the first suitable aircraft, in
+   * identifier order, sizes the request. Returns the opportunity's id, or `null`.
+   */
+  offerUrgentDelivery(
+    event: WorldEvent,
+    tick: number,
+    fleet: FleetPort,
+    emit: EmitEvent,
+  ): string | null {
+    const place = event.place;
+    if (!place) return null;
+    const template = MISSION_TEMPLATES.emergency_response;
+    const anchor = fleet.groundedAircraft().find((aircraft) => {
+      if (!aircraft.performance || !aircraft.location) return false;
+      if (!template.suitableCategories.includes(aircraft.category)) return false;
+      const distanceM = greatCircleDistance(aircraft.location, place);
+      return (
+        distanceM >= GENERATION.minDistanceM &&
+        distanceM <= aircraft.performance.referenceRangeKm * 1000 * GENERATION.oneWayRangeShare
+      );
+    });
+    if (!anchor?.performance || !anchor.location) return null;
+
+    const payloadKg = Math.max(
+      Math.round((anchor.performance.maxPayloadKg * 0.15) / 100) * 100,
+      100,
+    );
+    const flyingS =
+      (greatCircleDistance(anchor.location, place) / 1000 / anchor.performance.cruiseSpeedKmh) *
+      3600;
+    const completeByTick =
+      Math.max(event.endTick, tick) + Math.round((flyingS * 1.5 + 3600) / 60) * 60;
+    const brief: MissionBrief = {
+      shape: 'point_to_point',
+      destination: place,
+      target: null,
+      orbitRadiusM: 0,
+      holdS: 0,
+      payloadKg,
+    };
+    this.generated += 1;
+    const id = this.nextId();
+    const title = `${template.label}: ${place.code ? `${place.name} (${place.code})` : place.name}`;
+    this.missions.set(id, {
+      id,
+      type: 'emergency_response',
+      source: 'generated',
+      status: 'offered',
+      priority: template.priority,
+      title,
+      description: `Simulated requirement, raised by ${event.id}. ${template.description}`,
+      brief,
+      aircraftId: null,
+      flightId: null,
+      plan: null,
+      load: null,
+      objectives: newObjectives(
+        defaultObjectives(template, brief, completeByTick, MAINTENANCE.dueBelowConditionPct),
+      ),
+      assessment: null,
+      outcome: null,
+      createdTick: tick,
+      acceptedTick: null,
+      plannedStartTick: null,
+      actualStartTick: null,
+      completedTick: null,
+      expiresTick: Math.max(event.endTick, tick + 3600),
+      completeByTick,
+    });
+    emit(
+      'opportunityGenerated',
+      { missionId: id },
+      { missionType: 'emergency_response', title, eventId: event.id },
+    );
+    return id;
+  }
+
   /** Stores a finished mission and forgets the oldest finished ones beyond the in-memory limit. */
   private finish(mission: Mission): void {
     this.missions.set(mission.id, mission);
@@ -716,6 +862,7 @@ export class Missions {
       places: this.places,
       nextNumber: this.nextNumber,
       generated: this.generated,
+      areaCentre: this.areaCentre,
     };
   }
 
@@ -723,6 +870,7 @@ export class Missions {
     return {
       missions: [...this.snapshot().missions].reverse(),
       operatingAreaSize: this.places.length,
+      areaCentre: this.areaCentre,
     };
   }
 }

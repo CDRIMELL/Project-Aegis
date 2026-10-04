@@ -1,4 +1,5 @@
 import type { RngState, SimInstant, SpeedMultiplier } from '@aegis/domain';
+import type { EventsSnapshot } from './events';
 import type { FleetSnapshot } from './fleet';
 import type { LogSnapshot } from './log';
 import type { MissionsSnapshot } from './missions';
@@ -7,12 +8,13 @@ import type { MissionsSnapshot } from './missions';
  * Version of the simulation rules. A saved world records the version that produced it;
  * bump this whenever a change would make an existing world behave differently.
  */
-export const SIM_MODEL_VERSION = 3;
+export const SIM_MODEL_VERSION = 4;
 
 /**
  * Oldest model version this build can load. Older worlds are upgraded on load: a model-1 world
  * (clock only) gains an empty fleet (ADR 0016); a model-2 world gains an empty log and no missions
- * (ADR 0017, ADR 0018).
+ * (ADR 0017, ADR 0018); a model-3 world gains weather and events, and its log is complete for
+ * replay only from the upgrade, because the flight rules changed (ADR 0021).
  */
 export const OLDEST_LOADABLE_MODEL_VERSION = 1;
 
@@ -42,6 +44,8 @@ export interface WorldSnapshot {
   readonly fleet: FleetSnapshot;
   /** Missions, the operating area and the state of opportunity generation (ADR 0017). */
   readonly missions: MissionsSnapshot;
+  /** World events (ADR 0022). */
+  readonly events: EventsSnapshot;
   /** Recent entries of the command and event log (ADR 0018). */
   readonly log: LogSnapshot;
 }
