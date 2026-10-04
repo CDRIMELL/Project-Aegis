@@ -1,5 +1,6 @@
 import { isSpeedMultiplier, type SimInstant, type SpeedMultiplier } from '@aegis/domain';
 import { SimulationEngine } from './engine';
+import type { FleetCommand, FleetView } from './fleet';
 import {
   SIM_STEP_MS,
   type Checkpoint,
@@ -19,7 +20,8 @@ export interface HostClock {
 export type SimCommand =
   | { readonly type: 'resume' }
   | { readonly type: 'pause' }
-  | { readonly type: 'setSpeed'; readonly speed: SpeedMultiplier };
+  | { readonly type: 'setSpeed'; readonly speed: SpeedMultiplier }
+  | FleetCommand;
 
 /** What a user interface needs to present the simulation. Plain data, safe to post across threads. */
 export interface SimView {
@@ -28,6 +30,7 @@ export interface SimView {
   readonly epoch: SimInstant;
   readonly clock: ClockState;
   readonly integrityDigest: number;
+  readonly fleet: FleetView;
   readonly checkpoint: {
     /** Sequence number of the last checkpoint known to be on disk; 0 if none yet. */
     readonly persistedSeq: number;
@@ -172,6 +175,10 @@ export class SimulationRunner {
         if (clock.speed === command.speed) return;
         this.engine.setSpeed(command.speed);
         break;
+      default:
+        // Fleet commands. A rejected command throws and leaves nothing to save.
+        if (!this.engine.applyCommand(command)) return;
+        break;
     }
     this.dirty = true;
     void this.checkpoint();
@@ -194,6 +201,7 @@ export class SimulationRunner {
       epoch: snapshot.epoch,
       clock: snapshot.clock,
       integrityDigest: snapshot.integrityDigest,
+      fleet: this.engine.fleetView(),
       checkpoint: {
         persistedSeq: this.persisted?.seq ?? 0,
         persistedWallMs: this.persisted?.wallMs ?? null,

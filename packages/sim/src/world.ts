@@ -1,10 +1,17 @@
 import type { RngState, SimInstant, SpeedMultiplier } from '@aegis/domain';
+import type { FleetSnapshot } from './fleet';
 
 /**
  * Version of the simulation rules. A saved world records the version that produced it;
  * bump this whenever a change would make an existing world behave differently.
  */
-export const SIM_MODEL_VERSION = 1;
+export const SIM_MODEL_VERSION = 2;
+
+/**
+ * Oldest model version this build can load. A model-1 world (clock only) is upgraded on load to a
+ * model-2 world with an empty fleet (ADR 0016).
+ */
+export const OLDEST_LOADABLE_MODEL_VERSION = 1;
 
 /** Length of one simulation step in simulated milliseconds (ADR 0005). */
 export const SIM_STEP_MS = 1000;
@@ -28,6 +35,8 @@ export interface WorldSnapshot {
   readonly rngStreams: Readonly<Record<string, RngState>>;
   /** Rolling digest over every step taken; see `SimulationEngine`. */
   readonly integrityDigest: number;
+  /** Simulated aircraft and flights. */
+  readonly fleet: FleetSnapshot;
 }
 
 export interface NewWorldOptions {

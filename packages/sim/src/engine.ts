@@ -7,7 +7,9 @@ import {
   type SimInstant,
   type SpeedMultiplier,
 } from '@aegis/domain';
+import { EMPTY_FLEET, Fleet, type FleetCommand, type FleetView } from './fleet';
 import {
+  OLDEST_LOADABLE_MODEL_VERSION,
   SIM_MODEL_VERSION,
   SIM_STEP_MS,
   type ClockState,
@@ -40,6 +42,7 @@ export class SimulationEngine {
     private readonly rng: RngStreams,
     clock: Pick<ClockState, 'tick' | 'speed' | 'running'>,
     integrityDigest: number,
+    private readonly fleet: Fleet,
   ) {
     this.tick = clock.tick;
     this.speed = clock.speed;
@@ -57,13 +60,17 @@ export class SimulationEngine {
       new RngStreams(options.seed),
       { tick: 0, speed: 1, running: true },
       DIGEST_SEED,
+      new Fleet(),
     );
   }
 
   /** Rebuilds an engine from a snapshot, refusing anything internally inconsistent. */
   static restore(snapshot: WorldSnapshot): SimulationEngine {
     const { clock } = snapshot;
-    if (snapshot.modelVersion !== SIM_MODEL_VERSION) {
+    if (
+      snapshot.modelVersion > SIM_MODEL_VERSION ||
+      snapshot.modelVersion < OLDEST_LOADABLE_MODEL_VERSION
+    ) {
       throw new WorldRestoreError(
         `World was saved by simulation model ${snapshot.modelVersion}; this build runs model ${SIM_MODEL_VERSION}`,
       );
@@ -91,12 +98,20 @@ export class SimulationEngine {
     } catch (cause) {
       throw new WorldRestoreError('Saved RNG state is invalid', { cause });
     }
+    let fleet: Fleet;
+    try {
+      // A model-1 world has no fleet; it is upgraded to an empty one.
+      fleet = new Fleet((snapshot as Partial<WorldSnapshot>).fleet ?? EMPTY_FLEET);
+    } catch (cause) {
+      throw new WorldRestoreError('Saved fleet state is invalid', { cause });
+    }
     return new SimulationEngine(
       snapshot.seed,
       snapshot.epoch,
       rng,
       clock,
       snapshot.integrityDigest,
+      fleet,
     );
   }
 
@@ -138,7 +153,20 @@ export class SimulationEngine {
       clock: this.clock,
       rngStreams: this.rng.states(),
       integrityDigest: this.integrityDigest,
+      fleet: this.fleet.snapshot(),
     };
+  }
+
+  /**
+   * Applies a fleet command at the current step boundary. Returns false if it changed nothing;
+   * throws `CommandRejected` if it cannot be carried out, leaving the world untouched.
+   */
+  applyCommand(command: FleetCommand): boolean {
+    return this.fleet.apply(command, this.tick);
+  }
+
+  fleetView(): FleetView {
+    return this.fleet.view();
   }
 
   /**
@@ -147,6 +175,7 @@ export class SimulationEngine {
    */
   private step(): void {
     this.tick += 1;
+    this.fleet.step(this.tick, (stream) => this.rng.stream(stream));
     this.updateIntegrityDigest();
   }
 
