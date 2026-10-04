@@ -4,6 +4,7 @@ import {
   isSpeedMultiplier,
   simInstant,
   type FlightPlan,
+  type Mission,
   type PerformanceModel,
   type RngState,
   type RoutePoint,
@@ -11,13 +12,14 @@ import {
 import {
   RECENT_FLIGHTS,
   RECENT_LOG,
+  RECENT_MISSIONS,
   type AircraftState,
   type Checkpoint,
   type FlightState,
   type LogEntry,
   type WorldStore,
 } from '@aegis/sim';
-import { desc, eq, ne, notInArray } from 'drizzle-orm';
+import { asc, desc, eq, inArray, ne, notInArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AegisDb } from './client';
 import {
@@ -25,12 +27,18 @@ import {
   FLIGHT_STATUSES,
   LOG_ACTORS,
   LOG_KINDS,
+  MISSION_PRIORITIES,
+  MISSION_SOURCES,
+  MISSION_STATUSES,
+  MISSION_TYPES,
   simAircraft,
   simCheckpoint,
   simClock,
   simCounter,
   simFlight,
   simLog,
+  simMission,
+  simPlace,
   simRngStream,
   simWorld,
 } from './schema';
@@ -52,6 +60,8 @@ const worldRow = z.object({
   epochMs: count,
   starterFleetSeeded: z.boolean(),
   logCompleteFromTick: count,
+  nextMissionNumber: z.int().positive(),
+  opportunitiesGenerated: count,
 });
 const clockRow = z.object({
   simTimeMs: count,
@@ -139,6 +149,7 @@ const flightRow = z.object({
   id: z.string().min(1),
   aircraftId: z.string().min(1),
   status: z.enum(FLIGHT_STATUSES),
+  missionId: z.string().nullable(),
   departedTick: count,
   arrivedTick: count.nullable(),
   payloadKg: quantity,
@@ -149,6 +160,124 @@ const flightRow = z.object({
   progress: z.string(),
 });
 const counterRow = z.object({ name: z.string().min(1), value: z.int().positive() });
+
+/** Statuses after which nothing more happens to a mission. */
+const FINISHED_MISSION_STATUSES = [
+  'completed',
+  'failed',
+  'cancelled',
+  'rejected',
+  'expired',
+] as const;
+
+const namedPoint = z.object({
+  name: z.string().min(1),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+});
+const briefJson = z.object({
+  shape: z.enum(['point_to_point', 'out_and_back', 'orbit']),
+  destination: routePoint.nullable(),
+  target: namedPoint.nullable(),
+  orbitRadiusM: quantity,
+  holdS: quantity,
+  payloadKg: quantity,
+});
+const loadJson = z.object({ fuelKg: quantity, payloadKg: quantity });
+const objectiveSpec = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('complete_flight') }),
+  z.object({
+    kind: z.literal('visit_point'),
+    point: namedPoint,
+    radiusM: z.number().positive(),
+    byTick: count.nullable(),
+  }),
+  z.object({
+    kind: z.literal('remain_in_area'),
+    centre: namedPoint,
+    radiusM: z.number().positive(),
+    durationS: z.number().positive(),
+  }),
+  z.object({ kind: z.literal('deliver_payload'), massKg: z.number().positive() }),
+  z.object({ kind: z.literal('return_to_base') }),
+  z.object({ kind: z.literal('arrive_by'), byTick: count }),
+  z.object({ kind: z.literal('land_with_reserve') }),
+  z.object({ kind: z.literal('maintain_condition'), minPct: z.number().min(0).max(100) }),
+]);
+const objectivesJson = z.array(
+  z.object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+    spec: objectiveSpec,
+    required: z.boolean(),
+    status: z.enum(['pending', 'complete', 'failed']),
+    progress: z.number().min(0).max(1),
+    accumulatedS: quantity,
+    remark: z.string().nullable(),
+  }),
+);
+const assessmentJson = z.object({
+  assessedTick: count,
+  distanceM: quantity,
+  durationS: quantity,
+  fuelUsedKg: z.number(),
+  fuelAtDestinationKg: quantity,
+  risk: z.object({
+    index: z.number().min(0).max(100),
+    contributors: z.array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        value: z.number().min(0).max(1),
+        weight: z.number().positive(),
+        points: quantity,
+        explanation: z.string(),
+      }),
+    ),
+  }),
+});
+const outcomeJson = z.object({
+  result: z.enum(['completed', 'failed']),
+  decidedTick: count,
+  summary: z.string(),
+  objectivesComplete: count,
+  objectivesRequired: count,
+  flightDurationS: quantity.nullable(),
+  fuelUsedKg: z.number().nullable(),
+});
+const missionRow = z.object({
+  id: z.string().min(1),
+  type: z.enum(MISSION_TYPES),
+  source: z.enum(MISSION_SOURCES),
+  status: z.enum(MISSION_STATUSES),
+  priority: z.enum(MISSION_PRIORITIES),
+  title: z.string().min(1),
+  description: z.string(),
+  aircraftId: z.string().nullable(),
+  flightId: z.string().nullable(),
+  createdTick: count,
+  acceptedTick: count.nullable(),
+  plannedStartTick: count.nullable(),
+  actualStartTick: count.nullable(),
+  completedTick: count.nullable(),
+  expiresTick: count.nullable(),
+  completeByTick: count.nullable(),
+  brief: z.string(),
+  plan: z.string().nullable(),
+  load: z.string().nullable(),
+  objectives: z.string(),
+  assessment: z.string().nullable(),
+  outcome: z.string().nullable(),
+});
+const placeRow = z.object({
+  ordinal: count,
+  refId: z.string().nullable(),
+  code: z.string().nullable(),
+  name: z.string().min(1),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+  elevationM: z.number(),
+});
 
 const logRow = z.object({
   seq: z.int().positive(),
@@ -222,6 +351,7 @@ function toFlight(row: unknown): FlightState {
     id: f.id,
     aircraftId: f.aircraftId,
     status: f.status,
+    missionId: f.missionId,
     departedTick: f.departedTick,
     arrivedTick: f.arrivedTick,
     payloadKg: f.payloadKg,
@@ -230,6 +360,51 @@ function toFlight(row: unknown): FlightState {
     estimatedFuelUsedKg: f.estimatedFuelUsedKg,
     plan: json(planJson, f.plan, `sim_flight ${f.id} plan`) as FlightPlan,
     progress: json(progressJson, f.progress, `sim_flight ${f.id} progress`),
+  };
+}
+
+function toMission(row: unknown): Mission {
+  const m = parse(missionRow, row, 'sim_mission row');
+  const what = `sim_mission ${m.id}`;
+  const optional = <T>(schema: z.ZodType<T>, text: string | null, name: string): T | null =>
+    text === null ? null : json(schema, text, `${what} ${name}`);
+  return {
+    id: m.id,
+    type: m.type,
+    source: m.source,
+    status: m.status,
+    priority: m.priority,
+    title: m.title,
+    description: m.description,
+    aircraftId: m.aircraftId,
+    flightId: m.flightId,
+    createdTick: m.createdTick,
+    acceptedTick: m.acceptedTick,
+    plannedStartTick: m.plannedStartTick,
+    actualStartTick: m.actualStartTick,
+    completedTick: m.completedTick,
+    expiresTick: m.expiresTick,
+    completeByTick: m.completeByTick,
+    // JSON never yields an explicit `undefined`, so validated objects satisfy the exact types.
+    brief: json(briefJson, m.brief, `${what} brief`) as Mission['brief'],
+    plan: optional(planJson, m.plan, 'plan') as FlightPlan | null,
+    load: optional(loadJson, m.load, 'load'),
+    objectives: json(objectivesJson, m.objectives, `${what} objectives`),
+    assessment: optional(assessmentJson, m.assessment, 'assessment'),
+    outcome: optional(outcomeJson, m.outcome, 'outcome'),
+  };
+}
+
+function toPlace(row: unknown): RoutePoint {
+  const place = parse(placeRow, row, 'sim_place row');
+  return {
+    kind: 'aerodrome',
+    name: place.name,
+    ...(place.code === null ? {} : { code: place.code }),
+    lat: place.lat,
+    lon: place.lon,
+    elevationM: place.elevationM,
+    ...(place.refId === null ? {} : { refId: place.refId }),
   };
 }
 
@@ -256,6 +431,9 @@ export class SqliteWorldStore implements WorldStore {
       finishedRows,
       counters,
       logRows,
+      openMissionRows,
+      finishedMissionRows,
+      placeRows,
     ] = await this.db.batch([
       this.db.select().from(simWorld),
       this.db.select().from(simClock),
@@ -273,6 +451,18 @@ export class SqliteWorldStore implements WorldStore {
       this.db.select().from(simCounter),
       // Only the recent tail is held in memory; the whole log stays in the table.
       this.db.select().from(simLog).orderBy(desc(simLog.seq)).limit(RECENT_LOG),
+      this.db
+        .select()
+        .from(simMission)
+        .where(notInArray(simMission.status, [...FINISHED_MISSION_STATUSES])),
+      // Only recent history is held in memory; older missions stay in the table.
+      this.db
+        .select()
+        .from(simMission)
+        .where(inArray(simMission.status, [...FINISHED_MISSION_STATUSES]))
+        .orderBy(desc(simMission.id))
+        .limit(RECENT_MISSIONS),
+      this.db.select().from(simPlace).orderBy(asc(simPlace.ordinal)),
     ]);
 
     if (worlds.length + clocks.length + checkpoints.length + streams.length === 0) {
@@ -327,6 +517,12 @@ export class SqliteWorldStore implements WorldStore {
           ),
           starterFleetSeeded: world.starterFleetSeeded,
         },
+        missions: {
+          missions: [...openMissionRows, ...finishedMissionRows].map(toMission).sort(byId),
+          places: placeRows.map(toPlace),
+          nextNumber: world.nextMissionNumber,
+          generated: world.opportunitiesGenerated,
+        },
         log: { nextSeq, completeFromTick: world.logCompleteFromTick, entries },
       },
     };
@@ -334,13 +530,15 @@ export class SqliteWorldStore implements WorldStore {
 
   async save(checkpoint: Checkpoint): Promise<void> {
     const { snapshot } = checkpoint;
-    const { fleet } = snapshot;
+    const { fleet, missions } = snapshot;
     const world = {
       seed: snapshot.seed,
       modelVersion: snapshot.modelVersion,
       epochMs: snapshot.epoch,
       starterFleetSeeded: fleet.starterFleetSeeded,
       logCompleteFromTick: snapshot.log.completeFromTick,
+      nextMissionNumber: missions.nextNumber,
+      opportunitiesGenerated: missions.generated,
     };
     const clock = {
       simTimeMs: snapshot.clock.simTime,
@@ -374,6 +572,30 @@ export class SqliteWorldStore implements WorldStore {
       const { id, plan, progress, ...columns } = flight;
       return { id, ...columns, plan: JSON.stringify(plan), progress: JSON.stringify(progress) };
     });
+
+    const missionRows = missions.missions.map((mission) => {
+      const { id, brief, plan, load, objectives, assessment, outcome, ...columns } = mission;
+      const text = (value: unknown) => (value === null ? null : JSON.stringify(value));
+      return {
+        id,
+        ...columns,
+        brief: JSON.stringify(brief),
+        plan: text(plan),
+        load: text(load),
+        objectives: JSON.stringify(objectives),
+        assessment: text(assessment),
+        outcome: text(outcome),
+      };
+    });
+    const placeRows = missions.places.map((place, ordinal) => ({
+      ordinal,
+      refId: place.refId ?? null,
+      code: place.code ?? null,
+      name: place.name,
+      lat: place.lat,
+      lon: place.lon,
+      elevationM: place.elevationM,
+    }));
 
     // Entries already on disk are skipped; the conflict clause makes a retry harmless either way.
     const logRows = snapshot.log.entries
@@ -409,6 +631,16 @@ export class SqliteWorldStore implements WorldStore {
           .values({ id, ...columns })
           .onConflictDoUpdate({ target: simAircraft.id, set: columns }),
       ),
+      // Missions after aircraft and before flights: a mission refers to its aircraft, and a
+      // flight to its mission. Missions no longer in memory are left untouched: they are history.
+      ...missionRows.map(({ id, ...columns }) =>
+        this.db
+          .insert(simMission)
+          .values({ id, ...columns })
+          .onConflictDoUpdate({ target: simMission.id, set: columns }),
+      ),
+      // The operating area is set once and never changes.
+      ...placeRows.map((row) => this.db.insert(simPlace).values(row).onConflictDoNothing()),
       // Flights no longer in memory are left untouched: they are history.
       ...flightRows.map(({ id, ...columns }) =>
         this.db

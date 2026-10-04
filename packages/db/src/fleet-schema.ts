@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { check, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+  check,
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+  type AnySQLiteColumn,
+} from 'drizzle-orm/sqlite-core';
+import { simMission } from './mission-schema';
 
 /*
  * Simulated fleet (ADR 0016). Fictional AEGIS state, written only by simulation checkpoints.
@@ -68,6 +77,8 @@ export const simFlight = sqliteTable(
       .notNull()
       .references(() => simAircraft.id),
     status: text('status', { enum: FLIGHT_STATUSES }).notNull(),
+    /** The mission this flight carries out; NULL for a flight launched on its own. */
+    missionId: text('mission_id').references((): AnySQLiteColumn => simMission.id),
     departedTick: integer('departed_tick').notNull(),
     arrivedTick: integer('arrived_tick'),
     payloadKg: real('payload_kg').notNull(),

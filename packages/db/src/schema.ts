@@ -12,6 +12,7 @@ import { check, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export * from './fleet-schema';
 export * from './log-schema';
+export * from './mission-schema';
 export * from './reference-schema';
 
 /** Identity of the simulated world. Exactly one row. */
@@ -34,6 +35,10 @@ export const simWorld = sqliteTable(
      * had a log; a world created before the log existed records the tick it gained one.
      */
     logCompleteFromTick: integer('log_complete_from_tick').notNull().default(0),
+    /** Number the next mission will take. */
+    nextMissionNumber: integer('next_mission_number').notNull().default(1),
+    /** How many opportunities the world has generated. */
+    opportunitiesGenerated: integer('opportunities_generated').notNull().default(0),
   },
   (t) => [check('sim_world_singleton', sql`${t.id} = 1`)],
 );
