@@ -163,7 +163,10 @@ function MissionForecast({
   return (
     <section className="flex flex-col gap-2.5">
       <SectionLabel>Mission objectives (forecast)</SectionLabel>
-      <ObjectiveList objectives={evaluation.forecast?.objectives ?? stableMission.objectives} />
+      <ObjectiveList
+        objectives={evaluation.forecast?.objectives ?? stableMission.objectives}
+        forecast={evaluation.forecast !== null}
+      />
       {missionOnly.length > 0 && <ConstraintList items={missionOnly} />}
       <Hint>What each objective will do if this route is flown, launched now.</Hint>
     </section>

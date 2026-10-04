@@ -302,10 +302,10 @@ export function OperationsScreen() {
             </div>
           </div>
           <div className="flex items-end justify-between gap-3">
-            <div className="pointer-events-auto">
+            <div className="pointer-events-auto min-w-0 overflow-hidden">
               <MapReadout />
             </div>
-            <div className="pointer-events-auto">
+            <div className="pointer-events-auto shrink-0">
               <ZoomControls />
             </div>
           </div>

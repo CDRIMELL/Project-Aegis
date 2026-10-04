@@ -340,9 +340,10 @@ export function MissionForm({ mission, onDone }: MissionFormProps) {
           </div>
         </Panel>
 
-        <Panel title="Objectives">
+        <Panel title={evaluation.forecast ? 'Objectives (forecast)' : 'Objectives'}>
           <ObjectiveList
             objectives={evaluation.forecast?.objectives ?? newObjectives(configuration.objectives)}
+            forecast={evaluation.forecast !== null}
           />
         </Panel>
       </div>

@@ -469,9 +469,8 @@ describe('missions: end-to-end scenario', () => {
     expect(finished).toMatchObject({ status: 'completed', outcome: { result: 'completed' } });
     const landedAt = session.aircraft(candidate.aircraft.id).location;
     const expected = offer.brief.destination ?? candidate.aircraft.location;
-    expect(greatCircleDistance(landedAt as NonNullable<typeof landedAt>, expected)).toBeLessThan(
-      1000,
-    );
+    if (!landedAt || !expected) throw new Error('the aircraft should be on the ground');
+    expect(greatCircleDistance(landedAt, expected)).toBeLessThan(1000);
 
     // Its history reads like any other mission's, with the world's part at the start.
     await session.runner.flush();

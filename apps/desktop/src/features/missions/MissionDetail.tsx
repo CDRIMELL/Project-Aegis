@@ -260,10 +260,10 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
   );
   const ready = readiness(mission, aircraft);
   const risk = evaluation?.risk ?? mission.assessment?.risk ?? null;
-  const objectives =
-    open && evaluation?.forecast && mission.status !== 'offered'
-      ? evaluation.forecast.objectives
-      : mission.objectives;
+  // Before launch, show what the plan will do to each objective; afterwards, what happened.
+  const forecast = open && mission.status !== 'offered' ? (evaluation?.forecast ?? null) : null;
+  const forecasting = forecast !== null;
+  const objectives = forecast ? forecast.objectives : mission.objectives;
   const template = MISSION_TEMPLATES[mission.type];
 
   const showOnMap = () => {
@@ -417,10 +417,10 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
 
       <div className="grid grid-cols-2 gap-4">
         <OverviewPanel mission={mission} aircraft={aircraft} />
-        <Panel title={open && evaluation?.forecast ? 'Objectives (forecast)' : 'Objectives'}>
+        <Panel title={forecasting ? 'Objectives (forecast)' : 'Objectives'}>
           <div className="flex flex-col gap-3">
-            <ObjectiveList objectives={objectives} />
-            {open && evaluation?.forecast && mission.status !== 'offered' && (
+            <ObjectiveList objectives={objectives} forecast={forecasting} />
+            {forecasting && (
               <Hint>
                 Forecast: what each objective will do if the mission is flown as planned, launched
                 now. It is recalculated when the plan changes.

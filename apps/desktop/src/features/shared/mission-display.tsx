@@ -66,20 +66,28 @@ export function relativeTick(now: number, tick: number | null): string | null {
 }
 
 const OBJECTIVE_STATE = {
-  pending: { tone: 'info', word: 'Pending' },
-  complete: { tone: 'ok', word: 'Complete' },
-  failed: { tone: 'critical', word: 'Failed' },
+  pending: { tone: 'info', word: 'Pending', forecast: 'Not decided' },
+  complete: { tone: 'ok', word: 'Complete', forecast: 'Will be met' },
+  failed: { tone: 'critical', word: 'Failed', forecast: 'Will not be met' },
 } as const;
 
 /** One objective: what it asks, how far along it is, and why it failed if it did. */
-export function ObjectiveRow({ objective }: { readonly objective: Objective }) {
+export function ObjectiveRow({
+  objective,
+  forecast = false,
+}: {
+  readonly objective: Objective;
+  /** The objective's state is a forecast of the plan, not something that has happened. */
+  readonly forecast?: boolean;
+}) {
   const state = OBJECTIVE_STATE[objective.status];
   return (
     <li className="flex flex-col gap-1">
       <Meter
         label={`${objective.id} · ${objective.required ? 'Required' : 'Optional'}`}
-        value={objective.status === 'complete' ? 1 : objective.progress}
-        reading={state.word}
+        // A forecast has no progress to show: the bar would read as something already done.
+        value={forecast ? 0 : objective.status === 'complete' ? 1 : objective.progress}
+        reading={forecast ? state.forecast : state.word}
         tone={state.tone}
       />
       <span className="cursor-text text-xs text-ink-secondary select-text">{objective.label}</span>
@@ -88,12 +96,18 @@ export function ObjectiveRow({ objective }: { readonly objective: Objective }) {
   );
 }
 
-export function ObjectiveList({ objectives }: { readonly objectives: readonly Objective[] }) {
+export function ObjectiveList({
+  objectives,
+  forecast = false,
+}: {
+  readonly objectives: readonly Objective[];
+  readonly forecast?: boolean;
+}) {
   if (objectives.length === 0) return <Hint>No objectives yet.</Hint>;
   return (
     <ul className="flex flex-col gap-3">
       {objectives.map((objective) => (
-        <ObjectiveRow key={objective.id} objective={objective} />
+        <ObjectiveRow key={objective.id} objective={objective} forecast={forecast} />
       ))}
     </ul>
   );

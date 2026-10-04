@@ -123,5 +123,18 @@ export function startMissionBinding(): void {
 export function focusMission(mission: Mission): void {
   select({ type: 'mission', id: mission.id });
   const bounds = missionBounds(mission);
-  if (bounds) mapController().fitBounds(...bounds);
+  if (!bounds) return;
+  const controller = mapController();
+  // Coming from another area, the map is attached and sized a moment after this call. Framing
+  // before then would use the wrong size, so wait for it, briefly.
+  let attempts = 0;
+  const frame = (): void => {
+    if (controller.element.isConnected && controller.element.clientWidth > 0) {
+      controller.resize();
+      controller.fitBounds(...bounds);
+    } else if (attempts++ < 60) {
+      requestAnimationFrame(frame);
+    }
+  };
+  frame();
 }
