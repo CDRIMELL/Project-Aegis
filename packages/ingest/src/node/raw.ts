@@ -10,6 +10,9 @@ export const RAW_DIR = join(REPO_ROOT, 'data', 'raw');
 export const LOCK_PATH = join(REPO_ROOT, 'data', 'sources.lock.json');
 export const CURATED_TYPES = 'data/curated/aircraft-types.json';
 export const CURATED_ATTRIBUTES = 'data/curated/aircraft-attributes.wikipedia.json';
+export const CURATED_CHARACTERISTICS = 'data/curated/aircraft-characteristics.json';
+/** Where the release-time data pack is written: inside the desktop app's bundled assets. */
+export const PACK_DIR = join(REPO_ROOT, 'apps', 'desktop', 'public', 'reference-pack');
 
 /** Raw files that are downloaded, never committed, and pinned by the lock file (ADR 0012). */
 export const REMOTE_FILES = {

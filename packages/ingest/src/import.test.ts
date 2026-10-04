@@ -6,6 +6,7 @@ import { loadDataset, type JobReport } from './load';
 import type { NormalisedDataset, RunwayRecord } from './model';
 import {
   AIRCRAFT_ATTRIBUTES_JSON,
+  AIRCRAFT_CHARACTERISTICS_JSON,
   AIRCRAFT_TYPES_JSON,
   AIRPORTS_CSV,
   CITIES_GEOJSON,
@@ -33,6 +34,10 @@ function inputs(overrides: Partial<Record<keyof ReferenceInputs, string>> = {}):
     aircraftAttributes: rawFixture(
       overrides.aircraftAttributes ?? AIRCRAFT_ATTRIBUTES_JSON,
       'aircraft-attributes',
+    ),
+    aircraftCharacteristics: rawFixture(
+      overrides.aircraftCharacteristics ?? AIRCRAFT_CHARACTERISTICS_JSON,
+      'aircraft-characteristics',
     ),
   };
 }
@@ -74,6 +79,7 @@ describe('importReferenceData', () => {
       ['natural-earth-cities', 'succeeded', 3, 0, 0],
       ['aircraft-types', 'succeeded', 4, 0, 0],
       ['aircraft-attributes', 'succeeded', 3, 0, 0],
+      ['aircraft-characteristics-curated', 'succeeded', 4, 0, 0],
     ]);
 
     const airports = reports[1];
@@ -144,10 +150,11 @@ describe('importReferenceData', () => {
       ['natural-earth-cities', 'succeeded', 0, 0, 3],
       ['aircraft-types', 'succeeded', 0, 0, 4],
       ['aircraft-attributes', 'succeeded', 0, 0, 3],
+      ['aircraft-characteristics-curated', 'succeeded', 0, 0, 4],
     ]);
     expect(dump()).toEqual(before);
     // The run itself is still on record.
-    expect(all('SELECT count(*) AS n FROM ref_ingestion_job')).toEqual([{ n: 12 }]);
+    expect(all('SELECT count(*) AS n FROM ref_ingestion_job')).toEqual([{ n: 14 }]);
   });
 
   it('is reproducible: the same input builds identical tables in a fresh database', async () => {
@@ -255,6 +262,10 @@ describe('loadDataset failure handling', () => {
     highEndIdent: '19',
     lowEndHeadingDeg: null,
     highEndHeadingDeg: null,
+    lowEndLat: null,
+    lowEndLon: null,
+    highEndLat: null,
+    highEndLon: null,
   });
 
   it('writes nothing when any row cannot be written, and records the failed job', async () => {

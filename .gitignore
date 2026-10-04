@@ -14,3 +14,6 @@ data/raw/
 *.db
 *.db-wal
 *.db-shm
+# Built at release time from the pinned sources (npm run data:pack, npm run data:basemap).
+apps/desktop/public/reference-pack/
+apps/desktop/public/basemap/

@@ -31,7 +31,10 @@
     "data:fetch": "tsx packages/ingest/src/node/cli.ts fetch",
     "data:aircraft-specs": "tsx packages/ingest/src/node/cli.ts aircraft-specs",
     "data:import": "tsx packages/ingest/src/node/cli.ts import",
-    "rust:prepare": "npm run build -w @aegis/desktop && tsx tools/make-parity-db.ts"
+    "rust:prepare": "npm run build -w @aegis/desktop && tsx tools/make-parity-db.ts",
+    "data:pack": "tsx packages/ingest/src/node/cli.ts pack",
+    "data:install-pack": "tsx packages/ingest/src/node/cli.ts install-pack",
+    "verify:reference": "tsx tools/verify-reference.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
