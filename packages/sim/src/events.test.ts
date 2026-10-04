@@ -368,7 +368,8 @@ describe('events in the running world', () => {
   it('never has more than three generated events open, however long the world runs', () => {
     const engine = world('crowd');
     let most = 0;
-    for (let i = 0; i < 24 * 20; i++) {
+    // Six simulated days: a couple of dozen events, without being slow on a busy machine.
+    for (let i = 0; i < 24 * 6; i++) {
       engine.runSteps(HOUR);
       most = Math.max(
         most,

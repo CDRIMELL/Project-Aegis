@@ -8,7 +8,7 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 5 of 10 complete.
+Phase 6 of 10 complete.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -28,8 +28,12 @@ Phase 5 of 10 complete.
   flight progresses, and recorded with their outcome. Risk is shown with the reasons for it.
 - **Command and event log:** an append-only record of every action and what the world did in
   response, from which a saved world can be re-derived.
+- **Environment and events:** simulated weather, computed from the world's seed, the time and the
+  place, that changes flight time, fuel and risk and is drawn on the map. The world also produces
+  events (aerodrome closures, navigation and logistics disruptions, maintenance findings, severe
+  weather), each with stated consequences. None of it is real weather or real events.
 
-There is no weather, traffic or economy yet.
+There is no traffic or economy yet.
 
 ## Requirements
 

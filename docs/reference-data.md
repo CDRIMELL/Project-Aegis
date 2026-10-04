@@ -129,11 +129,32 @@ Voyager still cannot fly: no retrieved source gives its empty mass or a speed, a
 maximum take-off mass published is for a different variant. Those gaps are recorded as not
 established.
 
-**25 of the 40 types can fly.** `npx tsx tools/flyable-types.ts` lists them, the basis of each
-type's fuel capacity, and what each of the other 15 lacks:
+### Phase 6 additions
+
+A published range means little without the conditions it was flown under, so each range now
+carries them ([ADR 0023](adr/0023-range-conditions.md)). They are curated in
+`data/curated/aircraft-range-conditions.json`: the kind of range (ferry, with a stated payload, at
+maximum mass), whether external fuel was carried, the payload where one is stated, and the
+source's own words, from the pinned revision the figure came from. Nothing was inferred: where a
+source does not say, the condition is recorded as not recorded.
+
+The flight model uses them. A ferry range flown with external fuel is not a range the modelled
+aircraft can fly, so it is never used for calibration. Three types whose only published range is
+of that kind (F-16, Rafale, Black Hawk) could fly under the previous model and cannot under this
+one. That is deliberate: the alternative is a range the simulated aircraft could not achieve.
+
+| Calibrated to                                         | Types                 |
+| ----------------------------------------------------- | --------------------- |
+| Range at maximum mass                                 | 18                    |
+| Ferry range, internal fuel assumed (source is silent) | A400M, C-17, Poseidon |
+| Range with a stated payload                           | C-130J                |
+
+**22 of the 40 types can fly.** `npx tsx tools/flyable-types.ts` lists them, the basis of each
+type's fuel capacity, what each is calibrated to, and what each of the other 18 lacks:
 
 | Cannot fly yet                    | Lacks                                       |
 | --------------------------------- | ------------------------------------------- |
+| F-16, Rafale, Black Hawk          | a range flown on internal fuel              |
 | Voyager                           | empty mass, max take-off mass, speed        |
 | F-35B, Protector                  | empty mass, max take-off mass, range, speed |
 | Shadow R1                         | empty mass, max take-off mass, range        |
