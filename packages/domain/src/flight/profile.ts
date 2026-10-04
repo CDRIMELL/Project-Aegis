@@ -1,3 +1,4 @@
+import { PI, tan } from '../math';
 import { FLIGHT_ASSUMPTIONS, GRAVITY_MS2, type PerformanceModel } from './performance';
 
 /*
@@ -47,7 +48,7 @@ export interface FlightProgress {
 }
 
 const A = FLIGHT_ASSUMPTIONS;
-const DESCENT_GRADIENT = Math.tan((A.descent.pathDegrees * Math.PI) / 180);
+const DESCENT_GRADIENT = tan((A.descent.pathDegrees * PI) / 180);
 const KMH_TO_MS = 1 / 3.6;
 
 export function initialProgress(profile: FlightProfile, fuelKg: number): FlightProgress {

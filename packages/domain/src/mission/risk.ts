@@ -1,3 +1,4 @@
+import { groupThousands } from '../math';
 import type { PerformanceModel } from '../flight/performance';
 import type { Constraint, PlanEstimate } from '../flight/plan';
 import type { MissionTemplate } from './templates';
@@ -57,8 +58,8 @@ export interface RiskInput {
 }
 
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
-const kg = (value: number) => `${Math.round(value).toLocaleString('en-GB')} kg`;
-const km = (metres: number) => `${Math.round(metres / 1000).toLocaleString('en-GB')} km`;
+const kg = (value: number) => `${groupThousands(value)} kg`;
+const km = (metres: number) => `${groupThousands(metres / 1000)} km`;
 const hours = (seconds: number) => `${(seconds / 3600).toFixed(1)} h`;
 const minutes = (seconds: number) => `${Math.round(seconds / 60)} min`;
 
@@ -68,14 +69,14 @@ export function assessRisk(input: RiskInput): RiskAssessment {
   const add = (id: RiskFactor, value: number, explanation: string) =>
     factors.push({ id, value: clamp01(value), explanation });
 
-  // Fuel margin: none at twice the reserve on arrival, full at half the reserve or less.
+  // Fuel margin: none when landing with the reserve or more, full when landing empty.
   if (!estimate.completes) {
     add('fuel_margin', 1, 'The fuel on board runs out before the destination.');
   } else {
-    const ratio = model.reserveFuelKg > 0 ? estimate.fuelAtDestinationKg / model.reserveFuelKg : 2;
+    const ratio = model.reserveFuelKg > 0 ? estimate.fuelAtDestinationKg / model.reserveFuelKg : 1;
     add(
       'fuel_margin',
-      (2 - ratio) / 1.5,
+      1 - ratio,
       `Lands with ${kg(estimate.fuelAtDestinationKg)} against a reserve of ${kg(model.reserveFuelKg)}.`,
     );
   }

@@ -1,3 +1,5 @@
+import { ln } from '../math';
+
 /*
  * Performance model (ADR 0016).
  *
@@ -259,7 +261,7 @@ export function derivePerformance(type: TypeCharacteristics): PerformanceResult 
   const referenceRangeKm = useRange ? type.rangeKm : (type.ferryRangeKm as number);
   const takeoffMassKg = useRange ? type.maxTakeoffMassKg : type.emptyMassKg + fuelCapacityKg;
   const usableFuelKg = fuelCapacityKg - reserveFuelKg;
-  const rangeFactorKm = referenceRangeKm / Math.log(takeoffMassKg / (takeoffMassKg - usableFuelKg));
+  const rangeFactorKm = referenceRangeKm / ln(takeoffMassKg / (takeoffMassKg - usableFuelKg));
 
   return {
     available: true,

@@ -1,3 +1,4 @@
+import { groupThousands } from '../math';
 import type { PerformanceModel } from '../flight/performance';
 import {
   evaluatePlan,
@@ -98,7 +99,7 @@ export function evaluateMission(input: MissionEvaluationInput): MissionEvaluatio
     ) {
       block(
         'payload_short',
-        `The mission must deliver ${Math.round(objective.spec.massKg).toLocaleString('en-GB')} kg; the load carries ${Math.round(load.payloadKg).toLocaleString('en-GB')} kg.`,
+        `The mission must deliver ${groupThousands(objective.spec.massKg)} kg; the load carries ${groupThousands(load.payloadKg)} kg.`,
       );
     }
   }

@@ -1,3 +1,4 @@
+import { groupThousands } from '../math';
 import { FLIGHT_ASSUMPTIONS, grossMassKg, type PerformanceModel } from './performance';
 import { STILL_AIR, flyToCompletion, type Environment, type FlightProfile } from './profile';
 import { directRoute, routeGeometry, routeProblems, type RoutePoint } from './route';
@@ -72,8 +73,8 @@ export function flightProfile(
   };
 }
 
-const kg = (value: number) => `${Math.round(value).toLocaleString('en-GB')} kg`;
-const metresText = (value: number) => `${Math.round(value).toLocaleString('en-GB')} m`;
+const kg = (value: number) => `${groupThousands(value)} kg`;
+const metresText = (value: number) => `${groupThousands(value)} m`;
 
 /**
  * Checks a plan against the aircraft's model and estimates the flight by flying it.
@@ -190,7 +191,7 @@ export function evaluatePlan(
   if (!completes) {
     block(
       'insufficient_fuel',
-      `Fuel runs out after ${Math.round(end.distanceM / 1000).toLocaleString('en-GB')} km of ${Math.round(route.totalM / 1000).toLocaleString('en-GB')} km. Load more fuel, reduce payload or shorten the route.`,
+      `Fuel runs out after ${groupThousands(end.distanceM / 1000)} km of ${groupThousands(route.totalM / 1000)} km. Load more fuel, reduce payload or shorten the route.`,
     );
   } else {
     if (end.fuelKg < model.reserveFuelKg) {

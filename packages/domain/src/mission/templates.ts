@@ -2,6 +2,7 @@ import type { PerformanceModel } from '../flight/performance';
 import { generatePlan, type FlightPlan } from '../flight/plan';
 import type { RoutePoint } from '../flight/route';
 import { destinationPoint, greatCircleDistance, initialBearing } from '../geo';
+import { groupThousands } from '../math';
 import { degrees, metres } from '../units';
 import type { ObjectiveInput } from './objectives';
 import type { MissionBrief, MissionPriority, MissionType, RouteShape } from './types';
@@ -247,8 +248,12 @@ export function missionRoute(
   return { points, ...cruise };
 }
 
-const tonnes = (kgValue: number) =>
-  `${(kgValue / 1000).toLocaleString('en-GB', { maximumFractionDigits: 1 })} t`;
+/** Tonnes to one decimal place, without a trailing ".0". */
+const tonnes = (kgValue: number) => {
+  const tenths = Math.round(kgValue / 100);
+  const whole = groupThousands(Math.floor(tenths / 10));
+  return tenths % 10 === 0 ? `${whole} t` : `${whole}.${tenths % 10} t`;
+};
 
 /** The objectives a template gives a brief. The player's route decides whether they are met. */
 export function defaultObjectives(

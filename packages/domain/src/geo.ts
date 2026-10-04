@@ -1,3 +1,4 @@
+import { PI, asin, atan2, cos, hypot, sin } from './math';
 import { degrees, metres, type Degrees, type Metres } from './units';
 
 /*
@@ -6,6 +7,9 @@ import { degrees, metres, type Degrees, type Metres } from './units';
  * MODEL ASSUMPTION: the Earth is treated as a sphere of mean radius 6,371,008.8 m (IUGG). Against
  * the WGS 84 ellipsoid this is in error by up to about 0.5 % in distance. That is appropriate for
  * a simplified operations simulation and is not suitable for navigation.
+ *
+ * Trigonometry comes from `./math`, not from `Math`, so that every engine computes the same
+ * position to the last bit (ADR 0020).
  */
 
 export const EARTH_MEAN_RADIUS_M = 6_371_008.8;
@@ -20,8 +24,8 @@ export interface LatLon {
   readonly lon: number;
 }
 
-const toRadians = (deg: number): number => (deg * Math.PI) / 180;
-const toDegrees = (rad: number): number => (rad * 180) / Math.PI;
+const toRadians = (deg: number): number => (deg * PI) / 180;
+const toDegrees = (rad: number): number => (rad * 180) / PI;
 
 export function isValidLatLon(lat: number, lon: number): boolean {
   return (
@@ -51,18 +55,15 @@ function centralAngle(from: LatLon, to: LatLon): number {
   const phi1 = toRadians(from.lat);
   const phi2 = toRadians(to.lat);
   const dLambda = toRadians(to.lon - from.lon);
-  const sinPhi1 = Math.sin(phi1);
-  const cosPhi1 = Math.cos(phi1);
-  const sinPhi2 = Math.sin(phi2);
-  const cosPhi2 = Math.cos(phi2);
-  const cosDLambda = Math.cos(dLambda);
+  const sinPhi1 = sin(phi1);
+  const cosPhi1 = cos(phi1);
+  const sinPhi2 = sin(phi2);
+  const cosPhi2 = cos(phi2);
+  const cosDLambda = cos(dLambda);
 
-  const y = Math.hypot(
-    cosPhi2 * Math.sin(dLambda),
-    cosPhi1 * sinPhi2 - sinPhi1 * cosPhi2 * cosDLambda,
-  );
+  const y = hypot(cosPhi2 * sin(dLambda), cosPhi1 * sinPhi2 - sinPhi1 * cosPhi2 * cosDLambda);
   const x = sinPhi1 * sinPhi2 + cosPhi1 * cosPhi2 * cosDLambda;
-  return Math.atan2(y, x);
+  return atan2(y, x);
 }
 
 /** Great-circle distance along the surface. */
@@ -78,9 +79,9 @@ export function initialBearing(from: LatLon, to: LatLon): Degrees {
   const phi1 = toRadians(from.lat);
   const phi2 = toRadians(to.lat);
   const dLambda = toRadians(to.lon - from.lon);
-  const y = Math.sin(dLambda) * Math.cos(phi2);
-  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda);
-  return degrees((toDegrees(Math.atan2(y, x)) + 360) % 360);
+  const y = sin(dLambda) * cos(phi2);
+  const x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dLambda);
+  return degrees((toDegrees(atan2(y, x)) + 360) % 360);
 }
 
 /**
@@ -103,21 +104,21 @@ export function intermediatePoint(from: LatLon, to: LatLon, fraction: number): L
   if (Math.PI - delta < NEGLIGIBLE_ANGLE_RAD) {
     throw new RangeError('Intermediate point is undefined for antipodal points');
   }
-  const sinDelta = Math.sin(delta);
-  const a = Math.sin((1 - fraction) * delta) / sinDelta;
-  const b = Math.sin(fraction * delta) / sinDelta;
+  const sinDelta = sin(delta);
+  const a = sin((1 - fraction) * delta) / sinDelta;
+  const b = sin(fraction * delta) / sinDelta;
   const phi1 = toRadians(from.lat);
   const phi2 = toRadians(to.lat);
   const lambda1 = toRadians(from.lon);
   const lambda2 = toRadians(to.lon);
 
-  const x = a * Math.cos(phi1) * Math.cos(lambda1) + b * Math.cos(phi2) * Math.cos(lambda2);
-  const y = a * Math.cos(phi1) * Math.sin(lambda1) + b * Math.cos(phi2) * Math.sin(lambda2);
-  const z = a * Math.sin(phi1) + b * Math.sin(phi2);
+  const x = a * cos(phi1) * cos(lambda1) + b * cos(phi2) * cos(lambda2);
+  const y = a * cos(phi1) * sin(lambda1) + b * cos(phi2) * sin(lambda2);
+  const z = a * sin(phi1) + b * sin(phi2);
 
   return {
-    lat: toDegrees(Math.atan2(z, Math.hypot(x, y))),
-    lon: normaliseLongitude(toDegrees(Math.atan2(y, x))),
+    lat: toDegrees(atan2(z, hypot(x, y))),
+    lon: normaliseLongitude(toDegrees(atan2(y, x))),
   };
 }
 
@@ -128,15 +129,10 @@ export function destinationPoint(from: LatLon, bearing: Degrees, distance: Metre
   const phi1 = toRadians(from.lat);
   const lambda1 = toRadians(from.lon);
 
-  const sinPhi2 =
-    Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta);
-  const phi2 = Math.asin(Math.max(-1, Math.min(1, sinPhi2)));
+  const sinPhi2 = sin(phi1) * cos(delta) + cos(phi1) * sin(delta) * cos(theta);
+  const phi2 = asin(Math.max(-1, Math.min(1, sinPhi2)));
   const lambda2 =
-    lambda1 +
-    Math.atan2(
-      Math.sin(theta) * Math.sin(delta) * Math.cos(phi1),
-      Math.cos(delta) - Math.sin(phi1) * sinPhi2,
-    );
+    lambda1 + atan2(sin(theta) * sin(delta) * cos(phi1), cos(delta) - sin(phi1) * sinPhi2);
 
   return { lat: toDegrees(phi2), lon: normaliseLongitude(toDegrees(lambda2)) };
 }

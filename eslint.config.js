@@ -3,6 +3,38 @@ import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
+/**
+ * `Math` functions whose last digit differs between engines and engine versions. The simulation
+ * core uses the deterministic versions in `packages/domain/src/math.ts` instead (ADR 0020).
+ * Add, subtract, multiply, divide and `Math.sqrt` are exact everywhere and stay allowed.
+ */
+const ENGINE_DEPENDENT_MATH = [
+  'sin',
+  'cos',
+  'tan',
+  'asin',
+  'acos',
+  'atan',
+  'atan2',
+  'sinh',
+  'cosh',
+  'tanh',
+  'asinh',
+  'acosh',
+  'atanh',
+  'exp',
+  'expm1',
+  'log',
+  'log2',
+  'log10',
+  'log1p',
+  'pow',
+  'cbrt',
+  'hypot',
+];
+const ENGINE_DEPENDENT_MESSAGE =
+  'This is not computed identically by every engine. Use packages/domain/src/math.ts (ADR 0020).';
+
 const PURE_CORE_MESSAGE =
   'The domain and simulation packages must stay free of UI, platform and persistence code (ADR 0001, 0002).';
 
@@ -89,12 +121,26 @@ export default tseslint.config(
           property: 'now',
           message: 'The simulation core never reads the wall clock (ADR 0005).',
         },
+        ...ENGINE_DEPENDENT_MATH.map((property) => ({
+          object: 'Math',
+          property,
+          message: ENGINE_DEPENDENT_MESSAGE,
+        })),
+        ...['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'].map((property) => ({
+          property,
+          message:
+            'Locale formatting depends on the engine. Text stored with the world must not (ADR 0020).',
+        })),
       ],
       'no-restricted-syntax': [
         'error',
         {
           selector: "NewExpression[callee.name='Date'][arguments.length=0]",
           message: 'The simulation core never reads the wall clock (ADR 0005).',
+        },
+        {
+          selector: "BinaryExpression[operator='**']",
+          message: ENGINE_DEPENDENT_MESSAGE,
         },
       ],
     },
@@ -121,6 +167,33 @@ export default tseslint.config(
               message: PURE_CORE_MESSAGE,
             },
           ],
+        },
+      ],
+    },
+  },
+  {
+    // Tests check the deterministic functions against the engine's own, so they may call both.
+    // Everything else about the simulation core still applies to them.
+    files: ['packages/domain/src/**/*.test.ts', 'packages/sim/src/**/*.test.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Math',
+          property: 'random',
+          message: 'Use a named Rng stream so the simulation stays deterministic (ADR 0006).',
+        },
+        {
+          object: 'Date',
+          property: 'now',
+          message: 'The simulation core never reads the wall clock (ADR 0005).',
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+          message: 'The simulation core never reads the wall clock (ADR 0005).',
         },
       ],
     },

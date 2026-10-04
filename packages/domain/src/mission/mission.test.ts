@@ -637,6 +637,7 @@ describe('mission risk', () => {
       fuelKg: planned.load.fuelKg + TRANSPORT.reserveFuelKg * 1.3,
     };
     const lean = { ...planned.load, fuelKg: planned.load.fuelKg - TRANSPORT.reserveFuelKg * 0.4 };
+    const leaner = { ...planned.load, fuelKg: planned.load.fuelKg - TRANSPORT.reserveFuelKg * 0.8 };
     const fuel = (load: FlightLoad) => {
       const evaluation = estimate(load);
       return value(
@@ -644,9 +645,12 @@ describe('mission risk', () => {
         'fuel_margin',
       ) as number;
     };
+    // Landing with the reserve, or more, is the norm and adds nothing.
     expect(fuel(comfortable)).toBe(0);
-    expect(fuel(planned.load)).toBeGreaterThan(fuel(comfortable));
-    expect(fuel(lean)).toBeGreaterThan(fuel(planned.load));
+    expect(fuel(planned.load)).toBe(0);
+    expect(fuel(lean)).toBeGreaterThan(0.3);
+    expect(fuel(leaner)).toBeGreaterThan(fuel(lean));
+    expect(fuel(leaner)).toBeLessThanOrEqual(1);
   });
 
   it('rises with a worn aircraft and with little time before maintenance', () => {

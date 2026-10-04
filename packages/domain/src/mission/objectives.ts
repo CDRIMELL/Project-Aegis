@@ -1,3 +1,4 @@
+import { groupThousands } from '../math';
 import type { PerformanceModel } from '../flight/performance';
 import { flightProfile, type FlightLoad, type FlightPlan } from '../flight/plan';
 import { advanceFlight, initialProgress } from '../flight/profile';
@@ -38,8 +39,8 @@ export interface ObjectiveContext {
   readonly conditionPct: number;
 }
 
-const km = (metres: number) => `${Math.round(metres / 1000).toLocaleString('en-GB')} km`;
-const kg = (value: number) => `${Math.round(value).toLocaleString('en-GB')} kg`;
+const km = (metres: number) => `${groupThousands(metres / 1000)} km`;
+const kg = (value: number) => `${groupThousands(value)} kg`;
 
 function done(objective: Objective, remark: string | null = null): Objective {
   return { ...objective, status: 'complete', progress: 1, remark };
