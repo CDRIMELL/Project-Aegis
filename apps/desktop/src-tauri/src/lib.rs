@@ -6,6 +6,7 @@
 mod commands;
 mod db;
 mod error;
+mod export;
 mod security;
 
 use tauri::Manager;
@@ -22,6 +23,8 @@ pub struct AppState {
     db: Database,
     gate: SessionGate,
     schema_migrations: usize,
+    /// Where application data lives. Exports go in a folder inside it (ADR 0025).
+    data_dir: std::path::PathBuf,
 }
 
 impl AppState {
@@ -53,6 +56,7 @@ fn initialise(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         db,
         gate,
         schema_migrations: report.total,
+        data_dir,
     })
 }
 
@@ -67,6 +71,7 @@ pub fn run() {
             commands::db_query,
             commands::db_batch,
             commands::app_info,
+            commands::export_report,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start AEGIS");
@@ -83,6 +88,7 @@ mod tests {
             db: Database::open_in_memory().unwrap(),
             gate: SessionGate::new(),
             schema_migrations: 0,
+            data_dir: std::path::PathBuf::new(),
         };
         assert!(matches!(state.database(), Err(AppError::SessionLocked)));
 

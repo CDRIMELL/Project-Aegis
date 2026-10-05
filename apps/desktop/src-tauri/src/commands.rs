@@ -6,6 +6,7 @@ use tauri::State;
 
 use crate::db::{QueryResult, Statement};
 use crate::error::AppResult;
+use crate::export::{write_export, ExportResult};
 use crate::AppState;
 
 #[tauri::command(async)]
@@ -46,4 +47,16 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
         encryption: state.db.encryption().label(),
         session_unlocked: state.gate.is_unlocked(),
     }
+}
+
+/// Writes a report the webview has built to the exports folder (ADR 0025). Gated like the data
+/// it was built from. The name is validated natively; the webview cannot choose where it goes.
+#[tauri::command(async)]
+pub fn export_report(
+    state: State<'_, AppState>,
+    file_name: String,
+    contents: String,
+) -> AppResult<ExportResult> {
+    state.gate.ensure_unlocked()?;
+    write_export(&state.data_dir, &file_name, &contents)
 }

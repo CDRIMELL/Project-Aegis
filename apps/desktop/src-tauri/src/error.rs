@@ -22,6 +22,9 @@ pub enum AppError {
     #[error("Migration error: {0}")]
     Migration(String),
 
+    #[error("Export refused: {0}")]
+    ExportRejected(String),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -37,6 +40,7 @@ impl AppError {
             AppError::UnsupportedValue(_) => "unsupported_value",
             AppError::Database(_) => "database",
             AppError::Migration(_) => "migration",
+            AppError::ExportRejected(_) => "export_rejected",
             AppError::Io(_) => "io",
             AppError::Internal(_) => "internal",
         }

@@ -37,7 +37,7 @@ directory and returns the path it wrote. It is gated by the session like the dat
 - The file name is validated natively: letters, digits, `-`, `_` and `.` only, ending in `.csv`
   or `.json`, at most 120 characters, no separators. The command cannot be made to write anywhere
   else, and cannot read anything.
-- An existing file of the same name is not overwritten: the command adds ` (2)`, ` (3)` and so on.
+- An existing file of the same name is not overwritten: the command adds `-2`, `-3` and so on to the name.
 - Contents are limited to 32 MB.
 
 The file name is built from the report, the period and the simulation time, so the same export
