@@ -414,6 +414,27 @@ describe('advisories', { timeout: 60_000 }, () => {
       'Holding: Akrotiri is closed',
     ]);
     expect(titles({ hold: 'operator', heldS: 300 })).toEqual(['Holding on your order']);
+    // A hold by order is projected as if resumed now. It is not mistaken for a closure, and the
+    // fuel the hold would burn if it went on for ever is not reported as a shortage.
+    const holding = delivering(5400);
+    holding.applyCommand({ type: 'holdFlight', aircraftId: TRANSPORT });
+    holding.runSteps(120);
+    const held = viewOf(holding);
+    const resumedNow = currentEstimate(model, held, contextOf(holding)).projection;
+    expect(resumedNow.holdS).toBe(0);
+    expect(resumedNow.landingFuelKg).toBeGreaterThan(model.reserveFuelKg);
+    expect(advisoriesFor(held, model, resumedNow).map((advisory) => advisory.title)).toEqual([
+      'Holding on your order',
+    ]);
+    expect(advisoriesFor(held, model, resumedNow)[0]?.detail).toMatch(
+      /Held for 2 min so far. Resumed now, the aircraft would land with [\d,]+ kg/,
+    );
+    // And that is what happens when it is resumed now.
+    holding.applyCommand({ type: 'resumeFlight', aircraftId: TRANSPORT });
+    for (let i = 0; i < 4000 && holding.fleetView().activeFlights.length > 0; i++) {
+      holding.runSteps(20);
+    }
+    expect(holding.snapshot().fleet.flights[0]?.progress.fuelKg).toBe(resumedNow.landingFuelKg);
     expect(titles({ caution: { eventId: 'EVT-000007', sinceTick: 1 } })).toEqual([
       'Technical caution',
     ]);

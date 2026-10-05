@@ -8,6 +8,7 @@ import {
   filterMaintenance,
   filterMissions,
   filterOutlook,
+  flownAsLaunched,
   severityWord,
   type AircraftUtilisation,
   type EventRecord,
@@ -192,7 +193,7 @@ export function SummarySection({ report, previous }: SectionProps) {
   const serviceable = report.outlook.filter(
     (row) => row.group === 'healthy' || row.group === 'approaching',
   ).length;
-  const estimate = againstEstimate(totals.fuelUsedKg, totals.estimatedFuelUsedKg);
+  const estimate = againstEstimate(totals.fuelUsedAsLaunchedKg, totals.estimatedFuelUsedKg);
 
   return (
     <>
@@ -249,7 +250,8 @@ export function SummarySection({ report, previous }: SectionProps) {
           <StatTile
             label="Against the estimate"
             value={estimate}
-            detail="Fuel used against the estimates made at launch"
+            detail={`Fuel against launch estimates, over ${formatInteger(totals.flightsAsLaunched)} of ${formatInteger(totals.flights)} flights flown as launched`}
+            hint="A flight whose route was changed in the air, or that held, is not compared with an estimate made for the route it was launched on."
           />
         </DataList>
         <div className="mt-3">
@@ -496,7 +498,11 @@ export function MissionsSection({ report }: SectionProps) {
                     return flight ? (
                       <TwoLine
                         top={formatKg(flight.fuelUsedKg)}
-                        bottom={`${againstEstimate(flight.fuelUsedKg, flight.estimatedFuelUsedKg) ?? '—'} on est.`}
+                        bottom={
+                          flownAsLaunched(flight)
+                            ? `${againstEstimate(flight.fuelUsedKg, flight.estimatedFuelUsedKg) ?? '—'} on est.`
+                            : 'route changed'
+                        }
                       />
                     ) : (
                       '—'
@@ -792,7 +798,7 @@ export function FuelSection({ report, previous }: SectionProps) {
             label="Estimated at launch"
             value={formatInteger(totals.estimatedFuelUsedKg)}
             unit="kg"
-            detail={`${againstEstimate(totals.fuelUsedKg, totals.estimatedFuelUsedKg) ?? '—'} used against it`}
+            detail={`${againstEstimate(totals.fuelUsedAsLaunchedKg, totals.estimatedFuelUsedKg) ?? '—'} used against it, over ${formatInteger(totals.flightsAsLaunched)} flights flown as launched`}
           />
           <StatTile
             label="Against still air"
@@ -864,10 +870,7 @@ export function FuelSection({ report, previous }: SectionProps) {
                   sortKey: 'flight',
                   numeric: true,
                   cell: (flight) => (
-                    <TwoLine
-                      top={flight.id}
-                      bottom={`${flight.origin} → ${flight.destination}${flight.destination === flight.plannedDestination ? '' : ` (for ${flight.plannedDestination})`}`}
-                    />
+                    <TwoLine top={flight.id} bottom={`${flight.origin} → ${flight.destination}`} />
                   ),
                 },
                 {
@@ -875,7 +878,18 @@ export function FuelSection({ report, previous }: SectionProps) {
                   sortKey: 'aircraft',
                   cell: (flight) => <AircraftLink id={flight.aircraftId} />,
                 },
-                { header: 'Mission', cell: (flight) => <MissionLink id={flight.missionId} /> },
+                {
+                  header: 'Mission',
+                  cell: (flight) =>
+                    flight.destination === flight.plannedDestination ? (
+                      <MissionLink id={flight.missionId} />
+                    ) : (
+                      <TwoLine
+                        top={<MissionLink id={flight.missionId} />}
+                        bottom={`for ${flight.plannedDestination}`}
+                      />
+                    ),
+                },
                 {
                   header: 'Landed',
                   sortKey: 'arrived',
@@ -894,12 +908,16 @@ export function FuelSection({ report, previous }: SectionProps) {
                   sortKey: 'estimate',
                   numeric: true,
                   align: 'right',
-                  cell: (flight) => (
-                    <TwoLine
-                      top={againstEstimate(flight.fuelUsedKg, flight.estimatedFuelUsedKg) ?? '—'}
-                      bottom={`est. ${formatKg(flight.estimatedFuelUsedKg)}`}
-                    />
-                  ),
+                  cell: (flight) =>
+                    // An estimate made at launch is for the route as launched.
+                    flownAsLaunched(flight) ? (
+                      <TwoLine
+                        top={againstEstimate(flight.fuelUsedKg, flight.estimatedFuelUsedKg) ?? '—'}
+                        bottom={`est. ${formatKg(flight.estimatedFuelUsedKg)}`}
+                      />
+                    ) : (
+                      <TwoLine top="—" bottom="route changed" />
+                    ),
                 },
                 {
                   header: 'Per 100 km',

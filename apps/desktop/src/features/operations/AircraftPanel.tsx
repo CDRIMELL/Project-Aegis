@@ -69,13 +69,22 @@ function Telemetry({ flight }: { readonly flight: FlightView }) {
         <DataList>
           <DataField label="Phase" value={PHASE[flight.phase]} prose />
           <DataField label="Destination" value={placeName(destination)} prose />
+          {/* A holding aircraft has no arrival time until it is known when the hold ends. */}
           <DataField
             label="Arrival (sim, UTC)"
             value={
-              epoch === null ? null : formatUtc(addMs(epoch, flight.etaTick * 1000)).slice(11, 19)
+              flight.hold !== null
+                ? 'Holding'
+                : epoch === null
+                  ? null
+                  : formatUtc(addMs(epoch, flight.etaTick * 1000)).slice(11, 19)
             }
+            prose={flight.hold !== null}
           />
-          <DataField label="Time to go" value={formatDuration(remainingS)} />
+          <DataField
+            label="Time to go"
+            value={flight.hold !== null ? null : formatDuration(remainingS)}
+          />
         </DataList>
       </section>
 
@@ -224,23 +233,16 @@ function Operations({
           {advisory.detail}
         </Notice>
       ))}
-      {(flight.intent !== null || flight.hold !== null) && (
+      {flight.intent !== null && (
         <DataList columns={1}>
-          {flight.intent !== null && (
+          {
             <DataField
               label="Route"
               value={`${INTENT_WORD[flight.intent]} · launched for ${placeName(flight.plannedDestination)}`}
               hint={`${flight.revisions.length} change${flight.revisions.length === 1 ? '' : 's'} of route since launch.`}
               prose
             />
-          )}
-          {flight.hold !== null && (
-            <DataField
-              label="Holding"
-              value={`${formatDuration(flight.heldS)} so far`}
-              hint="Circling where it is, burning fuel at the holding assumption."
-            />
-          )}
+          }
         </DataList>
       )}
       <div className="flex flex-wrap gap-2">

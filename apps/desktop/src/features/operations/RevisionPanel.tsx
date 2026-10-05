@@ -107,7 +107,7 @@ function comparison(
       label: 'Arrival (sim UTC)',
       ...cell((e) =>
         e.projection.completes
-          ? `${clock(epoch, e.projection.arrivalTick)} · in ${formatDuration(e.projection.remainingS)}`
+          ? `${clock(epoch, e.projection.arrivalTick)} (${formatDuration(e.projection.remainingS)})`
           : 'Does not arrive',
       ),
     },
@@ -119,7 +119,7 @@ function comparison(
       label: 'Hold for closure',
       ...cell((e) =>
         e.projection.landsDuringClosure
-          ? `${formatDuration(e.projection.holdS)}, then lands closed`
+          ? `${formatDuration(e.projection.holdS)}, lands closed`
           : e.projection.holdS > 0
             ? formatDuration(e.projection.holdS)
             : 'None',
@@ -127,10 +127,10 @@ function comparison(
     },
     { label: 'Risk index (in flight)', ...cell((e) => `${formatInteger(e.risk.index)} of 100`) },
     {
-      label: 'On arrival',
+      label: 'Wind and visibility on arrival',
       ...cell(
         (e) =>
-          `${formatWind(e.projection.arrival)} · ${e.projection.arrival.visibilityKm.toFixed(0)} km`,
+          `${formatWind(e.projection.arrival).replace(' at ', ' ')}, ${e.projection.arrival.visibilityKm.toFixed(0)} km vis`,
       ),
     },
   ];
@@ -361,16 +361,29 @@ export function RevisionPanel({ aircraft, flight, draft, revision }: RevisionPan
 
       <section className="flex flex-col gap-2.5">
         <SectionLabel>Before and after</SectionLabel>
-        <DataTable<Row>
-          caption="The flight as it stands, and as it would be after this change"
-          rows={comparison(epoch, before, revision.abortContinue ? before : proposal.estimate)}
-          rowKey={(row) => row.label}
-          columns={[
-            { header: '', cell: (row) => row.label },
-            { header: 'As it stands', numeric: true, cell: (row) => row.before },
-            { header: 'After', numeric: true, cell: (row) => row.after },
-          ]}
-        />
+        <div className="grid grid-cols-2 gap-x-3 text-2xs tracking-label text-ink-muted uppercase">
+          <span>As it stands</span>
+          <span>After the change</span>
+        </div>
+        {/* A list, not a table: the side panel is too narrow for three columns of readings. */}
+        <dl
+          className="flex flex-col gap-2"
+          aria-label="The flight as it stands, and as it would be after this change"
+        >
+          {comparison(epoch, before, revision.abortContinue ? before : proposal.estimate).map(
+            (row) => (
+              <div key={row.label} className="flex flex-col gap-0.5">
+                <dt className="text-2xs tracking-label text-ink-muted uppercase">{row.label}</dt>
+                <dd className="telemetry grid cursor-text grid-cols-2 gap-x-3 text-sm select-text">
+                  <span className="text-ink-secondary">{row.before}</span>
+                  <span className={row.after === row.before ? 'text-ink-secondary' : 'text-ink'}>
+                    {row.after}
+                  </span>
+                </dd>
+              </div>
+            ),
+          )}
+        </dl>
         <Hint>
           Flown from where the aircraft is, through the simulated weather and known events, with the
           simulation&apos;s own flight model. Recalculated when the change is made. The risk index

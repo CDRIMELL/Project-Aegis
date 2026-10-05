@@ -680,6 +680,14 @@ describe('what was done in flight', () => {
       flightsDiverted: 2,
       routeRevisions: 3,
       heldSeconds: 900,
+      // Neither flight was flown as launched, so neither is compared with its launch estimate.
+      flightsAsLaunched: 0,
+      fuelUsedAsLaunchedKg: 0,
+      estimatedFuelUsedKg: 0,
+    });
+    expect(report(BOTH).totals).toMatchObject({
+      flightsAsLaunched: 3,
+      fuelUsedAsLaunchedKg: report(BOTH).totals.fuelUsedKg,
     });
     expect(missionTypes).toEqual([
       expect.objectContaining({ type: 'training', failed: 1, aborted: 1, completed: 0 }),

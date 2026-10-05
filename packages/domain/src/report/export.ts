@@ -146,8 +146,20 @@ function summaryTable(report: Report): ReportTable {
     { key: 'distance', label: 'Distance flown', value: km(totals.distanceM), unit: 'km' },
     { key: 'fuel_used', label: 'Fuel used', value: round(totals.fuelUsedKg), unit: 'kg' },
     {
+      key: 'flights_as_launched',
+      label: 'Flights flown as launched (no change of route, no hold)',
+      value: totals.flightsAsLaunched,
+      unit: 'flights',
+    },
+    {
+      key: 'fuel_used_as_launched',
+      label: 'Fuel used by flights flown as launched',
+      value: round(totals.fuelUsedAsLaunchedKg),
+      unit: 'kg',
+    },
+    {
       key: 'fuel_estimated',
-      label: 'Fuel estimated at launch',
+      label: 'Fuel estimated at launch for those flights',
       value: round(totals.estimatedFuelUsedKg),
       unit: 'kg',
     },

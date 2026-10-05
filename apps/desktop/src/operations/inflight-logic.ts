@@ -29,7 +29,14 @@ import { formatInteger } from '../format';
 /** The name of the point a revision draft starts from: where the aircraft is. */
 export const PRESENT_POSITION = 'Present position';
 
-/** A flight as the domain's projection and revision functions take it. */
+/**
+ * A flight as the domain's projection and revision functions take it.
+ *
+ * A hold the operator ordered lasts until the operator ends it, which no projection can know. So
+ * for the interface a flight holding by order is projected as if it were resumed now: "what
+ * happens if I let it go on". A hold for a closed destination is the world's, and is projected
+ * exactly as it will run.
+ */
 export function situationOf(flight: FlightView): FlightSituation {
   return {
     plan: {
@@ -37,7 +44,7 @@ export function situationOf(flight: FlightView): FlightSituation {
       cruiseAltitudeM: flight.cruiseAltitudeM,
       cruiseSpeedKmh: flight.cruiseSpeedKmh,
     },
-    progress: flight.progress,
+    progress: flight.hold === 'operator' ? { ...flight.progress, hold: null } : flight.progress,
     payloadKg: flight.payloadKg,
     departedTick: flight.departedTick,
   };
@@ -390,7 +397,9 @@ export function advisoriesFor(
     out.push({
       tone: 'info',
       title: 'Holding on your order',
-      detail: `Held for ${minutes(flight.heldS)} so far. The hold ends when you resume, change the route, or fuel is down to reserve.`,
+      detail: projection.completes
+        ? `Held for ${minutes(flight.heldS)} so far. Resumed now, the aircraft would land with ${formatInteger(projection.landingFuelKg)} kg. The hold ends when you resume, change the route, or fuel is down to reserve.`
+        : `Held for ${minutes(flight.heldS)} so far. The hold ends when you resume, change the route, or fuel is down to reserve.`,
     });
   }
   if (

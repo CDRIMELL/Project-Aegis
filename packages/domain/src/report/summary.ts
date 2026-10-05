@@ -41,7 +41,13 @@ export interface ActivityTotals {
   readonly flightSeconds: number;
   readonly distanceM: number;
   readonly fuelUsedKg: number;
-  /** The planner's estimates for the same flights, for comparison. */
+  /**
+   * Flights flown exactly as they were launched: no change of route and no hold. Only these can
+   * be compared with the estimate made at launch, which was for the route as launched.
+   */
+  readonly flightsAsLaunched: number;
+  /** Fuel those flights used, and what the planner estimated for them at launch. */
+  readonly fuelUsedAsLaunchedKg: number;
   readonly estimatedFuelUsedKg: number;
   readonly estimatedFlightSeconds: number;
   /**
@@ -200,6 +206,11 @@ function eventInPeriod(event: EventRecord, period: ReportPeriod, asOfTick: numbe
   return event.startTick < period.toTick && eventEnd(event, asOfTick) > period.fromTick;
 }
 
+/** True for a flight flown exactly as it was launched: its launch estimate still describes it. */
+export function flownAsLaunched(flight: FlightRecord): boolean {
+  return flight.revisions.length === 0 && flight.heldS === 0;
+}
+
 export function activityTotals(
   flights: readonly FlightRecord[],
   missions: readonly MissionRecord[],
@@ -209,14 +220,17 @@ export function activityTotals(
   const withWeather = flights.filter(
     (flight) => flight.stillAirFuelUsedKg !== null && flight.stillAirDurationS !== null,
   );
+  const asLaunched = flights.filter(flownAsLaunched);
   const count = (status: string) => missions.filter((mission) => mission.status === status).length;
   return {
     flights: flights.length,
     flightSeconds: sum(flights, (flight) => flight.durationS),
     distanceM: sum(flights, (flight) => flight.distanceM),
     fuelUsedKg: sum(flights, (flight) => flight.fuelUsedKg),
-    estimatedFuelUsedKg: sum(flights, (flight) => flight.estimatedFuelUsedKg),
-    estimatedFlightSeconds: sum(flights, (flight) => flight.estimatedDurationS),
+    flightsAsLaunched: asLaunched.length,
+    fuelUsedAsLaunchedKg: sum(asLaunched, (flight) => flight.fuelUsedKg),
+    estimatedFuelUsedKg: sum(asLaunched, (flight) => flight.estimatedFuelUsedKg),
+    estimatedFlightSeconds: sum(asLaunched, (flight) => flight.estimatedDurationS),
     weatherFuelKg:
       withWeather.length === 0
         ? null
