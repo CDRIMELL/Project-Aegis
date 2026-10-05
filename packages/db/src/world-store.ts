@@ -4,6 +4,7 @@ import {
   isSpeedMultiplier,
   simInstant,
   type FlightPlan,
+  type FlightRevision,
   type Mission,
   type PerformanceModel,
   type WorldEvent,
@@ -134,7 +135,25 @@ const progressJson = z.object({
       lowestVisibilityKm: null,
       heaviestPrecipitation: 0,
     }),
+  // A flight saved before in-flight control existed was not holding and had not held.
+  hold: z
+    .object({ reason: z.enum(['operator', 'closure']), sinceS: quantity })
+    .nullable()
+    .default(null),
+  heldS: quantity.default(0),
+  closureLanding: z.boolean().default(false),
 });
+const revisionsJson = z.array(
+  z.object({
+    tick: count,
+    intent: z.enum(['reroute', 'divert', 'return']),
+    position: routePoint,
+    atDistanceM: quantity,
+    fuelKg: quantity,
+    replaced: z.array(routePoint),
+  }),
+);
+const cautionJson = z.object({ eventId: z.string().min(1), sinceTick: count });
 const performanceJson = z.object({
   modelVersion: z.int().positive(),
   emptyMassKg: z.number().positive(),
@@ -199,7 +218,12 @@ const flightRow = z.object({
   estimatedFuelUsedKg: z.number(),
   stillAirDurationS: quantity.nullable(),
   stillAirFuelUsedKg: z.number().nullable(),
+  projectedDurationS: quantity.nullable().default(null),
+  projectedFuelUsedKg: z.number().nullable().default(null),
   plan: z.string(),
+  plannedPlan: z.string().nullable().default(null),
+  revisions: z.string().default('[]'),
+  caution: z.string().nullable().default(null),
   progress: z.string(),
 });
 const counterRow = z.object({ name: z.string().min(1), value: z.int().positive() });
@@ -209,6 +233,7 @@ const FINISHED_MISSION_STATUSES = [
   'completed',
   'failed',
   'cancelled',
+  'aborted',
   'rejected',
   'expired',
 ] as const;
@@ -280,7 +305,7 @@ const assessmentJson = z.object({
   }),
 });
 const outcomeJson = z.object({
-  result: z.enum(['completed', 'failed']),
+  result: z.enum(['completed', 'failed', 'aborted']),
   decidedTick: count,
   summary: z.string(),
   objectivesComplete: count,
@@ -409,6 +434,7 @@ function toAircraft(row: unknown): AircraftState {
 
 function toFlight(row: unknown): FlightState {
   const f = parse(flightRow, row, 'sim_flight row');
+  const plan = json(planJson, f.plan, `sim_flight ${f.id} plan`) as FlightPlan;
   return {
     id: f.id,
     aircraftId: f.aircraftId,
@@ -422,7 +448,17 @@ function toFlight(row: unknown): FlightState {
     estimatedFuelUsedKg: f.estimatedFuelUsedKg,
     stillAirDurationS: f.stillAirDurationS,
     stillAirFuelUsedKg: f.stillAirFuelUsedKg,
-    plan: json(planJson, f.plan, `sim_flight ${f.id} plan`) as FlightPlan,
+    // A flight saved before these were kept was expected to come to what was estimated at launch.
+    projectedDurationS: f.projectedDurationS ?? f.estimatedDurationS,
+    projectedFuelUsedKg: f.projectedFuelUsedKg ?? f.estimatedFuelUsedKg,
+    plan,
+    // Stored only when it differs: a flight that was never revised was launched as it was flown.
+    plannedPlan:
+      f.plannedPlan === null
+        ? plan
+        : (json(planJson, f.plannedPlan, `sim_flight ${f.id} planned_plan`) as FlightPlan),
+    revisions: json(revisionsJson, f.revisions, `sim_flight ${f.id} revisions`) as FlightRevision[],
+    caution: f.caution === null ? null : json(cautionJson, f.caution, `sim_flight ${f.id} caution`),
     progress: json(progressJson, f.progress, `sim_flight ${f.id} progress`),
   };
 }
@@ -672,8 +708,16 @@ export class SqliteWorldStore implements WorldStore {
       };
     });
     const flightRows = fleet.flights.map((flight) => {
-      const { id, plan, progress, ...columns } = flight;
-      return { id, ...columns, plan: JSON.stringify(plan), progress: JSON.stringify(progress) };
+      const { id, plan, plannedPlan, revisions, caution, progress, ...columns } = flight;
+      return {
+        id,
+        ...columns,
+        plan: JSON.stringify(plan),
+        plannedPlan: revisions.length === 0 ? null : JSON.stringify(plannedPlan),
+        revisions: JSON.stringify(revisions),
+        caution: caution === null ? null : JSON.stringify(caution),
+        progress: JSON.stringify(progress),
+      };
     });
 
     const missionRows = missions.missions.map((mission) => {

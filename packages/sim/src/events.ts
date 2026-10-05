@@ -5,12 +5,14 @@ import {
   conditionsAt,
   generateEvent,
   greatCircleDistance,
+  hazardsFrom,
   isOpenEvent,
   routePassesWithin,
   sameAerodrome,
   type EventDraft,
   type EventStatus,
   type FlightPlan,
+  type Hazards,
   type Rng,
   type RoutePoint,
   type WeatherModel,
@@ -57,6 +59,10 @@ export interface EventsWorld {
   /** The operating area. */
   places(): readonly RoutePoint[];
   groundedAircraft(): readonly AircraftState[];
+  /** Aircraft in flight on which a technical caution could show, by identifier. */
+  airborneWithoutCaution(): readonly string[];
+  /** Marks a technical caution on an aircraft in flight. Returns the flight, or `null`. */
+  flagCaution(aircraftId: string, eventId: string, tick: number): string | null;
   aircraftById(id: string): AircraftState | undefined;
   /** Makes an available aircraft due maintenance. Returns false if it could not be. */
   flagMaintenanceDue(aircraftId: string): boolean;
@@ -91,6 +97,22 @@ export class Events {
     this.nextNumber = snapshot.nextNumber;
   }
 
+  private put(id: string, event: WorldEvent): void {
+    this.events.set(id, event);
+    this.cachedHazards = null;
+  }
+
+  private cachedHazards: Hazards | null = null;
+
+  /**
+   * The open events as the planner and the flight step read them. The same object is returned
+   * until an event changes, so a reader can tell cheaply that nothing has.
+   */
+  hazards(): Hazards {
+    this.cachedHazards ??= hazardsFrom(this.open());
+    return this.cachedHazards;
+  }
+
   /** Events that are announced or under way, in the order they were created. */
   open(): WorldEvent[] {
     return [...this.events.values()].filter((event) => isOpenEvent(event.status));
@@ -101,7 +123,7 @@ export class Events {
       throw new Error(`Event ${event.id} cannot go from ${event.status} to ${to}`);
     }
     const moved = { ...event, status: to };
-    this.events.set(event.id, moved);
+    this.put(event.id, moved);
     if (!isOpenEvent(to)) {
       this.openCount -= 1;
       this.forgetOldest();
@@ -113,7 +135,7 @@ export class Events {
     const id = `EVT-${String(this.nextNumber).padStart(6, '0')}`;
     this.nextNumber += 1;
     const event: WorldEvent = { ...draft, id, status, createdTick: tick, missionId: null };
-    this.events.set(id, event);
+    this.put(id, event);
     this.openCount += 1;
     return event;
   }
@@ -143,7 +165,7 @@ export class Events {
       if (event.type === 'aerodrome_closure' && event.place) {
         if (destination && sameAerodrome(destination, event.place)) {
           how = mission.active
-            ? `${event.place.name} is closing; the flight is already airborne and will be accepted.`
+            ? `${event.place.name}, the destination, is closing. If it is still closed when the flight arrives, the aircraft will hold short of it; it can be diverted.`
             : `${event.place.name}, the destination, is closing.`;
         } else if (origin && sameAerodrome(origin, event.place) && !mission.active) {
           how = `${event.place.name}, the origin, is closing to departures.`;
@@ -173,7 +195,7 @@ export class Events {
       const missionId = world.offerUrgentDelivery(started, tick);
       if (missionId) {
         started = { ...started, missionId };
-        this.events.set(started.id, started);
+        this.put(started.id, started);
       }
     }
     emit(
@@ -184,8 +206,12 @@ export class Events {
     this.noteAffected(started, world, emit, true);
   }
 
-  private resolve(event: WorldEvent, emit: EmitEvent): void {
-    this.move(event, 'resolved');
+  private resolve(event: WorldEvent, tick: number, emit: EmitEvent): void {
+    // An event ends when it is resolved, and says so. A finding or a caution is created with no
+    // end of its own; a timed event is resolved on the tick it was due to end.
+    const ended = { ...event, endTick: Math.max(tick, event.startTick) };
+    this.put(event.id, ended);
+    this.move(ended, 'resolved');
     emit(
       'eventResolved',
       { aircraftId: event.aircraftId },
@@ -206,9 +232,15 @@ export class Events {
       } else if (event.type === 'maintenance_finding') {
         // Over once the aircraft has been maintained.
         const status = event.aircraftId ? world.aircraftById(event.aircraftId)?.status : undefined;
-        if (status !== 'maintenance_due' && status !== 'in_maintenance') this.resolve(event, emit);
+        if (status !== 'maintenance_due' && status !== 'in_maintenance') {
+          this.resolve(event, tick, emit);
+        }
+      } else if (event.type === 'technical_caution') {
+        // Over once the aircraft has landed and been maintained: it is available again.
+        const status = event.aircraftId ? world.aircraftById(event.aircraftId)?.status : undefined;
+        if (status === 'available' || status === undefined) this.resolve(event, tick, emit);
       } else if (tick >= event.endTick) {
-        this.resolve(event, emit);
+        this.resolve(event, tick, emit);
       }
     }
 
@@ -228,6 +260,7 @@ export class Events {
         .groundedAircraft()
         .filter((aircraft) => aircraft.status === 'available')
         .map((aircraft) => aircraft.id),
+      airborneAircraftIds: world.airborneWithoutCaution(),
       openGenerated: this.open().filter((event) => event.source === 'generated'),
     });
     if (!draft) return;
@@ -236,6 +269,14 @@ export class Events {
       // Found now: there is nothing to announce in advance.
       if (!draft.aircraftId || !world.flagMaintenanceDue(draft.aircraftId)) return;
       this.start(this.create(draft, tick, 'active'), tick, world, emit);
+      return;
+    }
+    if (draft.type === 'technical_caution') {
+      // It shows itself now, on an aircraft that is flying.
+      if (!draft.aircraftId || !world.airborneWithoutCaution().includes(draft.aircraftId)) return;
+      const caution = this.create(draft, tick, 'active');
+      world.flagCaution(draft.aircraftId, caution.id, tick);
+      this.start(caution, tick, world, emit);
       return;
     }
     const event = this.create(draft, tick, 'scheduled');
@@ -266,7 +307,7 @@ export class Events {
       if (!advisory.centre) continue;
       const severity = conditionsAt(world.weather, tick, advisory.centre, 0).severity;
       if (severity >= S.threshold) {
-        this.events.set(advisory.id, {
+        this.put(advisory.id, {
           ...advisory,
           endTick: tick + S.holdS,
           severity: Math.max(advisory.severity, Math.round(severity * 100) / 100),

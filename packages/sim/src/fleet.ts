@@ -1,21 +1,31 @@
 import {
+  NO_HAZARDS,
+  REVISION_INTENTS,
   advanceInWeather,
+  closedForArrival,
+  closuresOf,
   conditionsForFlight,
   evaluatePlan,
+  evaluateRevision,
   groundSpeedKmh,
   flightProfile,
   greatCircleDistance,
   grossMassKg,
   initialProgress,
   positionAlong,
+  projectFlight,
   routeGeometry,
+  type ClosureWindow,
   type FlightLoad,
   type FlightPlan,
   type FlightProfile,
   type FlightProgress,
+  type FlightRevision,
+  type Hazards,
   type LatLon,
   type PerformanceModel,
   type PlanContext,
+  type RevisionIntent,
   type Rng,
   type RouteGeometry,
   type RoutePoint,
@@ -33,6 +43,13 @@ import type { EmitEvent, LogSubject } from './log';
 /** Seconds of simulated time in one engine step. */
 const STEP_S = 1;
 
+/** The name given to the waypoint that marks where a route was changed. */
+const REVISION_LABEL: Readonly<Record<RevisionIntent, string>> = {
+  reroute: 'Rerouted here',
+  divert: 'Diverted here',
+  return: 'Turned back here',
+};
+
 /** Simulation assumptions for wear and maintenance. Not reference data. */
 export const MAINTENANCE = {
   wearPctPerFlightHour: 0.4,
@@ -42,6 +59,11 @@ export const MAINTENANCE = {
   dueAfterFlightSeconds: 50 * 3600,
   dueBelowConditionPct: 60,
   durationSeconds: 6 * 3600,
+  /**
+   * Extra wear, per hour flown with a technical caution showing (ADR 0026). Five times the
+   * ordinary rate: going on is allowed, and costs condition for as long as it lasts.
+   */
+  cautionWearPctPerFlightHour: 2,
 } as const;
 
 /** How many finished flights the engine keeps in memory. Older ones remain in the database. */
@@ -107,13 +129,37 @@ export interface FlightState {
   readonly fuelAtDepartureKg: number;
   readonly departedTick: number;
   readonly arrivedTick: number | null;
+  /**
+   * The route as it was launched. `plan` is the route as flown: it begins the same and differs
+   * from the point of the first revision, if there was one (ADR 0026).
+   */
+  readonly plannedPlan: FlightPlan;
+  /** Every change of route since launch, in order. Never rewritten. */
+  readonly revisions: readonly FlightRevision[];
+  /** A technical caution showing on the aircraft in this flight, once one has. */
+  readonly caution: FlightCaution | null;
   /** The planner's estimate at launch, kept for comparison with the outcome. */
   readonly estimatedDurationS: number;
   readonly estimatedFuelUsedKg: number;
-  /** The same plan's estimate in still air, to show what the weather cost; `null` before model 4. */
+  /**
+   * What the flight is now expected to come to: the estimate at launch until the route changes
+   * or a hold ends, and re-flown from the flight's own state when either happens.
+   */
+  readonly projectedDurationS: number;
+  readonly projectedFuelUsedKg: number;
+  /**
+   * The same plan's estimate in still air, to show what the weather cost. `null` before model 4,
+   * and once a flight has changed its route or held: there is then no same plan to compare with.
+   */
   readonly stillAirDurationS: number | null;
   readonly stillAirFuelUsedKg: number | null;
   readonly progress: FlightProgress;
+}
+
+/** A technical caution on an aircraft in flight (ADR 0026). */
+export interface FlightCaution {
+  readonly eventId: string;
+  readonly sinceTick: number;
 }
 
 export interface FleetSnapshot {
@@ -161,6 +207,21 @@ export type FleetCommand =
     }
   | { readonly type: 'startMaintenance'; readonly aircraftId: string }
   /**
+   * Changes the rest of an airborne flight's route (ADR 0026). `points` is the new remainder,
+   * ending at the aerodrome to land at; where it starts is the aircraft's position at the tick
+   * the command is applied, which the simulation knows and the command therefore does not carry.
+   */
+  | {
+      readonly type: 'reviseFlight';
+      readonly aircraftId: string;
+      readonly intent: RevisionIntent;
+      readonly points: readonly RoutePoint[];
+    }
+  /** Holds an airborne aircraft where it is, until it is resumed or its fuel is down to reserve. */
+  | { readonly type: 'holdFlight'; readonly aircraftId: string }
+  /** Ends a hold the operator ordered. */
+  | { readonly type: 'resumeFlight'; readonly aircraftId: string }
+  /**
    * Replaces a grounded aircraft's performance model, for example after the flight model or the
    * reference data behind it has changed. An airborne aircraft is refused: a flight finishes
    * under the model it departed with.
@@ -198,6 +259,26 @@ export interface FlightView {
   readonly etaTick: number;
   readonly estimatedFuelAtDestinationKg: number;
   readonly points: readonly RoutePoint[];
+  /** Why the aircraft is holding, when it is. */
+  readonly hold: 'operator' | 'closure' | null;
+  /** Seconds spent holding so far. */
+  readonly heldS: number;
+  /** True while it descends to a closed destination with its fuel at reserve. */
+  readonly closureLanding: boolean;
+  /** The intent of the latest change of route; `null` when the flight is as launched. */
+  readonly intent: RevisionIntent | null;
+  readonly revisions: readonly FlightRevision[];
+  /** Where the flight was launched to, which a diversion leaves behind. */
+  readonly plannedDestination: RoutePoint;
+  readonly caution: FlightCaution | null;
+  /** The mission the flight was launched for, if any. */
+  readonly missionId: string | null;
+  readonly departedTick: number;
+  readonly payloadKg: number;
+  /** The flight's own state, from which the rest of it can be projected. */
+  readonly progress: FlightProgress;
+  readonly cruiseAltitudeM: number;
+  readonly cruiseSpeedKmh: number;
   /** The weather where the aircraft is now, at its altitude. */
   readonly groundSpeedKmh: number;
   readonly tailwindKmh: number;
@@ -243,13 +324,48 @@ function samePlace(a: RoutePoint, b: RoutePoint): boolean {
   return greatCircleDistance(a, b) < 1000;
 }
 
+/** What is derived for a flight while it is active. Never persisted. */
+interface ActiveFlight {
+  profile: FlightProfile;
+  route: RouteGeometry;
+  /** The hazards the closures below were read from, to know when to read them again. */
+  hazards: Hazards | null;
+  closures: readonly ClosureWindow[];
+}
+
+const NO_CLOSURES: readonly ClosureWindow[] = [];
+
+/**
+ * A flight as it is held in memory. A flight saved before in-flight control existed lacks the
+ * newer fields; it is given what they would have been for a flight flown exactly as launched.
+ */
+function restoredFlight(saved: FlightState): FlightState {
+  // Read as possibly absent, which for a flight from an older world they are.
+  const partial: Partial<FlightState> = saved;
+  const progress: Partial<FlightProgress> = saved.progress;
+  return {
+    ...saved,
+    plannedPlan: partial.plannedPlan ?? saved.plan,
+    revisions: partial.revisions ?? [],
+    caution: partial.caution ?? null,
+    projectedDurationS: partial.projectedDurationS ?? saved.estimatedDurationS,
+    projectedFuelUsedKg: partial.projectedFuelUsedKg ?? saved.estimatedFuelUsedKg,
+    progress: {
+      ...saved.progress,
+      hold: progress.hold ?? null,
+      heldS: progress.heldS ?? 0,
+      closureLanding: progress.closureLanding ?? false,
+    },
+  };
+}
+
 export class Fleet {
   private readonly aircraft = new Map<string, AircraftState>();
   private readonly flights = new Map<string, FlightState>();
   private readonly counters = new Map<string, number>();
   private starterFleetSeeded: boolean;
   /** Route geometry and profile of each active flight. Derived from the plan; never persisted. */
-  private readonly active = new Map<string, { profile: FlightProfile; route: RouteGeometry }>();
+  private readonly active = new Map<string, ActiveFlight>();
 
   constructor(
     snapshot: FleetSnapshot = EMPTY_FLEET,
@@ -257,7 +373,7 @@ export class Fleet {
     private readonly weather: WeatherModel | null = null,
   ) {
     for (const aircraft of snapshot.aircraft) this.aircraft.set(aircraft.id, aircraft);
-    for (const flight of snapshot.flights) this.flights.set(flight.id, flight);
+    for (const flight of snapshot.flights) this.flights.set(flight.id, restoredFlight(flight));
     for (const [name, value] of Object.entries(snapshot.counters)) this.counters.set(name, value);
     this.starterFleetSeeded = snapshot.starterFleetSeeded;
 
@@ -292,6 +408,8 @@ export class Fleet {
     this.active.set(flight.id, {
       profile: flightProfile(model, flight.plan, flight.payloadKg),
       route: routeGeometry(flight.plan.points),
+      hazards: null,
+      closures: NO_CLOSURES,
     });
   }
 
@@ -395,12 +513,17 @@ export class Fleet {
       status: 'active',
       missionId,
       plan,
+      plannedPlan: plan,
+      revisions: [],
+      caution: null,
       payloadKg: load.payloadKg,
       fuelAtDepartureKg: load.fuelKg,
       departedTick: tick,
       arrivedTick: null,
       estimatedDurationS: evaluation.estimate.durationS,
       estimatedFuelUsedKg: evaluation.estimate.fuelUsedKg,
+      projectedDurationS: evaluation.estimate.durationS,
+      projectedFuelUsedKg: evaluation.estimate.fuelUsedKg,
       stillAirDurationS: evaluation.estimate.weather?.stillAirDurationS ?? null,
       stillAirFuelUsedKg: evaluation.estimate.weather?.stillAirFuelUsedKg ?? null,
       progress: initialProgress(profile, load.fuelKg),
@@ -438,6 +561,115 @@ export class Fleet {
     const route = this.active.get(flight.id)?.route ?? routeGeometry(flight.plan.points);
     const position = positionAlong(route, flight.progress.distanceM);
     return { position: { lat: position.lat, lon: position.lon }, totalM: route.totalM };
+  }
+
+  /** The active flight of an aircraft, with the aircraft and its model, or a refusal. */
+  private airborne(aircraftId: string, action: string) {
+    const aircraft = this.require(aircraftId);
+    const flight = aircraft.activeFlightId ? this.flights.get(aircraft.activeFlightId) : undefined;
+    const model = aircraft.performance;
+    if (!flight || flight.status !== 'active' || !model) {
+      throw new CommandRejected(`${aircraft.id} is not airborne; there is no flight to ${action}.`);
+    }
+    return { aircraft, flight, model };
+  }
+
+  /** What the rest of a flight comes to from its present state, as two figures to keep. */
+  private projection(flight: FlightState, model: PerformanceModel, hazards: Hazards) {
+    if (!this.weather) {
+      return {
+        projectedDurationS: flight.projectedDurationS,
+        projectedFuelUsedKg: flight.projectedFuelUsedKg,
+      };
+    }
+    const projected = projectFlight(model, flight, { weather: this.weather, hazards });
+    return {
+      projectedDurationS: (projected.arrivalTick - flight.departedTick) * STEP_S,
+      projectedFuelUsedKg: flight.fuelAtDepartureKg - projected.landingFuelKg,
+    };
+  }
+
+  /**
+   * Changes the rest of an airborne flight's route, exactly as the `reviseFlight` command does.
+   * Returns the flight's id, or `null` when the route asked for is the one already being flown.
+   * Throws {@link CommandRejected}, changing nothing, when the route cannot be flown.
+   */
+  revise(
+    aircraftId: string,
+    intent: RevisionIntent,
+    points: readonly RoutePoint[],
+    tick: number,
+    hazards: Hazards = NO_HAZARDS,
+  ): string | null {
+    const { aircraft, flight, model } = this.airborne(aircraftId, 'change the route of');
+    for (const point of points) assertPoint(point, 'A point on the new route');
+    if (!this.weather) {
+      throw new CommandRejected('This world has no weather; a route cannot be changed in flight.');
+    }
+    const evaluation = evaluateRevision(
+      model,
+      flight,
+      points,
+      { weather: this.weather, hazards },
+      REVISION_LABEL[intent],
+    );
+    const blocked = evaluation.constraints.find((constraint) => constraint.severity === 'block');
+    if (blocked || !evaluation.revised || !evaluation.progress || !evaluation.projection) {
+      throw new CommandRejected(blocked?.message ?? 'The new route cannot be flown.');
+    }
+    // The route already being flown: nothing to change, and nothing to record.
+    if (evaluation.unchanged) return null;
+
+    const { revised, projection } = evaluation;
+    const revision: FlightRevision = {
+      tick,
+      intent,
+      position: revised.position,
+      atDistanceM: flight.progress.distanceM,
+      fuelKg: flight.progress.fuelKg,
+      replaced: revised.replaced,
+    };
+    const next: FlightState = {
+      ...flight,
+      plan: revised.plan,
+      revisions: [...flight.revisions, revision],
+      progress: evaluation.progress,
+      projectedDurationS: (projection.arrivalTick - flight.departedTick) * STEP_S,
+      projectedFuelUsedKg: flight.fuelAtDepartureKg - projection.landingFuelKg,
+      // There is no longer one plan, flown in still air, to compare the outcome against.
+      stillAirDurationS: null,
+      stillAirFuelUsedKg: null,
+    };
+    this.flights.set(flight.id, next);
+    this.activate(next, model);
+    this.aircraft.set(aircraft.id, { ...aircraft, fuelKg: next.progress.fuelKg });
+    return flight.id;
+  }
+
+  /**
+   * Aircraft in flight on which a technical caution could show: past their take-off, and without
+   * one already. In identifier order.
+   */
+  airborneWithoutCaution(): string[] {
+    const ids: string[] = [];
+    for (const flight of this.flights.values()) {
+      if (flight.status === 'active' && !flight.caution && flight.progress.phase !== 'takeoff') {
+        ids.push(flight.aircraftId);
+      }
+    }
+    return ids.sort((a, b) => a.localeCompare(b));
+  }
+
+  /**
+   * Marks a technical caution on an aircraft in flight (ADR 0026). Returns false, changing
+   * nothing, if the aircraft is not in a flight that can have one.
+   */
+  flagCaution(aircraftId: string, eventId: string, tick: number): string | null {
+    const aircraft = this.aircraft.get(aircraftId);
+    const flight = aircraft?.activeFlightId ? this.flights.get(aircraft.activeFlightId) : undefined;
+    if (!flight || flight.status !== 'active' || flight.caution) return null;
+    this.flights.set(flight.id, { ...flight, caution: { eventId, sinceTick: tick } });
+    return flight.id;
   }
 
   /**
@@ -537,6 +769,68 @@ export class Fleet {
         return { aircraftId: command.aircraftId, flightId };
       }
 
+      case 'reviseFlight': {
+        if (!REVISION_INTENTS.includes(command.intent)) {
+          throw new CommandRejected(
+            'A change of route must be a reroute, a diversion or a return.',
+          );
+        }
+        const flightId = this.revise(
+          command.aircraftId,
+          command.intent,
+          command.points,
+          tick,
+          context?.hazards ?? NO_HAZARDS,
+        );
+        return flightId === null ? null : { aircraftId: command.aircraftId, flightId };
+      }
+
+      case 'holdFlight': {
+        const { aircraft, flight, model } = this.airborne(command.aircraftId, 'hold');
+        const { progress } = flight;
+        if (progress.hold !== null) return null;
+        if (progress.phase === 'takeoff') {
+          throw new CommandRejected(
+            `${aircraft.id} is still on its take-off roll. It can hold once it is airborne.`,
+          );
+        }
+        if (progress.phase === 'descent') {
+          throw new CommandRejected(
+            `${aircraft.id} is descending to land. Divert it if it must not land there.`,
+          );
+        }
+        if (progress.fuelKg <= model.reserveFuelKg) {
+          throw new CommandRejected(
+            `${aircraft.id} has no fuel to hold with: it is already down to its reserve.`,
+          );
+        }
+        this.flights.set(flight.id, {
+          ...flight,
+          progress: { ...progress, hold: { reason: 'operator', sinceS: progress.elapsedS } },
+          stillAirDurationS: null,
+          stillAirFuelUsedKg: null,
+        });
+        return { aircraftId: aircraft.id, flightId: flight.id };
+      }
+
+      case 'resumeFlight': {
+        const { aircraft, flight, model } = this.airborne(command.aircraftId, 'resume');
+        const { hold } = flight.progress;
+        if (hold === null) return null;
+        if (hold.reason === 'closure') {
+          const destination = flight.plan.points.at(-1) as RoutePoint;
+          throw new CommandRejected(
+            `${aircraft.id} is holding because ${destination.name} is closed. It will go on when the aerodrome reopens; divert it to land elsewhere.`,
+          );
+        }
+        const resumed = { ...flight, progress: { ...flight.progress, hold: null } };
+        this.flights.set(flight.id, {
+          ...resumed,
+          ...this.projection(resumed, model, context?.hazards ?? NO_HAZARDS),
+        });
+        return { aircraftId: aircraft.id, flightId: flight.id };
+      }
+
       case 'updatePerformance': {
         const aircraft = this.require(command.aircraftId);
         this.onGround(aircraft, 'be given a new performance model');
@@ -578,28 +872,83 @@ export class Fleet {
   }
 
   /** Advances every active flight and any maintenance by one step. Returns true if anything changed. */
-  step(tick: number, rng: (stream: string) => Rng, emit: EmitEvent): boolean {
+  step(
+    tick: number,
+    rng: (stream: string) => Rng,
+    emit: EmitEvent,
+    /** Closed aerodromes and disrupted areas, announced or under way. */
+    hazards: Hazards = NO_HAZARDS,
+  ): boolean {
     let changed = false;
 
-    for (const [flightId, { profile, route }] of [...this.active].sort(([a], [b]) =>
-      a.localeCompare(b),
-    )) {
-      const flight = this.flights.get(flightId) as FlightState;
+    for (const [flightId, derived] of [...this.active].sort(([a], [b]) => a.localeCompare(b))) {
+      const { profile, route } = derived;
+      let flight = this.flights.get(flightId) as FlightState;
       const aircraft = this.aircraft.get(flight.aircraftId) as AircraftState;
+      const destination = flight.plan.points.at(-1) as RoutePoint;
+      // The destination's closures are read again only when the hazards have changed.
+      if (derived.hazards !== hazards) {
+        derived.hazards = hazards;
+        derived.closures = closuresOf(hazards, destination);
+      }
+      const before = flight.progress;
       const progress = advanceInWeather(
         profile,
-        flight.progress,
+        before,
         STEP_S,
-        this.weather ? { weather: this.weather, route, departureTick: flight.departedTick } : null,
+        this.weather
+          ? {
+              weather: this.weather,
+              route,
+              departureTick: flight.departedTick,
+              closures: derived.closures,
+            }
+          : null,
       );
       changed = true;
+      const subject = { aircraftId: aircraft.id, flightId, missionId: flight.missionId };
+
+      // What the step decided about holding, said once, when it happened (ADR 0026).
+      if (before.hold === null && progress.hold !== null) {
+        emit('flightHolding', subject, { reason: progress.hold.reason, at: destination.name });
+        flight = { ...flight, stillAirDurationS: null, stillAirFuelUsedKg: null };
+      } else if (before.hold !== null && progress.hold === null) {
+        const reason = progress.closureLanding
+          ? 'landing_during_closure'
+          : before.hold.reason === 'closure' &&
+              !closedForArrival(profile, before, tick - 1, derived.closures)
+            ? 'reopened'
+            : 'fuel_at_reserve';
+        emit('flightHoldEnded', subject, {
+          reason,
+          heldS: progress.heldS,
+          fuelKg: progress.fuelKg,
+          at: destination.name,
+        });
+        const model = aircraft.performance;
+        if (model) {
+          flight = { ...flight, ...this.projection({ ...flight, progress }, model, hazards) };
+        }
+      } else if (!before.closureLanding && progress.closureLanding) {
+        // At the top of descent with no fuel to hold: it goes straight down to the closed aerodrome.
+        emit('flightHoldEnded', subject, {
+          reason: 'landing_during_closure',
+          heldS: progress.heldS,
+          fuelKg: progress.fuelKg,
+          at: destination.name,
+        });
+      }
 
       if (progress.phase === 'landed') {
-        const destination = flight.plan.points.at(-1) as RoutePoint;
         const hours = progress.elapsedS / 3600;
         const variation = 1 + MAINTENANCE.wearVariation * (rng(WEAR_STREAM).nextFloat() * 2 - 1);
+        // Time flown with a technical caution showing wears the aircraft further.
+        const cautionHours = flight.caution
+          ? ((tick - flight.caution.sinceTick) * STEP_S) / 3600
+          : 0;
         const wear =
-          (MAINTENANCE.wearPctPerFlightHour * hours + MAINTENANCE.wearPctPerFlight) * variation;
+          (MAINTENANCE.wearPctPerFlightHour * hours + MAINTENANCE.wearPctPerFlight) * variation +
+          MAINTENANCE.cautionWearPctPerFlightHour * cautionHours;
         const landed: AircraftState = {
           ...aircraft,
           location: destination,
@@ -611,7 +960,9 @@ export class Fleet {
           activeFlightId: null,
           status: 'available',
         };
-        const due = maintenanceDue(landed);
+        // A caution, or a landing made at a closed aerodrome, is inspected before it flies again.
+        const inspection = flight.caution !== null || progress.closureLanding;
+        const due = maintenanceDue(landed) || inspection;
         this.aircraft.set(aircraft.id, {
           ...landed,
           status: due ? 'maintenance_due' : 'available',
@@ -625,6 +976,14 @@ export class Fleet {
             durationS: progress.elapsedS,
             fuelRemainingKg: progress.fuelKg,
             wearPct: wear,
+            ...(flight.revisions.length > 0 && {
+              plannedDestination:
+                flight.plannedPlan.points.at(-1)?.code ?? flight.plannedPlan.points.at(-1)?.name,
+              revisions: flight.revisions.length,
+            }),
+            ...(progress.heldS > 0 && { heldS: progress.heldS }),
+            ...(progress.closureLanding && { landedDuringClosure: true }),
+            ...(flight.caution && { cautionEventId: flight.caution.eventId }),
             // What the weather cost, against the same plan in still air.
             ...(flight.stillAirDurationS !== null &&
               flight.stillAirFuelUsedKg !== null && {
@@ -635,7 +994,17 @@ export class Fleet {
               }),
           },
         );
-        if (due) emit('maintenanceDue', { aircraftId: aircraft.id });
+        if (due) {
+          emit(
+            'maintenanceDue',
+            { aircraftId: aircraft.id },
+            progress.closureLanding
+              ? { reason: 'Landed during a closure with fuel at reserve.' }
+              : flight.caution
+                ? { reason: 'A technical caution showed in flight.' }
+                : {},
+          );
+        }
       } else if (progress.fuelExhausted) {
         // Abstract outcome: the aircraft is down where it ran out and must be recovered.
         const position = positionAlong(route, progress.distanceM);
@@ -747,9 +1116,22 @@ export class Fleet {
         distanceM: flight.progress.distanceM,
         totalM: derived.route.totalM,
         elapsedS: flight.progress.elapsedS,
-        etaTick: flight.departedTick + flight.estimatedDurationS / STEP_S,
-        estimatedFuelAtDestinationKg: flight.fuelAtDepartureKg - flight.estimatedFuelUsedKg,
+        etaTick: flight.departedTick + flight.projectedDurationS / STEP_S,
+        estimatedFuelAtDestinationKg: flight.fuelAtDepartureKg - flight.projectedFuelUsedKg,
         points: flight.plan.points,
+        hold: flight.progress.hold?.reason ?? null,
+        heldS: flight.progress.heldS,
+        closureLanding: flight.progress.closureLanding,
+        intent: flight.revisions.at(-1)?.intent ?? null,
+        revisions: flight.revisions,
+        plannedDestination: flight.plannedPlan.points.at(-1) as RoutePoint,
+        caution: flight.caution,
+        missionId: flight.missionId,
+        departedTick: flight.departedTick,
+        payloadKg: flight.payloadKg,
+        progress: flight.progress,
+        cruiseAltitudeM: flight.plan.cruiseAltitudeM,
+        cruiseSpeedKmh: flight.plan.cruiseSpeedKmh,
         groundSpeedKmh: groundSpeedKmh(flight.progress.speedKmh, flight.progress.environment),
         tailwindKmh: flight.progress.environment.tailwindKmh,
         windFromDeg: conditions?.windFromDeg ?? 0,

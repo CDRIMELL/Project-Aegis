@@ -250,6 +250,9 @@ describe('fuel model', () => {
       fuelExhausted: false,
       environment: STILL_AIR,
       exposure: NO_EXPOSURE,
+      hold: null,
+      heldS: 0,
+      closureLanding: false,
     };
     while (progress.distanceM < distanceKm * 1000 && !progress.fuelExhausted) {
       progress = advanceFlight(profile, progress, 1);

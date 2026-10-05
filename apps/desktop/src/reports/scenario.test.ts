@@ -307,11 +307,13 @@ describe('reports: end-to-end scenario', () => {
 
     // The named periods are measured back from the simulation clock, not from this computer's.
     const { current: day, previous } = await session.reports(presetPeriod('last24h', tick, epoch));
-    expect(day.period.toTick - day.period.fromTick).toBe(TICKS_PER_DAY);
+    // A day long, or as long as the world has existed if that is less.
+    expect(day.period.toTick - day.period.fromTick).toBe(Math.min(TICKS_PER_DAY, tick + 1));
     expect(day.missions.every((mission) => mission.completedTick >= day.period.fromTick)).toBe(
       true,
     );
-    expect(previous?.period.toTick).toBe(day.period.fromTick);
+    if (day.period.fromTick > 0) expect(previous?.period.toTick).toBe(day.period.fromTick);
+    else expect(previous).toBeNull();
 
     // Splitting the world's life in two loses nothing and counts nothing twice.
     const cut = late.completedTick;

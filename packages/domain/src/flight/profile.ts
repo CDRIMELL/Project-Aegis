@@ -83,6 +83,16 @@ export interface FlightProfile {
   readonly payloadKg: number;
 }
 
+/**
+ * A hold: the aircraft circles where it is instead of going on (ADR 0026). Ordered by the
+ * operator, or entered at the top of descent because the destination is closed.
+ */
+export interface Hold {
+  readonly reason: 'operator' | 'closure';
+  /** Flight time, in seconds, at which the hold began. */
+  readonly sinceS: number;
+}
+
 /** The changing state of a flight. Plain data: this is what is persisted. */
 export interface FlightProgress {
   readonly phase: FlightPhase;
@@ -101,6 +111,15 @@ export interface FlightProgress {
   /** The conditions currently applied. Sampled once a minute and held in between. */
   readonly environment: Environment;
   readonly exposure: WeatherExposure;
+  /** Set while the aircraft is holding; `null` otherwise. */
+  readonly hold: Hold | null;
+  /** Seconds spent holding so far, over the whole flight. */
+  readonly heldS: number;
+  /**
+   * True once the aircraft has begun its descent to a closed destination because its fuel was
+   * down to reserve. It lands; the landing is recorded as made during a closure.
+   */
+  readonly closureLanding: boolean;
 }
 
 const A = FLIGHT_ASSUMPTIONS;
@@ -120,6 +139,68 @@ export function initialProgress(profile: FlightProfile, fuelKg: number): FlightP
     fuelExhausted: false,
     environment: STILL_AIR,
     exposure: NO_EXPOSURE,
+    hold: null,
+    heldS: 0,
+    closureLanding: false,
+  };
+}
+
+/** Ground distance a 3 degree descent from the present altitude to the destination needs. */
+export function descentDistanceM(profile: FlightProfile, progress: FlightProgress): number {
+  return Math.max(progress.altitudeM - profile.destinationElevationM, 0) / DESCENT_GRADIENT;
+}
+
+/** True when the aircraft is airborne and has reached the point where its descent begins. */
+export function descentDue(profile: FlightProfile, progress: FlightProgress): boolean {
+  const airborne =
+    progress.altitudeM > profile.originElevationM + 0.5 || progress.phase !== 'takeoff';
+  return (
+    airborne &&
+    progress.altitudeM > profile.destinationElevationM &&
+    profile.totalDistanceM - progress.distanceM <= descentDistanceM(profile, progress)
+  );
+}
+
+/** The slowest the aircraft flies on its way down: an upper bound on how long a descent takes. */
+export function approachSpeedKmh(profile: FlightProfile): number {
+  return profile.cruiseSpeedKmh * A.speeds.approachFraction;
+}
+
+/**
+ * One step of a hold. The aircraft covers no ground and keeps its altitude; it flies through the
+ * air at the holding speed and burns fuel for that distance at the ordinary rate.
+ */
+function holdStep(
+  profile: FlightProfile,
+  progress: FlightProgress,
+  dtS: number,
+  environment: Environment,
+): FlightProgress {
+  const { model } = profile;
+  const targetKmh = profile.cruiseSpeedKmh * A.hold.speedFraction;
+  const maxChangeKmh = model.accelerationMs2 * dtS * 3.6;
+  const speedKmh =
+    progress.speedKmh +
+    Math.min(Math.max(targetKmh - progress.speedKmh, -maxChangeKmh), maxChangeKmh);
+  const massKg = model.emptyMassKg + profile.payloadKg + progress.fuelKg;
+  let burnKg =
+    (massKg / (model.rangeFactorKm * 1000)) *
+    (speedKmh * KMH_TO_MS * dtS) *
+    altitudeFuelFactor(model, progress.altitudeM) *
+    speedFuelFactor(model, speedKmh) *
+    environmentFuelFactor(environment);
+  const v0 = progress.speedKmh * KMH_TO_MS;
+  const v1 = speedKmh * KMH_TO_MS;
+  burnKg += Math.max(0.5 * massKg * (v1 * v1 - v0 * v0), 0) / A.propulsion.joulesPerKgFuel;
+  const fuelKg = Math.max(progress.fuelKg - burnKg, 0);
+  return {
+    ...progress,
+    speedKmh,
+    fuelKg,
+    elapsedS: progress.elapsedS + dtS,
+    heldS: progress.heldS + dtS,
+    burnRateKgH: (burnKg / dtS) * 3600,
+    fuelExhausted: fuelKg <= 0,
   };
 }
 
@@ -197,6 +278,7 @@ export function advanceFlight(
   if (progress.phase === 'landed' || progress.fuelExhausted) {
     return progress.burnRateKgH === 0 ? progress : { ...progress, burnRateKgH: 0 };
   }
+  if (progress.hold !== null) return holdStep(profile, progress, dtS, environment);
   const { model } = profile;
   const remainingM = profile.totalDistanceM - progress.distanceM;
   const heightAboveDestinationM = progress.altitudeM - profile.destinationElevationM;
@@ -299,6 +381,9 @@ export function advanceFlight(
     fuelExhausted,
     environment: progress.environment,
     exposure: progress.exposure,
+    hold: null,
+    heldS: progress.heldS,
+    closureLanding: progress.closureLanding,
   };
 }
 
@@ -314,7 +399,19 @@ export function flyToCompletion(
   step: (progress: FlightProgress) => FlightProgress = (progress) =>
     advanceFlight(profile, progress, dtS),
 ): FlightProgress {
-  let progress = initialProgress(profile, fuelKg);
+  return flyOn(initialProgress(profile, fuelKg), dtS, step);
+}
+
+/**
+ * Flies on from a flight's present state to landing, or until fuel runs out. This is how the rest
+ * of a flight that is already airborne is estimated: with the same step, from where it is.
+ */
+export function flyOn(
+  start: FlightProgress,
+  dtS: number,
+  step: (progress: FlightProgress) => FlightProgress,
+): FlightProgress {
+  let progress = start;
   const maxSteps = Math.ceil(MAX_FLIGHT_S / dtS);
   for (let i = 0; i < maxSteps; i++) {
     if (progress.phase === 'landed' || progress.fuelExhausted) break;

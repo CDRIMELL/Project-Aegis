@@ -57,6 +57,13 @@
       "when": 1791181143065,
       "tag": "0007_mission_acceptance",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791208517143,
+      "tag": "0008_inflight_control",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,7 @@ export const EVENT_TYPES = [
   'logistics_disruption',
   'maintenance_finding',
   'severe_weather',
+  'technical_caution',
 ] as const;
 export const EVENT_STATUSES = ['scheduled', 'active', 'resolved', 'cancelled'] as const;
 export const EVENT_SOURCES = ['generated', 'derived'] as const;

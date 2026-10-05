@@ -92,6 +92,11 @@ export const FLIGHT_ASSUMPTIONS = {
     statement:
       'Climbing and accelerating cost their physical energy, at an assumed 12.9 MJ of useful work per kg of fuel.',
   },
+  hold: {
+    speedFraction: 0.75,
+    statement:
+      'An aircraft that is holding circles where it is, at its present altitude and 75 % of cruise speed, burning fuel for the air it flies through as in cruise.',
+  },
   offOptimum: {
     altitudePenaltyAtSeaLevel: 0.5,
     speedPenalty: 1.5,

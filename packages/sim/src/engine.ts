@@ -3,7 +3,6 @@ import {
   RngStreams,
   addMs,
   foldUint32,
-  hazardsFrom,
   isSpeedMultiplier,
   weatherModel,
   type PlanContext,
@@ -84,6 +83,8 @@ export class SimulationEngine {
       weather: this.weather,
       places: () => this.missions.operatingArea(),
       groundedAircraft: () => this.fleet.groundedAircraft(),
+      airborneWithoutCaution: () => this.fleet.airborneWithoutCaution(),
+      flagCaution: (aircraftId, eventId, tick) => this.fleet.flagCaution(aircraftId, eventId, tick),
       aircraftById: (id) => this.fleet.aircraftById(id),
       flagMaintenanceDue: (aircraftId) =>
         // An aircraft committed to a mission is left alone: the finding would strand the mission.
@@ -91,7 +92,13 @@ export class SimulationEngine {
         this.fleet.flagMaintenanceDue(aircraftId),
       offerUrgentDelivery: (event, tick) =>
         this.missions.offerUrgentDelivery(event, tick, this.fleet, this.emit),
-      affectableMissions: () => this.missions.affectable(),
+      // A mission in flight is affected along the route its flight is now on, which a
+      // diversion may have changed; one still on the ground, along the route it plans.
+      affectableMissions: () =>
+        this.missions.affectable().map((mission) => {
+          const flight = mission.flightId ? this.fleet.flightById(mission.flightId) : undefined;
+          return flight?.status === 'active' ? { ...mission, plan: flight.plan } : mission;
+        }),
     };
     this.tick = clock.tick;
     this.speed = clock.speed;
@@ -252,7 +259,7 @@ export class SimulationEngine {
   applyCommand(command: WorldCommand): boolean {
     let effect;
     const context = this.planContext();
-    const hazards = context.hazards ?? hazardsFrom(this.events.open());
+    const hazards = this.events.hazards();
     if (isMissionCommand(command)) {
       effect = this.missions.apply(command, this.tick, this.fleet, {
         weather: this.weather,
@@ -294,7 +301,7 @@ export class SimulationEngine {
     return {
       weather: this.weather,
       departureTick: this.tick,
-      hazards: hazardsFrom(this.events.open()),
+      hazards: this.events.hazards(),
     };
   }
 
@@ -313,7 +320,7 @@ export class SimulationEngine {
   private step(): void {
     this.tick += 1;
     // Fixed order: aircraft move, then missions read where they are, then events.
-    this.fleet.step(this.tick, this.stream, this.emit);
+    this.fleet.step(this.tick, this.stream, this.emit, this.events.hazards());
     this.missions.step(this.tick, this.fleet, this.stream, this.emit);
     this.events.step(this.tick, this.eventsWorld, this.stream, this.emit);
     this.updateIntegrityDigest();

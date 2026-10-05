@@ -804,7 +804,7 @@ describe('world-generated opportunities', () => {
   });
 
   it('runs an accepted offer through the same framework as a manual mission', () => {
-    const engine = withArea('accepted-offer');
+    const engine = withArea('accepted-offer-b');
     const offer = runUntilOffer(engine, ['logistics', 'transport', 'ferry']);
     engine.applyCommand({ type: 'acceptOffer', missionId: offer.id });
     expect(missionOf(engine, offer.id)).toMatchObject({ status: 'draft', source: 'generated' });

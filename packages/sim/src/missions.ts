@@ -34,6 +34,7 @@ import {
   type ObjectiveContext,
   type ObjectiveInput,
   type PlanContext,
+  type RevisionIntent,
   type Rng,
   type RoutePoint,
   type WeatherModel,
@@ -193,7 +194,26 @@ export type MissionCommand =
   /** Withdraws acceptance: the aircraft is released and the mission can be edited again. */
   | { readonly type: 'releaseMission'; readonly missionId: string }
   | { readonly type: 'cancelMission'; readonly missionId: string }
-  | { readonly type: 'launchMission'; readonly missionId: string };
+  | { readonly type: 'launchMission'; readonly missionId: string }
+  /**
+   * Gives up a mission whose flight is airborne (ADR 0026). The mission ends at once; the flight
+   * goes on as an ordinary flight to land where `landing` says, which the operator must choose.
+   */
+  | {
+      readonly type: 'abortMission';
+      readonly missionId: string;
+      readonly landing: AbortLanding;
+    };
+
+/** Where an aborted mission's flight is to land. */
+export type AbortLanding =
+  /** On to the destination it is already bound for. */
+  | { readonly intent: 'continue' }
+  /** Back to where it took off, or to another aerodrome, by the route given. */
+  | { readonly intent: 'return' | 'divert'; readonly points: readonly RoutePoint[] };
+
+/** The reason recorded on every objective an abort leaves undone. */
+export const ABORTED_REMARK = 'Mission aborted.';
 
 export const MISSION_COMMAND_TYPES: ReadonlySet<string> = new Set<MissionCommand['type']>([
   'setOperatingArea',
@@ -205,6 +225,7 @@ export const MISSION_COMMAND_TYPES: ReadonlySet<string> = new Set<MissionCommand
   'releaseMission',
   'cancelMission',
   'launchMission',
+  'abortMission',
 ]);
 
 /** What missions need from the fleet. The fleet implements it; missions never reach past it. */
@@ -223,6 +244,17 @@ export interface FleetPort {
     missionId: string | null,
     context: PlanContext | null,
   ): string;
+  /**
+   * Changes the rest of an airborne flight's route exactly as the `reviseFlight` command does.
+   * Returns `null` when the route asked for is the one already being flown.
+   */
+  revise(
+    aircraftId: string,
+    intent: RevisionIntent,
+    points: readonly RoutePoint[],
+    tick: number,
+    hazards: Hazards,
+  ): string | null;
   /** Removes the payload from an aircraft on the ground. */
   unload(aircraftId: string): void;
   rebase(aircraftId: string, home: RoutePoint): void;
@@ -597,6 +629,48 @@ export class Missions {
         });
         return { missionId: mission.id, aircraftId, flightId };
       }
+
+      case 'abortMission': {
+        const mission = this.require(command.missionId);
+        if (mission.status !== 'active') {
+          throw new CommandRejected(
+            isFinished(mission.status)
+              ? `${mission.id} is ${mission.status}; there is nothing to abort.`
+              : `${mission.id} has not launched. Cancel it instead; abort is for a mission in flight.`,
+          );
+        }
+        const flight = mission.flightId ? fleet.flightById(mission.flightId) : undefined;
+        const { aircraftId } = mission;
+        if (!flight || !aircraftId) {
+          throw new Error(`Active mission ${mission.id} has lost its flight`);
+        }
+        const { landing } = command;
+        // The route is changed first: if it cannot be flown the command is refused whole, and
+        // the mission is still as it was.
+        if (landing.intent !== 'continue') {
+          fleet.revise(aircraftId, landing.intent, landing.points, tick, world.hazards);
+        }
+        const objectives = mission.objectives.map((objective) =>
+          objective.status === 'pending'
+            ? { ...objective, status: 'failed' as const, remark: ABORTED_REMARK }
+            : objective,
+        );
+        const required = objectives.filter((objective) => objective.required);
+        const complete = required.filter((objective) => objective.status === 'complete').length;
+        const destination = fleet.flightById(flight.id)?.plan.points.at(-1);
+        const outcome: MissionOutcome = {
+          result: 'aborted',
+          decidedTick: tick,
+          summary: `Aborted in flight with ${complete} of ${required.length} required objectives met. The aircraft goes on to land at ${destination?.name ?? 'its destination'}.`,
+          objectivesComplete: complete,
+          objectivesRequired: required.length,
+          // As they stood at the abort. The flight is not over; its totals are the flight's own.
+          flightDurationS: flight.progress.elapsedS,
+          fuelUsedKg: flight.fuelAtDepartureKg - flight.progress.fuelKg,
+        };
+        this.finish({ ...mission, status: 'aborted', objectives, outcome, completedTick: tick });
+        return { missionId: mission.id, aircraftId, flightId: flight.id };
+      }
     }
   }
 
@@ -664,7 +738,10 @@ export class Missions {
       reserveFuelKg: aircraft.performance?.reserveFuelKg ?? 0,
       payloadKg: flight.payloadKg,
       origin: plan.points[0] as RoutePoint,
+      // The mission's plan is what was intended; the flight's is what was flown. An objective
+      // about the destination is judged against the first, by where the second ended.
       destination: plan.points.at(-1) as RoutePoint,
+      landedAt: landed ? (flight.plan.points.at(-1) as RoutePoint) : null,
       // The fleet steps first, so a flight that ended this step has already worn the aircraft.
       conditionPct: aircraft.conditionPct,
     };

@@ -419,13 +419,14 @@ describe('reports from a saved world', () => {
     const report = await reportFrom(database);
     const reported = report.events.find((event) => event.id === found.id);
     expect(reported?.status).toBe('resolved');
-    // Found, left for three hours, then six hours in maintenance. The events table still holds
-    // the end the finding was created with; the report takes the real one from the log.
+    // Found, left for three hours, then six hours in maintenance. A finding is created with no
+    // end of its own; when it is resolved the event itself records when that was.
     expect((reported?.endTick ?? 0) - (reported?.startTick ?? 0)).toBeGreaterThanOrEqual(
       3 * HOUR + MAINTENANCE.durationSeconds,
     );
     const stored = engine.snapshot().events.events.find((event) => event.id === found.id);
-    expect(reported?.endTick).toBeGreaterThan(stored?.endTick ?? 0);
+    expect(reported?.endTick).toBe(stored?.endTick);
+    expect(stored?.endTick).toBeGreaterThan(stored?.startTick ?? 0);
     const type = report.eventTypes.find((each) => each.type === 'maintenance_finding');
     expect(type?.activeSeconds).toBeGreaterThanOrEqual(3 * HOUR + MAINTENANCE.durationSeconds);
   }, 60_000);

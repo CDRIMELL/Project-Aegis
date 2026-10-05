@@ -38,6 +38,8 @@ export const MISSION_STATUSES = [
   'failed',
   /** Withdrawn by the player before launch. */
   'cancelled',
+  /** Given up by the player after launch. The flight goes on to land where the player chose. */
+  'aborted',
   /** An opportunity the player declined. */
   'rejected',
   /** An opportunity nobody answered in time. */
@@ -51,10 +53,11 @@ export const MISSION_TRANSITIONS: Readonly<Record<MissionStatus, readonly Missio
   draft: ['planned', 'cancelled', 'failed'],
   planned: ['draft', 'accepted', 'cancelled', 'failed'],
   accepted: ['planned', 'active', 'cancelled', 'failed'],
-  active: ['completed', 'failed'],
+  active: ['completed', 'failed', 'aborted'],
   completed: [],
   failed: [],
   cancelled: [],
+  aborted: [],
   rejected: [],
   expired: [],
 };
@@ -158,7 +161,7 @@ export interface Objective {
   readonly remark: string | null;
 }
 
-export const MISSION_RESULTS = ['completed', 'failed'] as const;
+export const MISSION_RESULTS = ['completed', 'failed', 'aborted'] as const;
 export type MissionResult = (typeof MISSION_RESULTS)[number];
 
 /**

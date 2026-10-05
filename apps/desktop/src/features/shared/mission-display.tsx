@@ -21,6 +21,7 @@ const STATUS_TONE: Readonly<Record<MissionStatus, StatusTone>> = {
   completed: 'ok',
   failed: 'critical',
   cancelled: 'neutral',
+  aborted: 'warn',
   rejected: 'neutral',
   expired: 'neutral',
 };

@@ -105,6 +105,7 @@ describe('grouping and listing missions', () => {
       completed: 'history',
       failed: 'history',
       cancelled: 'history',
+      aborted: 'history',
       rejected: 'history',
       expired: 'history',
     };

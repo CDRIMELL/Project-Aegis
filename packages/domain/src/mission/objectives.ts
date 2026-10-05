@@ -29,13 +29,19 @@ export interface ObjectiveContext {
   readonly totalM: number;
   /** The flight is over, one way or another. */
   readonly ended: boolean;
-  /** The flight ended by landing at the plan's destination. */
+  /** The flight ended by landing. Where it landed is `landedAt`. */
   readonly landed: boolean;
+  /**
+   * The aerodrome the flight actually landed at, once it has. A flight may be diverted, so this
+   * is not always the destination the mission was planned to (ADR 0026).
+   */
+  readonly landedAt: RoutePoint | null;
   readonly fuelKg: number;
   readonly reserveFuelKg: number;
   /** Payload the flight is carrying. */
   readonly payloadKg: number;
   readonly origin: RoutePoint;
+  /** The destination the mission was planned to: where its objectives require it to land. */
   readonly destination: RoutePoint;
   /** The aircraft's condition; after the flight's wear once the flight has ended. */
   readonly conditionPct: number;
@@ -61,10 +67,17 @@ export function evaluateObjective(objective: Objective, ctx: ObjectiveContext): 
   const { spec } = objective;
   const flown = ctx.totalM > 0 ? ctx.distanceM / ctx.totalM : 0;
   const notLanded = 'The flight did not reach its destination.';
+  // An objective about the destination is met only by landing there. Landing somewhere else is
+  // a landing, and is said to be one, but it is not what was asked.
+  const landedAt = ctx.landedAt ?? ctx.destination;
+  const elsewhere =
+    ctx.landed && greatCircleDistance(landedAt, ctx.destination) >= SAME_PLACE_M
+      ? `Landed at ${landedAt.name}, not at ${ctx.destination.name}.`
+      : null;
 
   switch (spec.kind) {
     case 'complete_flight':
-      if (ctx.landed) return done(objective);
+      if (ctx.landed) return elsewhere ? failed(objective, elsewhere) : done(objective);
       if (ctx.ended) return failed(objective, notLanded);
       return progressed(objective, flown);
 
@@ -98,6 +111,7 @@ export function evaluateObjective(objective: Objective, ctx: ObjectiveContext): 
 
     case 'deliver_payload':
       if (ctx.landed) {
+        if (elsewhere) return failed(objective, elsewhere);
         return ctx.payloadKg + 0.5 >= spec.massKg
           ? done(objective)
           : failed(objective, `Carried ${kg(ctx.payloadKg)} of the ${kg(spec.massKg)} required.`);
@@ -107,16 +121,16 @@ export function evaluateObjective(objective: Objective, ctx: ObjectiveContext): 
 
     case 'return_to_base':
       if (ctx.landed) {
-        return greatCircleDistance(ctx.origin, ctx.destination) < SAME_PLACE_M
+        return greatCircleDistance(ctx.origin, landedAt) < SAME_PLACE_M
           ? done(objective)
-          : failed(objective, `Landed at ${ctx.destination.name}, not at ${ctx.origin.name}.`);
+          : failed(objective, `Landed at ${landedAt.name}, not at ${ctx.origin.name}.`);
       }
       if (ctx.ended) return failed(objective, notLanded);
       return progressed(objective, flown);
 
     case 'arrive_by':
       if (ctx.tick > spec.byTick) return failed(objective, 'Did not land before the deadline.');
-      if (ctx.landed) return done(objective);
+      if (ctx.landed) return elsewhere ? failed(objective, elsewhere) : done(objective);
       if (ctx.ended) return failed(objective, notLanded);
       return progressed(objective, flown);
 
@@ -269,6 +283,8 @@ export function forecastObjectives(input: ForecastInput): ObjectiveForecast | nu
       totalM: route.totalM,
       ended,
       landed,
+      // The forecast flies the plan as planned, so it lands where the plan ends.
+      landedAt: landed ? destination : null,
       fuelKg: progress.fuelKg,
       reserveFuelKg: model.reserveFuelKg,
       payloadKg: load.payloadKg,

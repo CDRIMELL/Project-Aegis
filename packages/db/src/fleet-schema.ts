@@ -88,8 +88,20 @@ export const simFlight = sqliteTable(
     /** The same plan's estimate in still air; NULL for a flight launched before the environment. */
     stillAirDurationS: real('still_air_duration_s'),
     stillAirFuelUsedKg: real('still_air_fuel_used_kg'),
-    /** JSON: the approved plan: route points, cruise altitude and speed. */
+    /** What the flight is now expected to come to; NULL on a flight from before these were kept. */
+    projectedDurationS: real('projected_duration_s'),
+    projectedFuelUsedKg: real('projected_fuel_used_kg'),
+    /**
+     * JSON: the route as flown: route points, cruise altitude and speed. Equal to the route as
+     * launched unless the flight was revised (ADR 0026).
+     */
     plan: text('plan').notNull(),
+    /** JSON: the route as launched. NULL when the flight was never revised: it is `plan`. */
+    plannedPlan: text('planned_plan'),
+    /** JSON array: every change of route since launch, in order. */
+    revisions: text('revisions').notNull().default('[]'),
+    /** JSON: the technical caution that showed in this flight, if one did. */
+    caution: text('caution'),
     /** JSON: phase, distance flown, altitude, speed, fuel, elapsed time. */
     progress: text('progress').notNull(),
   },

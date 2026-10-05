@@ -1,5 +1,7 @@
 import {
   advanceFlight,
+  approachSpeedKmh,
+  descentDue,
   type Environment,
   type FlightProfile,
   type FlightProgress,
@@ -19,14 +21,31 @@ import { conditionsAt, type Conditions, type WeatherModel } from './weather';
  * exactly the conditions it had.
  */
 
+const NO_CLOSURES: readonly ClosureWindow[] = [];
+
 /** Seconds of flight between samples of the weather. */
 export const WEATHER_SAMPLE_S = 60;
 
-/** A flight's place in the world's weather: which weather, which route, and when it left. */
+/** A period during which the flight's destination is closed. */
+export interface ClosureWindow {
+  readonly startTick: number;
+  /** Exclusive. */
+  readonly endTick: number;
+}
+
+/**
+ * A flight's place in the world: which weather, which route, when it left, and when its
+ * destination is known to be closed.
+ */
 export interface WeatherContext {
   readonly weather: WeatherModel;
   readonly route: RouteGeometry;
   readonly departureTick: number;
+  /**
+   * Known closures of the destination (ADR 0026). Absent before launch: a plan that would arrive
+   * during a known closure is refused outright, so there is nothing to hold for.
+   */
+  readonly closures?: readonly ClosureWindow[];
 }
 
 /** The conditions along a heading: the wind split into along-track and across-track parts. */
@@ -70,6 +89,64 @@ function exposed(
 }
 
 /**
+ * True when the destination is closed now, or will be before a descent begun now could end.
+ * The descent is timed at the approach speed, the slowest the aircraft flies on the way down.
+ */
+export function closedForArrival(
+  profile: FlightProfile,
+  progress: FlightProgress,
+  tick: number,
+  closures: readonly ClosureWindow[],
+): boolean {
+  if (closures.length === 0) return false;
+  const remainingM = profile.totalDistanceM - progress.distanceM;
+  const descentS = Math.ceil(remainingM / (approachSpeedKmh(profile) / 3.6));
+  return closures.some((closure) => closure.startTick <= tick + descentS && closure.endTick > tick);
+}
+
+/**
+ * Decides whether a flight holds, goes on holding or stops holding, before its next step
+ * (ADR 0026). A pure rule of the flight's own state and the known closures:
+ *
+ * - at the top of descent to a closed destination, the aircraft holds there instead of descending;
+ * - a hold for a closure ends when the destination is open again;
+ * - any hold ends when fuel is down to reserve. If the destination is still closed the aircraft
+ *   lands anyway, and that is recorded;
+ * - an aircraft already descending is committed and lands.
+ */
+export function holdDecision(
+  profile: FlightProfile,
+  progress: FlightProgress,
+  tick: number,
+  closures: readonly ClosureWindow[],
+): FlightProgress {
+  const atReserve = progress.fuelKg <= profile.model.reserveFuelKg;
+  if (progress.hold !== null) {
+    if (atReserve) {
+      const stillClosed =
+        progress.hold.reason === 'closure' && closedForArrival(profile, progress, tick, closures);
+      return { ...progress, hold: null, closureLanding: stillClosed };
+    }
+    if (
+      progress.hold.reason === 'closure' &&
+      !closedForArrival(profile, progress, tick, closures)
+    ) {
+      return { ...progress, hold: null };
+    }
+    return progress;
+  }
+  if (progress.closureLanding || progress.phase === 'takeoff' || progress.phase === 'descent') {
+    return progress;
+  }
+  if (!descentDue(profile, progress) || !closedForArrival(profile, progress, tick, closures)) {
+    return progress;
+  }
+  return atReserve
+    ? { ...progress, closureLanding: true }
+    : { ...progress, hold: { reason: 'closure', sinceS: progress.elapsedS } };
+}
+
+/**
  * Advances a flight by one step through the world's weather. With no context the flight is in
  * still air, exactly as before the environment existed.
  */
@@ -91,12 +168,21 @@ export function advanceInWeather(
       position,
       progress.altitudeM,
     );
-    const environment = environmentFor(conditions, position.headingDeg);
+    const along = environmentFor(conditions, position.headingDeg);
+    // An aircraft circling in a hold has no track for the wind to help or hinder.
+    const environment =
+      progress.hold === null ? along : { ...along, tailwindKmh: 0, crosswindKmh: 0 };
     current = {
       ...progress,
       environment,
       exposure: exposed(progress.exposure, conditions, environment),
     };
   }
+  current = holdDecision(
+    profile,
+    current,
+    context.departureTick + progress.elapsedS,
+    context.closures ?? NO_CLOSURES,
+  );
   return advanceFlight(profile, current, dtS, current.environment);
 }

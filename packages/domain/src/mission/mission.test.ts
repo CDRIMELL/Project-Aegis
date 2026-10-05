@@ -150,7 +150,14 @@ describe('mission lifecycle', () => {
 
   it('never leaves a finished status', () => {
     const finished = MISSION_STATUSES.filter(isFinished);
-    expect(finished).toEqual(['completed', 'failed', 'cancelled', 'rejected', 'expired']);
+    expect(finished).toEqual([
+      'completed',
+      'failed',
+      'cancelled',
+      'aborted',
+      'rejected',
+      'expired',
+    ]);
     for (const status of finished) {
       expect(MISSION_STATUSES.some((to) => canTransition(status, to))).toBe(false);
     }

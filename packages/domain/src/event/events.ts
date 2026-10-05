@@ -18,6 +18,8 @@ export const EVENT_TYPES = [
   'logistics_disruption',
   'maintenance_finding',
   'severe_weather',
+  /** A fault that shows itself on an aircraft in flight (ADR 0026). */
+  'technical_caution',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -51,15 +53,21 @@ export const EVENT_LABEL: Readonly<Record<EventType, string>> = {
   logistics_disruption: 'Logistics disruption',
   maintenance_finding: 'Maintenance finding',
   severe_weather: 'Severe weather',
+  technical_caution: 'Technical caution',
 };
 
 /** What each type of event acts on, in words, for the interface. */
 export const EVENT_AFFECTS: Readonly<Record<EventType, readonly string[]>> = {
-  aerodrome_closure: ['Departures from the aerodrome', 'Plans arriving during the closure'],
+  aerodrome_closure: [
+    'Departures from the aerodrome',
+    'Plans arriving during the closure',
+    'Aircraft arriving during the closure, which hold',
+  ],
   navigation_disruption: ['Mission risk', 'Routes through the area'],
   logistics_disruption: ['Mission opportunities'],
   maintenance_finding: ['Aircraft availability'],
   severe_weather: ['Flight time and fuel', 'Mission risk'],
+  technical_caution: ['Aircraft wear while airborne', 'Aircraft availability after landing'],
 };
 
 export interface WorldEvent {
@@ -78,7 +86,7 @@ export interface WorldEvent {
   /** The centre of the area concerned, for a disruption or severe weather. */
   readonly centre: NamedPoint | null;
   readonly radiusM: number | null;
-  /** The aircraft concerned, for a maintenance finding. */
+  /** The aircraft concerned, for a maintenance finding or a technical caution. */
   readonly aircraftId: string | null;
   /** The opportunity a logistics disruption created, once it has. */
   readonly missionId: string | null;
@@ -118,6 +126,7 @@ const TYPE_WEIGHTS: readonly (readonly [EventType, number])[] = [
   ['navigation_disruption', 2],
   ['logistics_disruption', 2],
   ['maintenance_finding', 1],
+  ['technical_caution', 1],
 ];
 
 /** A generated event before the simulation gives it an identifier and a status. */
@@ -130,6 +139,11 @@ export interface EventGenerationInput {
   readonly places: readonly RoutePoint[];
   /** Aircraft on the ground and available, by identifier: candidates for a maintenance finding. */
   readonly availableAircraftIds: readonly string[];
+  /**
+   * Aircraft in flight, past their take-off and with no caution already, by identifier:
+   * candidates for a technical caution.
+   */
+  readonly airborneAircraftIds: readonly string[];
   /** Generated events that are announced or under way. */
   readonly openGenerated: readonly WorldEvent[];
 }
@@ -187,6 +201,26 @@ export function generateEvent(input: EventGenerationInput): EventDraft | null {
     };
   }
 
+  if (type === 'technical_caution') {
+    if (input.airborneAircraftIds.length === 0) return null;
+    const aircraftId = input.airborneAircraftIds[
+      rng.nextInt(0, input.airborneAircraftIds.length)
+    ] as string;
+    return {
+      ...base,
+      type,
+      aircraftId,
+      // It shows itself now; it lasts until the aircraft has been maintained.
+      startTick: tick,
+      endTick: tick,
+      place: null,
+      centre: null,
+      radiusM: null,
+      title: `Technical caution: ${aircraftId}`,
+      description: `Simulated event. A fault has shown itself on ${aircraftId} in flight. The aircraft can go on flying, and wears faster for as long as it does. It will be due maintenance when it lands.`,
+    };
+  }
+
   const place = input.places[rng.nextInt(0, input.places.length)] as RoutePoint;
   // One closure or disruption per aerodrome at a time.
   if (
@@ -205,7 +239,7 @@ export function generateEvent(input: EventGenerationInput): EventDraft | null {
       centre: null,
       radiusM: null,
       title: `Aerodrome closure: ${placeName(place)}`,
-      description: `Simulated event. ${place.name} is closed to departures for the period. Aircraft already airborne and bound for it are accepted.`,
+      description: `Simulated event. ${place.name} is closed for the period. Nothing departs from it. An aircraft that arrives while it is closed holds short of it until it reopens, unless it is diverted; with its fuel down to reserve it lands regardless.`,
     };
   }
 

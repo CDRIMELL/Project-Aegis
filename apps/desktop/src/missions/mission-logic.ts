@@ -56,6 +56,7 @@ export function groupOf(status: MissionStatus): MissionGroup {
     case 'completed':
     case 'failed':
     case 'cancelled':
+    case 'aborted':
     case 'rejected':
     case 'expired':
       return 'history';
@@ -71,6 +72,7 @@ export const STATUS_LABEL: Readonly<Record<MissionStatus, string>> = {
   completed: 'Completed',
   failed: 'Failed',
   cancelled: 'Cancelled',
+  aborted: 'Aborted',
   rejected: 'Rejected',
   expired: 'Expired',
 };

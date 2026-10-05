@@ -102,6 +102,7 @@ describe('event generation', () => {
       tick: 7200,
       places: PLACES,
       availableAircraftIds: ['AEGIS-TR-001', 'AEGIS-FT-001'],
+      airborneAircraftIds: ['AEGIS-TR-002'],
       openGenerated: [],
       ...overrides,
     });
@@ -174,7 +175,10 @@ describe('event generation', () => {
     for (let i = 1; i <= 600; i++) {
       const tick = i * EVENT_GENERATION.intervalTicks;
       const draft = generate(rng, { tick });
-      if (!draft || draft.type === 'maintenance_finding') continue;
+      // A finding and a caution are not announced: they are found, or show themselves, now.
+      if (!draft || draft.type === 'maintenance_finding' || draft.type === 'technical_caution') {
+        continue;
+      }
       seen++;
       expect(draft.startTick - tick).toBeGreaterThanOrEqual(EVENT_GENERATION.leadS[0]);
       expect(draft.startTick - tick).toBeLessThanOrEqual(EVENT_GENERATION.leadS[1]);

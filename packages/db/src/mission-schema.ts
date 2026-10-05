@@ -29,6 +29,7 @@ export const MISSION_STATUSES = [
   'completed',
   'failed',
   'cancelled',
+  'aborted',
   'rejected',
   'expired',
 ] as const;

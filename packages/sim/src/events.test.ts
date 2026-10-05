@@ -58,6 +58,8 @@ function harness(
     weather: WEATHER,
     places: () => [],
     groundedAircraft: () => [],
+    airborneWithoutCaution: () => [],
+    flagCaution: () => null,
     aircraftById: () => undefined,
     flagMaintenanceDue: () => false,
     offerUrgentDelivery: (e) => {
@@ -178,7 +180,7 @@ describe('events and missions already committed', () => {
   const affected = (h: ReturnType<typeof harness>) =>
     h.emitted.filter((e) => e.type === 'missionAffected');
 
-  it('records on a flying mission that its destination is closing, and lets it land', () => {
+  it('records on a flying mission that its destination is closing, and what that will mean', () => {
     const h = harness([event({})], { affectableMissions: () => [mission({})] });
     h.step(quiet(99));
     expect(affected(h)).toHaveLength(1);
@@ -186,7 +188,8 @@ describe('events and missions already committed', () => {
       subject: { missionId: 'MSN-000001', aircraftId: TRANSPORT, flightId: 'FLT-000001' },
       payload: {
         eventId: 'EVT-000001',
-        summary: 'Exeter is closing; the flight is already airborne and will be accepted.',
+        summary:
+          'Exeter, the destination, is closing. If it is still closed when the flight arrives, the aircraft will hold short of it; it can be diverted.',
       },
     });
   });
