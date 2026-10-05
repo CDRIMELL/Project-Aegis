@@ -895,7 +895,19 @@ export class Fleet {
       // The destination's closures are read again only when the hazards have changed.
       if (derived.hazards !== hazards) {
         derived.hazards = hazards;
-        derived.closures = closuresOf(hazards, destination);
+        const closures = closuresOf(hazards, destination);
+        const windows = (all: readonly ClosureWindow[]) =>
+          all.map((closure) => `${closure.startTick}-${closure.endTick}`).join(',');
+        const same = windows(closures) === windows(derived.closures);
+        derived.closures = closures;
+        // A closure announced for the destination changes when the aircraft will be down, so its
+        // arrival is worked out again. Projection flies the engine's own step, so doing this again
+        // for closures already allowed for (after a world is loaded) gives the figures it has. A
+        // hold the operator ordered has no end to project until it is resumed.
+        const model = aircraft.performance;
+        if (!same && model && flight.progress.hold?.reason !== 'operator') {
+          flight = { ...flight, ...this.projection(flight, model, hazards) };
+        }
       }
       const before = flight.progress;
       const progress = advanceInWeather(

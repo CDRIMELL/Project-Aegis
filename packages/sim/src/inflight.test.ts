@@ -500,6 +500,32 @@ describe('a destination closed on arrival', { timeout: 60_000 }, () => {
     expect(events(engine, 'maintenanceDue')).toHaveLength(0);
   });
 
+  it('shows the arrival the closure makes, from the step after it is known', () => {
+    const plain = cruising();
+    const undisturbed = plain.fleetView().activeFlights[0]?.etaTick;
+    const engine = withClosure(
+      cruising(),
+      places.akrotiri,
+      T.topOfDescent - 900,
+      T.topOfDescent + 1800,
+    );
+    engine.runSteps(1);
+    const eta = engine.fleetView().activeFlights[0]?.etaTick as number;
+    expect(eta).toBeGreaterThan(undisturbed as number);
+    expect(eta).toBeGreaterThan(T.topOfDescent + 1800);
+
+    // A world saved and loaded on the way works the same figures out again, and flies the same.
+    engine.runSteps(600);
+    const loaded = SimulationEngine.restore(copyOf(engine.snapshot()));
+    engine.runSteps(600);
+    loaded.runSteps(600);
+    expect(loaded.snapshot().fleet).toEqual(engine.snapshot().fleet);
+
+    runUntil(engine, landed);
+    expect(flightOf(engine).arrivedTick).toBe(eta);
+    expect(flightOf(engine).projectedDurationS).toBe(flightOf(engine).progress.elapsedS);
+  });
+
   it('can be diverted out of the hold', () => {
     const engine = withClosure(
       cruising(),

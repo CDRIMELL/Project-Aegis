@@ -76,6 +76,12 @@ This replaces the rule of ADR 0022 that an airborne aircraft is always accepted.
 The hold is flown at the top of descent, short of the destination, and not overhead: the flight
 model descends along the route and has no way down from overhead.
 
+A flight's projected arrival and landing fuel are worked out again in the step in which the
+closures known for its destination change, so the arrival shown includes a hold from the moment
+the closure is announced. The comparison is with the closures last allowed for; after a world is
+loaded it is made once more, which gives the figures already held, because projection flies the
+engine's own step.
+
 The rule lives in the shared step (`holdDecision`), so the planner's projection of an airborne
 flight includes any hold exactly. Before launch nothing changes: a plan that would arrive during a
 known closure is still refused.
