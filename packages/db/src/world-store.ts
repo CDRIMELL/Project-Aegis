@@ -309,6 +309,7 @@ const missionRow = z.object({
   plan: z.string().nullable(),
   load: z.string().nullable(),
   objectives: z.string(),
+  acceptance: z.string().nullable().default(null),
   assessment: z.string().nullable(),
   outcome: z.string().nullable(),
 });
@@ -453,6 +454,7 @@ function toMission(row: unknown): Mission {
     plan: optional(planJson, m.plan, 'plan') as FlightPlan | null,
     load: optional(loadJson, m.load, 'load'),
     objectives: json(objectivesJson, m.objectives, `${what} objectives`),
+    acceptance: optional(assessmentJson, m.acceptance, 'acceptance'),
     assessment: optional(assessmentJson, m.assessment, 'assessment'),
     outcome: optional(outcomeJson, m.outcome, 'outcome'),
   };
@@ -675,7 +677,8 @@ export class SqliteWorldStore implements WorldStore {
     });
 
     const missionRows = missions.missions.map((mission) => {
-      const { id, brief, plan, load, objectives, assessment, outcome, ...columns } = mission;
+      const { id, brief, plan, load, objectives, acceptance, assessment, outcome, ...columns } =
+        mission;
       const text = (value: unknown) => (value === null ? null : JSON.stringify(value));
       return {
         id,
@@ -684,6 +687,7 @@ export class SqliteWorldStore implements WorldStore {
         plan: text(plan),
         load: text(load),
         objectives: JSON.stringify(objectives),
+        acceptance: text(acceptance),
         assessment: text(assessment),
         outcome: text(outcome),
       };

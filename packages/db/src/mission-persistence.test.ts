@@ -231,6 +231,38 @@ describe('mission persistence', () => {
     );
   });
 
+  it('keeps the figures at acceptance and at launch as two records', async () => {
+    const engine = SimulationEngine.create(newWorld());
+    engine.applyCommand(SEED_FLEET);
+    engine.applyCommand(createTraining(engine.snapshot().fleet.aircraft, engine.planContext()));
+    engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
+    engine.runSteps(5 * 3600);
+    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    const saved = checkpoint(engine);
+    await store.save(saved);
+
+    const [row] = all(
+      `SELECT json_extract(acceptance, '$.assessedTick') AS accepted,
+              json_extract(assessment, '$.assessedTick') AS launched
+         FROM sim_mission WHERE id = 'MSN-000001'`,
+    );
+    expect(row).toEqual({ accepted: 0, launched: 5 * 3600 });
+    const loaded = (await store.load())?.snapshot.missions.missions[0];
+    expect(loaded?.acceptance).toEqual(saved.snapshot.missions.missions[0]?.acceptance);
+    expect(loaded?.assessment).toEqual(saved.snapshot.missions.missions[0]?.assessment);
+    expect(loaded?.acceptance).not.toEqual(loaded?.assessment);
+  });
+
+  it('loads a mission stored before acceptance figures were kept, with none', async () => {
+    await store.save(checkpoint(busyWorld()));
+    // What migration 0007 leaves behind for an existing world: the new column, empty.
+    exec('UPDATE sim_mission SET acceptance = NULL')();
+    const missions = (await store.load())?.snapshot.missions.missions ?? [];
+    expect(missions.length).toBeGreaterThan(3);
+    expect(missions.every((mission) => mission.acceptance === null)).toBe(true);
+    expect(missions.find((mission) => mission.id === 'MSN-000001')?.assessment).not.toBeNull();
+  });
+
   it('refuses to load a mission whose stored JSON is not a mission', async () => {
     await store.save(checkpoint(busyWorld()));
     const corrupt = async (sql: string) => {

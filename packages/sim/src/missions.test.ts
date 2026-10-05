@@ -21,7 +21,7 @@ import {
   fixtureLaunch,
   fixtureOrder,
 } from './testing';
-import type { WorldSnapshot } from './world';
+import { SIM_MODEL_VERSION, type WorldSnapshot } from './world';
 
 const { places, models } = FIXTURES;
 const newWorld = (seed = 'mission-world') => ({ seed, epoch: FIXTURES.epoch });
@@ -222,6 +222,64 @@ describe('mission lifecycle', () => {
     });
   });
 
+  it('keeps what was accepted apart from what held at launch, and changes neither afterwards', () => {
+    const engine = world();
+    training(engine);
+    engine.runSteps(5);
+    engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
+    const accepted = missionOf(engine);
+    expect(accepted.acceptance?.assessedTick).toBe(5);
+    // Until launch, the figures for the departure are the ones accepted.
+    expect(accepted.assessment).toEqual(accepted.acceptance);
+
+    // Six hours later the weather on the route is not what it was.
+    engine.runSteps(6 * 3600);
+    expect(missionOf(engine).acceptance).toEqual(accepted.acceptance);
+    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    const atLaunch = missionOf(engine);
+    expect(atLaunch.acceptance).toEqual(accepted.acceptance);
+    expect(atLaunch.assessment?.assessedTick).toBe(5 + 6 * 3600);
+    expect(atLaunch.assessment?.durationS).not.toBe(accepted.acceptance?.durationS);
+    // Both use the one risk model: the same named contributors, each with its own reasons.
+    const ids = (assessment: typeof atLaunch.assessment) =>
+      assessment?.risk.contributors.map((contributor) => contributor.id).sort();
+    expect(ids(atLaunch.assessment)).toEqual(ids(accepted.acceptance));
+
+    // Flying the mission, and the weather it meets, change neither record.
+    runUntilFinished(engine);
+    const finished = missionOf(engine);
+    expect(finished.status).toBe('completed');
+    expect(finished.acceptance).toEqual(accepted.acceptance);
+    expect(finished.assessment).toEqual(atLaunch.assessment);
+  });
+
+  it('treats a mission saved before acceptance figures were kept as not recorded', () => {
+    const engine = world();
+    training(engine);
+    engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
+    const snapshot = engine.snapshot();
+    const old = {
+      ...snapshot,
+      modelVersion: 4,
+      missions: {
+        ...snapshot.missions,
+        missions: snapshot.missions.missions.map((mission) =>
+          Object.fromEntries(Object.entries(mission).filter(([key]) => key !== 'acceptance')),
+        ),
+      },
+    };
+    const upgraded = SimulationEngine.restore(old as never);
+    const mission = missionOf(upgraded);
+    // Nothing is made up for it: the figures at acceptance are simply absent.
+    expect(mission.acceptance).toBeNull();
+    expect(mission.assessment).toEqual(missionOf(engine).assessment);
+    expect(upgraded.snapshot().modelVersion).toBe(SIM_MODEL_VERSION);
+    // It can still be launched and flown.
+    upgraded.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    runUntilFinished(upgraded);
+    expect(missionOf(upgraded)).toMatchObject({ status: 'completed', acceptance: null });
+  });
+
   it('refuses to accept what cannot be flown, with the reason', () => {
     const engine = world();
     create(engine, 'logistics', briefFor('logistics', {}), null);
@@ -257,7 +315,11 @@ describe('mission lifecycle', () => {
     expect(() => engine.applyCommand(flight)).toThrow(/committed to MSN-000001/);
 
     engine.applyCommand({ type: 'releaseMission', missionId: 'MSN-000001' });
-    expect(missionOf(engine)).toMatchObject({ status: 'planned', assessment: null });
+    expect(missionOf(engine)).toMatchObject({
+      status: 'planned',
+      acceptance: null,
+      assessment: null,
+    });
     expect(engine.applyCommand(flight)).toBe(true);
   });
 

@@ -69,7 +69,9 @@ export const simMission = sqliteTable(
     load: text('load'),
     /** JSON array: each objective with its status and progress. */
     objectives: text('objectives').notNull(),
-    /** JSON: the planner's figures and the risk recorded at acceptance. */
+    /** JSON: the planner's figures and the risk as accepted; NULL before they were kept. */
+    acceptance: text('acceptance'),
+    /** JSON: the planner's figures and the risk for the departure, fixed at launch. */
     assessment: text('assessment'),
     /** JSON: how the mission ended. */
     outcome: text('outcome'),

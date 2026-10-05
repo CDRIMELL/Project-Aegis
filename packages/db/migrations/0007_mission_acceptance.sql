@@ -1,0 +1,1 @@
+ALTER TABLE `sim_mission` ADD `acceptance` text;

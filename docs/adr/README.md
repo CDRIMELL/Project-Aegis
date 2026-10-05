@@ -28,3 +28,5 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0021](0021-environment.md)                    | Simulated environment: weather computed from seed, time and place          | Accepted |
 | [0022](0022-world-events.md)                   | World events: one generic event, lifecycle, consequences                   | Accepted |
 | [0023](0023-range-conditions.md)               | Range conditions as reference data; flight model 3                         | Accepted |
+| [0024](0024-reports.md)                        | Reports derived from history; risk kept at acceptance and at launch        | Accepted |
+| [0025](0025-report-export.md)                  | Report export: pure CSV and JSON, one native command, one folder           | Accepted |

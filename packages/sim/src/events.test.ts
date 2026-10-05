@@ -17,6 +17,7 @@ import type { LogEntry } from './log';
 import { defaultConfiguration } from './missions';
 import { replayComparable, replayWorld } from './replay';
 import { FIXTURES, fixtureLaunch, fixtureOrder } from './testing';
+import { SIM_MODEL_VERSION } from './world';
 
 const { places, models } = FIXTURES;
 const WEATHER = weatherModel('events-unit', FIXTURES.epoch);
@@ -597,7 +598,7 @@ describe('events in the running world', () => {
     );
     const upgraded = SimulationEngine.restore({ ...old, modelVersion: 3 } as never);
     expect(upgraded.snapshot().events).toEqual({ events: [], nextNumber: 1 });
-    expect(upgraded.snapshot().modelVersion).toBe(4);
+    expect(upgraded.snapshot().modelVersion).toBe(SIM_MODEL_VERSION);
     // What was logged under the old rules is kept, but replay starts here.
     expect(upgraded.snapshot().log.completeFromTick).toBe(900);
     expect(upgraded.snapshot().log.entries.length).toBe(engine.snapshot().log.entries.length);

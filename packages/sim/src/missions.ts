@@ -301,7 +301,11 @@ export class Missions {
       if ((mission.status === 'active') !== (mission.flightId !== null && !mission.outcome)) {
         throw new Error(`Saved mission ${mission.id} does not match its flight`);
       }
-      this.missions.set(mission.id, mission);
+      // A mission saved before acceptance figures were kept has none: not recorded.
+      this.missions.set(mission.id, {
+        ...mission,
+        acceptance: (mission as Partial<Mission>).acceptance ?? null,
+      });
     }
     this.places = snapshot.places;
     this.nextNumber = snapshot.nextNumber;
@@ -455,6 +459,7 @@ export class Missions {
           plan: command.plan,
           load: command.load,
           objectives: newObjectives(command.objectives),
+          acceptance: null,
           assessment: null,
           outcome: null,
           createdTick: tick,
@@ -539,6 +544,8 @@ export class Missions {
           ...mission,
           status: 'accepted',
           acceptedTick: tick,
+          // What the operator accepted. Kept as it is; launch records its own figures beside it.
+          acceptance: assessment,
           assessment,
         });
         return { missionId: mission.id, aircraftId: aircraft.id };
@@ -553,6 +560,7 @@ export class Missions {
           ...mission,
           status: 'planned',
           acceptedTick: null,
+          acceptance: null,
           assessment: null,
         });
         return { missionId: mission.id, aircraftId: mission.aircraftId };
@@ -574,8 +582,9 @@ export class Missions {
         }
         // The fleet validates the flight as it would any other, and throws if it cannot be flown.
         const flightId = fleet.launch(aircraftId, plan, load, tick, mission.id, context);
-        // The estimate depends on when the flight leaves (ADR 0021), so the figures recorded at
-        // acceptance are refreshed for the actual departure. They are what the flight will do.
+        // The estimate depends on when the flight leaves (ADR 0021), so the figures are evaluated
+        // again for the actual departure: they are what the flight will do. What was accepted
+        // stays in `acceptance`, untouched.
         const assessment =
           missionAssessment(this.evaluate(mission, fleet, tick, world), tick) ?? mission.assessment;
         this.missions.set(mission.id, {
@@ -750,6 +759,7 @@ export class Missions {
           MAINTENANCE.dueBelowConditionPct,
         ),
       ),
+      acceptance: null,
       assessment: null,
       outcome: null,
       createdTick: tick,
@@ -832,6 +842,7 @@ export class Missions {
       objectives: newObjectives(
         defaultObjectives(template, brief, completeByTick, MAINTENANCE.dueBelowConditionPct),
       ),
+      acceptance: null,
       assessment: null,
       outcome: null,
       createdTick: tick,

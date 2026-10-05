@@ -196,7 +196,10 @@ export interface RiskAssessment {
   readonly contributors: readonly RiskContributor[];
 }
 
-/** The planner's figures recorded when a mission was accepted, for comparison with the outcome. */
+/**
+ * The planner's figures and the risk index at one moment. A mission keeps two: what the operator
+ * accepted, and what held when it actually launched. Neither is changed afterwards (ADR 0024).
+ */
 export interface MissionAssessment {
   readonly assessedTick: number;
   readonly distanceM: number;
@@ -223,6 +226,15 @@ export interface Mission {
   readonly plan: FlightPlan | null;
   readonly load: FlightLoad | null;
   readonly objectives: readonly Objective[];
+  /**
+   * The figures as accepted. Never changed once recorded; cleared only if the mission is released
+   * before launch. `null` for a mission accepted before these were kept: not recorded.
+   */
+  readonly acceptance: MissionAssessment | null;
+  /**
+   * The figures for the departure. From acceptance until launch they equal `acceptance`; at launch
+   * they are evaluated for the actual departure time and never changed again.
+   */
   readonly assessment: MissionAssessment | null;
   readonly outcome: MissionOutcome | null;
 
