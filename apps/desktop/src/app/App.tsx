@@ -12,6 +12,7 @@ import { FleetScreen } from '../features/fleet/FleetScreen';
 import { MissionsScreen } from '../features/missions/MissionsScreen';
 import { OperationsScreen } from '../features/operations/OperationsScreen';
 import { OverviewScreen } from '../features/overview/OverviewScreen';
+import { ReportsScreen } from '../features/reports/ReportsScreen';
 import { SimClockBar } from '../features/sim-clock/SimClockBar';
 import { SystemScreen } from '../features/system/SystemScreen';
 import { AREAS, HOME_PATH, areaForPath } from './areas';
@@ -61,6 +62,7 @@ const router = createHashRouter([
       { path: '/operations', element: <OperationsScreen /> },
       { path: '/fleet/:aircraftId?', element: <FleetScreen /> },
       { path: '/missions/:missionId?/:mode?', element: <MissionsScreen /> },
+      { path: '/reports/:section?', element: <ReportsScreen /> },
       { path: '/data', element: <DataScreen /> },
       { path: '/system', element: <SystemScreen /> },
       { path: '*', element: <Navigate to={HOME_PATH} replace /> },

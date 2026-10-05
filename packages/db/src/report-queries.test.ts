@@ -399,6 +399,37 @@ describe('reports from a saved world', () => {
     }
   });
 
+  it('measures a maintenance finding from when it was found to when the aircraft was maintained', async () => {
+    const engine = operations();
+    // Run until the world finds an aircraft due maintenance, then maintain it.
+    const finding = () =>
+      engine
+        .snapshot()
+        .events.events.find(
+          (event) => event.type === 'maintenance_finding' && event.status === 'active',
+        );
+    for (let i = 0; i < 600 && !finding(); i++) engine.runSteps(2 * HOUR);
+    const found = finding();
+    if (!found?.aircraftId) throw new Error('no finding in fifty simulated days');
+    engine.runSteps(3 * HOUR);
+    engine.applyCommand({ type: 'startMaintenance', aircraftId: found.aircraftId });
+    engine.runSteps(MAINTENANCE.durationSeconds + HOUR);
+    await store.save(checkpoint(engine));
+
+    const report = await reportFrom(database);
+    const reported = report.events.find((event) => event.id === found.id);
+    expect(reported?.status).toBe('resolved');
+    // Found, left for three hours, then six hours in maintenance. The events table still holds
+    // the end the finding was created with; the report takes the real one from the log.
+    expect((reported?.endTick ?? 0) - (reported?.startTick ?? 0)).toBeGreaterThanOrEqual(
+      3 * HOUR + MAINTENANCE.durationSeconds,
+    );
+    const stored = engine.snapshot().events.events.find((event) => event.id === found.id);
+    expect(reported?.endTick).toBeGreaterThan(stored?.endTick ?? 0);
+    const type = report.eventTypes.find((each) => each.type === 'maintenance_finding');
+    expect(type?.activeSeconds).toBeGreaterThanOrEqual(3 * HOUR + MAINTENANCE.durationSeconds);
+  }, 60_000);
+
   it('includes events and the missions they affected, by simulation time', async () => {
     // Run until the world has produced and resolved at least one event.
     const engine = operations('eventful-reports');
@@ -423,6 +454,15 @@ describe('reports from a saved world', () => {
     const types = report.eventTypes.reduce((sum, type) => sum + type.events, 0);
     expect(types).toBe(report.events.length);
     for (const event of report.events) expect(event.where ?? event.aircraftId).toBeTruthy();
+    // A resolved event ended when the log says it was resolved, whatever end it was first given.
+    const log = engine.snapshot().log.entries;
+    for (const event of report.events.filter((each) => each.status === 'resolved')) {
+      const resolved = log.find(
+        (entry) => entry.type === 'eventResolved' && entry.payload.eventId === event.id,
+      );
+      expect(event.endTick).toBe(resolved?.tick);
+      expect(event.endTick).toBeGreaterThanOrEqual(event.startTick);
+    }
   });
 });
 

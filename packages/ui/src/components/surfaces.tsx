@@ -1,4 +1,4 @@
-import { ChevronRight, X, type LucideIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, X, type LucideIcon } from 'lucide-react';
 import type { ReactNode, Ref } from 'react';
 import { cn } from './cn';
 import { IconButton } from './controls';
@@ -222,6 +222,13 @@ export interface DataTableColumn<Row> {
   readonly align?: 'left' | 'right';
   /** Render values in the telemetry face. */
   readonly numeric?: boolean;
+  /** Names the order this column sorts by. A column without one cannot be sorted. */
+  readonly sortKey?: string;
+}
+
+export interface TableSort {
+  readonly key: string;
+  readonly descending: boolean;
 }
 
 export interface DataTableProps<Row> {
@@ -229,10 +236,20 @@ export interface DataTableProps<Row> {
   readonly rows: readonly Row[];
   readonly rowKey: (row: Row) => string;
   readonly caption: string;
+  /** The order the rows are already in. The table shows it; the caller does the sorting. */
+  readonly sort?: TableSort;
+  readonly onSort?: (key: string) => void;
 }
 
 /** Compact read-only table for short lists. Long lists need the virtualised table (not built yet). */
-export function DataTable<Row>({ columns, rows, rowKey, caption }: DataTableProps<Row>) {
+export function DataTable<Row>({
+  columns,
+  rows,
+  rowKey,
+  caption,
+  sort,
+  onSort,
+}: DataTableProps<Row>) {
   return (
     <table className="w-full border-collapse text-xs">
       <caption className="sr-only">{caption}</caption>
@@ -242,12 +259,37 @@ export function DataTable<Row>({ columns, rows, rowKey, caption }: DataTableProp
             <th
               key={column.header}
               scope="col"
+              aria-sort={
+                column.sortKey !== undefined && sort?.key === column.sortKey
+                  ? sort.descending
+                    ? 'descending'
+                    : 'ascending'
+                  : undefined
+              }
               className={cn(
-                'h-7 px-2 text-2xs font-semibold tracking-label text-ink-muted uppercase',
+                'h-7 px-2 text-2xs font-semibold tracking-label whitespace-nowrap text-ink-muted uppercase',
                 column.align === 'right' ? 'text-right' : 'text-left',
               )}
             >
-              {column.header}
+              {column.sortKey !== undefined && onSort ? (
+                <button
+                  type="button"
+                  className={cn(
+                    'inline-flex items-center gap-1 tracking-label uppercase hover:text-ink',
+                    sort?.key === column.sortKey && 'text-ink',
+                  )}
+                  onClick={() => {
+                    onSort(column.sortKey as string);
+                  }}
+                >
+                  {column.header}
+                  {sort?.key === column.sortKey && (
+                    <Icon icon={sort.descending ? ChevronDown : ChevronUp} size="sm" />
+                  )}
+                </button>
+              ) : (
+                column.header
+              )}
             </th>
           ))}
         </tr>

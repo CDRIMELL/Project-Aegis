@@ -40,3 +40,15 @@ export interface AppInfo {
 export function fetchAppInfo(): Promise<AppInfo> {
   return call<AppInfo>('app_info');
 }
+
+export interface ExportResult {
+  /** The name the file was written under, which differs from the one asked for if that existed. */
+  readonly fileName: string;
+  readonly path: string;
+  readonly bytes: number;
+}
+
+/** Writes text to the application's exports folder (ADR 0025). The native side picks the folder. */
+export function writeExport(fileName: string, contents: string): Promise<ExportResult> {
+  return call<ExportResult>('export_report', { fileName, contents });
+}

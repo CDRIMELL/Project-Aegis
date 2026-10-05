@@ -544,6 +544,27 @@ describe('a report for a period', () => {
     expect(report(BOTH, cancelled).events).toEqual([]);
   });
 
+  it('leaves out an event that is announced but has not started, however far the period runs', () => {
+    const announced: ReportData = {
+      ...DATA,
+      events: [
+        ...DATA.events,
+        event('EVT-000004', 'aerodrome_closure', 140_000, 150_000, {
+          status: 'scheduled',
+          createdTick: 129_000,
+        }),
+      ],
+    };
+    const open = report({ fromTick: 0, toTick: 10_000_000 }, announced);
+    expect(open.events.map((e) => e.id)).not.toContain('EVT-000004');
+    expect(open.totals.eventsStarted).toBe(3);
+    expect(open.eventTypes.every((type) => type.activeSeconds > 0)).toBe(true);
+    // Once the world reaches its start, it is there.
+    const later = report({ fromTick: 0, toTick: 10_000_000 }, { ...announced, asOfTick: 141_000 });
+    expect(later.events.map((e) => e.id)).toContain('EVT-000004');
+    expect(later.totals.eventsStarted).toBe(4);
+  });
+
   it('builds a series whose buckets add up to the totals', () => {
     const { series, totals } = report(BOTH);
     expect(series.length).toBe(36);

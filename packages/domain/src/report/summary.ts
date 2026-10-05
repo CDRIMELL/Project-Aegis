@@ -325,8 +325,10 @@ export function buildReport(
   const missions = data.missions
     .filter((mission) => inPeriod(mission.completedTick, period))
     .sort(byTickThenId((mission) => mission.completedTick));
+  // An event that has been announced but has not started is not yet part of any period.
+  const elapsed: ReportPeriod = { fromTick: period.fromTick, toTick: untilTick };
   const events = data.events
-    .filter((event) => eventInPeriod(event, period, data.asOfTick))
+    .filter((event) => eventInPeriod(event, elapsed, data.asOfTick))
     .sort(byTickThenId((event) => event.startTick));
 
   const visits = maintenanceVisits(data.statusLog);
@@ -446,7 +448,7 @@ export function buildReport(
     asOfTick: data.asOfTick,
     epochMs: data.epochMs,
     modelVersion: data.modelVersion,
-    totals: activityTotals(flights, missions, maintenance, started(period)),
+    totals: activityTotals(flights, missions, maintenance, started(elapsed)),
     fleet,
     aircraft,
     outlook: maintenanceOutlook(data.aircraft, thresholds),

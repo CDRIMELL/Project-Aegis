@@ -55,7 +55,14 @@ export const AREAS: readonly Area[] = [
     plannedPhase: null,
     bleed: true,
   },
-  { id: 'reports', label: 'Reports', icon: ChartColumn, path: '/reports', plannedPhase: 8 },
+  {
+    id: 'reports',
+    label: 'Reports',
+    icon: ChartColumn,
+    path: '/reports',
+    plannedPhase: null,
+    bleed: true,
+  },
   { id: 'data', label: 'Data', icon: Database, path: '/data', plannedPhase: null },
   { id: 'system', label: 'System', icon: Settings, path: '/system', plannedPhase: null },
 ];

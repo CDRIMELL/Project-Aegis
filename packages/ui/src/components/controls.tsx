@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import { Search, X } from 'lucide-react';
-import type { ButtonHTMLAttributes, InputHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
 import { cn } from './cn';
 import { Icon } from './Icon';
 
@@ -149,5 +149,28 @@ export function ProgressBar({ label, value }: ProgressBarProps) {
         style={{ transform: `scaleX(${percent / 100})` }}
       />
     </div>
+  );
+}
+
+export interface TextLinkProps {
+  readonly onSelect: () => void;
+  /** Identifiers are shown in the telemetry face. */
+  readonly code?: boolean;
+  readonly children: ReactNode;
+}
+
+/** A reference to another record, inside text or a table cell. Opens that record. */
+export function TextLink({ onSelect, code = false, children }: TextLinkProps) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        'rounded-sm text-accent-strong underline-offset-2 hover:underline',
+        code && 'telemetry whitespace-nowrap',
+      )}
+    >
+      {children}
+    </button>
   );
 }

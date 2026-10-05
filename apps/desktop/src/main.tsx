@@ -8,6 +8,7 @@ import { startMissionServices } from './missions/service';
 import { isDesktop, tauriTransport } from './platform/tauri';
 import { ensureReferenceData } from './reference/client';
 import { bindReferenceDb } from './reference/queries';
+import { bindReportDb } from './reports/report-service';
 import { simClient } from './sim/client';
 import { bindSimDb } from './sim/log-queries';
 import { useReferenceStore } from './state/reference-store';
@@ -18,6 +19,7 @@ if (isDesktop()) {
   const database = createDb(tauriTransport);
   bindReferenceDb(database);
   bindSimDb(database);
+  bindReportDb(database);
   simClient.start(tauriTransport);
   // First launch installs the reference data shipped in the bundle; later launches find it present.
   ensureReferenceData(tauriTransport);

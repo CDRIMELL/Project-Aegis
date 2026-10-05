@@ -153,14 +153,16 @@ export async function loadReportData(
   const checkpoint = checkpoints[0];
   if (!world || !clock || !checkpoint) return null;
 
-  // Which missions each event affected. The log is append-only, so entries up to the checkpoint's
-  // tick read the same now as they did in the batch; and an event cannot have affected anything
-  // before it was created.
+  // Which missions each event affected, and when each event was actually resolved. The events
+  // table keeps the end an event was given when it was created; a maintenance finding has no end
+  // of its own and lasts until the aircraft is maintained, so the log is where its end is.
+  // The log is append-only, so entries up to the checkpoint's tick read the same now as they did
+  // in the batch; and nothing can have happened to an event before it was created.
   const earliestEvent = eventRows.reduce(
     (earliest, row) => Math.min(earliest, row.createdTick),
     Number.POSITIVE_INFINITY,
   );
-  const affectedRows =
+  const eventLog =
     eventRows.length === 0
       ? []
       : await db
@@ -168,10 +170,12 @@ export async function loadReportData(
           .from(simLog)
           .where(
             and(
-              eq(simLog.type, 'missionAffected'),
               gte(simLog.tick, earliestEvent),
               lte(simLog.tick, clock.tick),
-              lt(simLog.tick, toTick),
+              or(
+                and(eq(simLog.type, 'missionAffected'), lt(simLog.tick, toTick)),
+                eq(simLog.type, 'eventResolved'),
+              ),
             ),
           )
           .orderBy(asc(simLog.seq));
@@ -255,9 +259,15 @@ export async function loadReportData(
     payload: read(payload, row.payload, `log entry ${row.seq}`),
   }));
   const affected = new Map<string, string[]>();
-  for (const row of affectedRows) {
+  const resolvedAt = new Map<string, number>();
+  for (const row of eventLog) {
     const { eventId } = read(payload, row.payload, `log entry ${row.seq}`);
-    if (typeof eventId !== 'string' || row.missionId === null) continue;
+    if (typeof eventId !== 'string') continue;
+    if (row.type === 'eventResolved') {
+      resolvedAt.set(eventId, row.tick);
+      continue;
+    }
+    if (row.missionId === null) continue;
     const list = affected.get(eventId) ?? [];
     if (!list.includes(row.missionId)) list.push(row.missionId);
     affected.set(eventId, list);
@@ -282,7 +292,8 @@ export async function loadReportData(
           : null,
       createdTick: row.createdTick,
       startTick: row.startTick,
-      endTick: row.endTick,
+      // When it actually ended, where the log says; otherwise the end it was given.
+      endTick: (row.status === 'resolved' ? resolvedAt.get(row.id) : undefined) ?? row.endTick,
       aircraftId: row.aircraftId,
       raisedMissionId: row.missionId,
       affectedMissionIds: affected.get(row.id) ?? [],
