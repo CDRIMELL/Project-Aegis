@@ -10,7 +10,7 @@ Three things:
 - **A simulated world**: a clock, seeded random streams, an integrity digest, a fleet of aircraft
   that fly planned routes between real aerodromes, missions that give those flights a purpose,
   opportunities the world generates, weather the aircraft fly through, events that close
-  aerodromes and disrupt areas, and an append-only log of everything that happened, all persisted
+  aerodromes and disrupt areas, commands that change a flight in the air, and an append-only log of everything that happened, all persisted
   and restored exactly.
 - **Real reference data** (countries, aerodromes, runways, cities, aircraft types) with provenance,
   shipped inside the application and installed on first launch. See
@@ -247,15 +247,17 @@ The decisions are in [ADR 0021](adr/0021-environment.md) and [ADR 0022](adr/0022
   generated from the world's own seeded stream at a controlled rate, at places in the operating
   area. Severe weather is not rolled: it is read from the weather field.
 
-| Event                 | Consequence                                                                    |
-| --------------------- | ------------------------------------------------------------------------------ |
-| Aerodrome closure     | No departure from it; no plan arriving during it. Airborne aircraft still land |
-| Navigation disruption | A warning and more risk for a route through the area                           |
-| Logistics disruption  | An urgent delivery is offered while it lasts                                   |
-| Maintenance finding   | The aircraft is due maintenance and cannot launch until it is done             |
-| Severe weather        | None of its own: the weather itself is the effect                              |
+| Event                 | Consequence                                                                       |
+| --------------------- | --------------------------------------------------------------------------------- |
+| Aerodrome closure     | No departure from it; no plan arriving during it. Airborne aircraft hold short    |
+| Navigation disruption | A warning and more risk for a route through the area                              |
+| Logistics disruption  | An urgent delivery is offered while it lasts                                      |
+| Maintenance finding   | The aircraft is due maintenance and cannot launch until it is done                |
+| Severe weather        | None of its own: the weather itself is the effect                                 |
+| Technical caution     | Shown on an airborne aircraft: faster wear while it flies, maintenance on landing |
 
-There is no diversion: a closure is known before departure or it does not affect the flight.
+A closure announced while an aircraft is on its way is handled in the air: see
+[In-flight control](#in-flight-control).
 
 - **Risk** gained six contributors (wind, weather on the route, visibility, precipitation,
   temperature, events), each with its reason, beside the seven from missions.
@@ -271,6 +273,55 @@ There is no diversion: a closure is known before departure or it does not affect
 | Persistence              | `packages/db/src/event-schema.ts`                                        |
 | Screen                   | `apps/desktop/src/features/overview/`                                    |
 | Map features and binding | `apps/desktop/src/map/environment-features.ts`, `environment-binding.ts` |
+
+## In-flight control
+
+The decisions are in [ADR 0026](adr/0026-in-flight-control.md).
+
+- **One primitive.** `reviseFlight` replaces the rest of an airborne flight's route, with an
+  intent: reroute, divert or return to base. The route flown so far is kept, a waypoint is put
+  where the aircraft is, and the new remainder follows. The plan as launched is kept beside it
+  (`plannedPlan`), with a history of every revision.
+- **Preview equals outcome.** `evaluateRevision` and `projectFlight` fly the rest of the flight
+  with the step the engine itself runs, through the same weather and the same known closures. The
+  arrival time and landing fuel shown before a change are the ones recorded when the aircraft
+  lands; the tests assert this exactly. A revision is refused, with its reason, during the
+  take-off roll, to somewhere that is not an aerodrome, without the fuel to arrive above reserve,
+  or to somewhere nearer than the distance a descent needs.
+- **Holding.** `holdFlight` and `resumeFlight` are the operator's. A hold is flown where the
+  aircraft is, at a stated fraction of cruise speed, and ends on resume, on a revision, or when
+  fuel is down to reserve.
+- **A closed destination.** At the top of its descent, an aircraft whose destination is closed
+  holds short of it. It lands when the aerodrome reopens, goes elsewhere if the operator diverts
+  it, and lands despite the closure if its fuel reaches reserve first; that landing is recorded
+  as such and the aircraft is then due maintenance. An aircraft already descending is committed.
+  Nothing is decided for the operator and nothing is moved.
+- **The arrival shown is kept true.** A flight's projected arrival and landing fuel are worked out
+  again whenever it is revised, a hold ends, or the closures known for its destination change.
+- **Aborting a mission** (`abortMission`) is immediate. Objectives already complete stay complete;
+  those pending fail with the reason "Mission aborted". The aircraft flies on as an ordinary
+  flight to wherever the operator chose: on to its destination, back to base, or to an alternate.
+- **Where it landed decides.** Objectives that depend on a place (complete the flight, deliver a
+  payload, arrive by a time) are judged on the aerodrome the aircraft landed at, and a failure
+  names both places.
+- **Technical caution.** One event type from the seeded event system, on an aircraft in the air.
+  It wears faster while it flies and is due maintenance when it lands. It is not a failure model.
+- **Advisories are derived.** What the panel says about a flight (closed on arrival, holding,
+  caution, fuel) is computed from the world's state when it is shown; only what happened is
+  logged (`flightHolding`, `flightHoldEnded`, the commands, the events).
+
+| Layer                       | Where                                                                    |
+| --------------------------- | ------------------------------------------------------------------------ |
+| Revision, projection        | `packages/domain/src/flight/revision.ts`                                 |
+| Holding, closure on arrival | `packages/domain/src/flight/profile.ts`, `environment/flight-weather.ts` |
+| Commands and stepping       | `packages/sim/src/fleet.ts`, `missions.ts`, `events.ts`                  |
+| What the panel offers       | `apps/desktop/src/operations/inflight-logic.ts`                          |
+| Panels                      | `apps/desktop/src/features/operations/`                                  |
+
+Simulation model 6. A world saved by an earlier model loads and upgrades: its flights are as
+launched, and from the upgrade tick the closure rule applies to every flight, including one
+already in the air. As with every model change, such a world's log is complete for replay only
+from the upgrade.
 
 ## Reports
 
@@ -297,6 +348,12 @@ The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-rep
   its window and, for each aircraft, the last one before it, which the database finds. A month
   from a history of 10,000 flights and 100,000 log entries is read in about a tenth of a second,
   with no index beyond those the log already has.
+- **Planned and actual.** A flight record carries where it was launched for and where it landed,
+  its revisions, the time it held and whether it landed during a closure. Fuel is compared with
+  the estimate made at launch only for flights flown as launched: an estimate for one route says
+  nothing about another. Missions aborted are counted on their own.
+- **In progress is shown apart.** Flights in the air and missions under way are listed as they
+  stand, and are in no total: totals are of what has finished.
 - **Drill-down, not duplication.** Every mission, aircraft and event a report names opens its own
   existing page. Reports have no detail pages.
 - **Export.** A section is exported as it is filtered on screen, as CSV or JSON, by pure
@@ -352,7 +409,11 @@ Singleton tables enforce `id = 1` with a CHECK constraint. Table prefixes separa
 
 1. Edit `packages/db/src/schema.ts`.
 2. `npm run db:generate -- --name <what_changed>` writes a SQL migration.
-3. Commit the migration. Never edit a migration that has been applied anywhere: both runners
+3. Read the migration before committing it. A migration runs inside one transaction with foreign
+   keys on, where SQLite ignores `PRAGMA foreign_keys`; a generated table rebuild that relies on
+   switching them off fails there. Migration 0008 is written by hand for that reason: it sets the
+   links from flights to missions aside and restores them around the rebuild.
+4. Commit the migration. Never edit a migration that has been applied anywhere: both runners
    compare checksums and refuse to start.
 
 At startup the Rust core applies pending migrations, each in its own transaction, after taking a
@@ -446,6 +507,9 @@ needs a GPU and is verified by running the application.
 | Export           | Vitest, `cargo test`   | CSV and JSON content and filtering; the file name guard; no overwrite          |
 | Charts           | Vitest                 | Order, tones from tokens only, empty state, no colour literal                  |
 | Report scenario  | Vitest + `node:sqlite` | Missions to different ends, maintenance, reports, export, reopen, replay       |
+| In-flight        | Vitest                 | Revision, hold, closure on arrival, abort, caution; preview equals outcome     |
+| In-flight store  | Vitest + `node:sqlite` | Reopen mid-diversion and mid-hold; migration of a database from before 0008    |
+| Control scenario | Vitest + `node:sqlite` | Divert, reroute, abort after an objective, reopen, reports, replay             |
 
 Persistence tests use the same Drizzle driver and SQL as production; only the transport differs.
 
@@ -454,6 +518,11 @@ Two tools check a real database independently of the code that wrote it:
 seed and its logged commands, and `npm run verify:reference` checks integrity, provenance and
 source hashes and fingerprints the reference tables. `npx tsx tools/flyable-types.ts` lists which
 reference types the flight model can fly and what each of the others lacks.
+
+`npx tsx tools/scenario-world.ts <closure|caution> <database>` builds a saved world in which an
+aircraft is bound for an aerodrome the world has just announced it will close, or is flying with
+a technical caution. Nothing is injected: seeds are searched until the world's own events produce
+the situation, so the result replays like any other world. It is for checking a build by hand.
 
 ## Commands
 

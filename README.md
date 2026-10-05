@@ -8,7 +8,7 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 7 of 10 complete.
+Phase 8A of 10 complete.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -39,7 +39,15 @@ Phase 7 of 10 complete.
   Everything is derived from what the world recorded; nothing is stored for reports. Each section
   opens the records it names and exports as CSV or JSON.
 
-There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices.
+- **In-flight control:** an airborne aircraft can be rerouted, diverted, returned to base or
+  held, and its mission aborted. Every change is previewed with the simulation's own flight
+  model before it is made, and what is previewed is what then happens. An aircraft whose
+  destination has closed holds short of it until it reopens, the operator diverts it, or its fuel
+  is down to reserve. Where it lands decides the objectives that depend on a place. A technical
+  caution can show in flight and puts the aircraft due maintenance when it lands.
+
+There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices. Fuel
+is still loaded instantly at launch; timed turnaround and refuelling are the next phase (8B).
 
 ## Requirements
 
