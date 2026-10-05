@@ -5,7 +5,6 @@ import {
   derivePerformance,
   generatePlan,
   simInstant,
-  suggestedFuelKg,
   type PerformanceModel,
   type RoutePoint,
 } from '@aegis/domain';
@@ -104,7 +103,8 @@ function launchC17(
     type: 'launchFlight',
     aircraftId: 'AEGIS-TR-001',
     plan,
-    load: { fuelKg: suggestedFuelKg(C17, plan, 12000) as number, payloadKg: 12000 },
+    // The fuel it was acquired with: nothing to load first (ADR 0027).
+    load: { fuelKg: C17.fuelCapacityKg, payloadKg: 12000 },
   });
 }
 

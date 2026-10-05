@@ -16,7 +16,7 @@ import { CommandRejected, type AircraftState } from './fleet';
 import type { LogEntry } from './log';
 import { defaultConfiguration } from './missions';
 import { replayComparable, replayWorld } from './replay';
-import { FIXTURES, fixtureLaunch, fixtureOrder } from './testing';
+import { FIXTURES, fixtureLaunch, fixtureOrder, fuelled, launchFuelled } from './testing';
 import { SIM_MODEL_VERSION } from './world';
 
 const { places, models } = FIXTURES;
@@ -396,10 +396,10 @@ describe('events in the running world', () => {
       engine,
       (e) => e.type === 'aerodrome_closure' && e.status === 'active' && e.place?.code === 'EGHQ',
     );
-    const launch = () =>
-      engine.applyCommand(
-        fixtureLaunch(TRANSPORT, models.transport, places.newquay, places.exeter),
-      );
+    const flight = fixtureLaunch(TRANSPORT, models.transport, places.newquay, places.exeter);
+    // Fuelling goes on at a closed aerodrome; departures do not.
+    fuelled(engine, TRANSPORT, flight.load.fuelKg);
+    const launch = () => engine.applyCommand(flight);
     const before = engine.snapshot();
     expect(launch).toThrow(CommandRejected);
     expect(launch).toThrow(/Newquay is closed to departures \(EVT-\d+\)/);
@@ -465,6 +465,8 @@ describe('events in the running world', () => {
       );
       // In the same world, send the transport there before the closure is known.
       const engine = world(seed);
+      fuelled(engine, TRANSPORT, 40_000);
+      if (future.createdTick - 600 < engine.clock.tick) continue;
       engine.runSteps(future.createdTick - 600 - engine.clock.tick);
       if (aircraftOf(engine, TRANSPORT).status !== 'available') continue;
       engine.applyCommand({
@@ -487,7 +489,7 @@ describe('events in the running world', () => {
       }
       // The closure began while it was airborne; it landed there all the same.
       expect(aircraftOf(engine, TRANSPORT)).toMatchObject({
-        status: 'available',
+        status: 'servicing',
         location: places.exeter,
       });
       const flight = engine.snapshot().fleet.flights[0];
@@ -511,7 +513,7 @@ describe('events in the running world', () => {
           ? fixtureLaunch(TRANSPORT, models.transport, places.newquay, places.exeter)
           : fixtureLaunch(JET, models.fastJet, places.prestwick, places.newquay),
       ),
-    ).toThrow(/not available \(maintenance due\)/);
+    ).toThrow(/due maintenance and cannot launch/);
 
     engine.applyCommand({ type: 'startMaintenance', aircraftId: id });
     engine.runSteps(7 * HOUR);
@@ -567,7 +569,8 @@ describe('events in the running world', () => {
     const engine = world('replayed-events');
     engine.runSteps(HOUR * 5);
     // A flight through the weather, launched part way through.
-    engine.applyCommand(
+    launchFuelled(
+      engine,
       fixtureLaunch(JET, models.fastJet, places.prestwick, places.newquay, 0, engine.planContext()),
     );
     engine.runSteps(HOUR * 24 * 3);

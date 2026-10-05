@@ -92,6 +92,11 @@ export const FLIGHT_ASSUMPTIONS = {
     statement:
       'Climbing and accelerating cost their physical energy, at an assumed 12.9 MJ of useful work per kg of fuel.',
   },
+  contingency: {
+    fractionOfTripFuel: 0.05,
+    statement:
+      'The fuel offered for a flight is what arrives on the reserve in the weather forecast for leaving now, plus 5 % of the trip fuel: a flight leaves once it has been prepared, and the weather will have moved on.',
+  },
   hold: {
     speedFraction: 0.75,
     statement:

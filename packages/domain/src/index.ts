@@ -2,6 +2,7 @@ export * from './environment';
 export * from './event';
 export * from './flight';
 export * from './geo';
+export * from './ground';
 export * from './hash';
 export * as dmath from './math';
 export * from './mission';

@@ -332,6 +332,7 @@ describe('aircraft status from the log', () => {
     expect(time.byStatus).toEqual({
       available: 100 + 39_400 + 14_800,
       in_flight: 3600 + 100,
+      servicing: 0,
       maintenance_due: 6800,
       in_maintenance: 21_600,
       unserviceable: 0,

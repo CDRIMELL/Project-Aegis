@@ -1,0 +1,1 @@
+ALTER TABLE `sim_aircraft` ADD `service` text;

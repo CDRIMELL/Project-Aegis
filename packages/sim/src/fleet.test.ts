@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { SimulationEngine, WorldRestoreError } from './engine';
 import { CommandRejected, MAINTENANCE, type AircraftOrder, type FleetCommand } from './fleet';
 import { SimulationRunner } from './runner';
-import { ManualHostClock, MemoryWorldStore } from './testing';
+import { ManualHostClock, MemoryWorldStore, fuelled } from './testing';
 import { SIM_MODEL_VERSION, type WorldSnapshot } from './world';
 
 const EPOCH = simInstant(Date.UTC(2026, 9, 4, 12, 0, 0));
@@ -101,11 +101,13 @@ function launch(
   payloadKg = 0,
 ) {
   const plan = generatePlan(model, from, to);
-  // Planned in the world it will be flown in: the same weather, departing at the same tick.
-  const context = engine.planContext();
-  const fuelKg = suggestedFuelKg(model, plan, payloadKg, context);
+  const fuelKg = suggestedFuelKg(model, plan, payloadKg, engine.planContext());
   if (fuelKg === null) throw new Error('route not flyable');
   const load = { fuelKg, payloadKg };
+  // The fuel is loaded first, which takes time (ADR 0027).
+  fuelled(engine, aircraftId, fuelKg);
+  // Estimated in the world it will be flown in: the same weather, departing at the same tick.
+  const context = engine.planContext();
   const estimate = evaluatePlan(model, plan, load, context).estimate;
   engine.applyCommand({ type: 'launchFlight', aircraftId, plan, load });
   return { plan, load, estimate };
@@ -200,28 +202,21 @@ describe('acquiring aircraft', () => {
 });
 
 describe('configuring aircraft', () => {
-  it('changes home and load, within the aircraft limits', () => {
+  it('changes home, and refuses fuel the aircraft cannot hold', () => {
     const engine = world();
     engine.applyCommand({ type: 'acquireAircraft', ...c17Order() });
     engine.applyCommand({ type: 'setHome', aircraftId: 'AEGIS-TR-001', home: PRESTWICK });
-    engine.applyCommand({
-      type: 'setLoad',
-      aircraftId: 'AEGIS-TR-001',
-      fuelKg: 40000,
-      payloadKg: 30000,
-    });
     expect(aircraftOf(engine, 'AEGIS-TR-001')).toMatchObject({
       home: PRESTWICK,
       location: NEWQUAY,
-      fuelKg: 40000,
-      payloadKg: 30000,
+      fuelKg: C17.fuelCapacityKg,
     });
 
-    const load = (fuelKg: number, payloadKg: number) => () =>
-      engine.applyCommand({ type: 'setLoad', aircraftId: 'AEGIS-TR-001', fuelKg, payloadKg });
-    expect(load(C17.fuelCapacityKg + 1000, 0)).toThrow(/more fuel than the aircraft can hold/);
-    expect(load(C17.fuelCapacityKg, C17.maxPayloadKg)).toThrow(/maximum take-off mass/);
-    expect(load(-1, 0)).toThrow(CommandRejected);
+    const fuel = (fuelKg: number) => () =>
+      engine.applyCommand({ type: 'serviceAircraft', aircraftId: 'AEGIS-TR-001', fuelKg });
+    expect(fuel(C17.fuelCapacityKg + 1000)).toThrow(/more fuel than AEGIS-TR-001 can hold/);
+    expect(fuel(-1)).toThrow(CommandRejected);
+    expect(fuel(Number.NaN)).toThrow(CommandRejected);
     expect(() =>
       engine.applyCommand({ type: 'setHome', aircraftId: 'AEGIS-XX-999', home: PRESTWICK }),
     ).toThrow(/no aircraft/);
@@ -246,7 +241,7 @@ describe('launching', () => {
       aircraftId: 'AEGIS-FT-001',
       status: 'active',
       plan,
-      departedTick: 10,
+      departedTick: engine.clock.tick,
       estimatedDurationS: estimate?.durationS,
       progress: { phase: 'takeoff', distanceM: 0, fuelKg: load.fuelKg },
     });
@@ -288,7 +283,7 @@ describe('launching', () => {
         type: 'launchFlight',
         aircraftId: 'AEGIS-FT-001',
         plan: tooHigh,
-        load: { fuelKg: 5000, payloadKg: 0 },
+        load: { fuelKg: 6250, payloadKg: 0 },
       }),
     ).toThrow(/above the service ceiling/);
     expect(engine.snapshot()).toEqual(before);
@@ -300,7 +295,7 @@ describe('launching', () => {
     launch(engine, 'AEGIS-FT-001', TYPHOON, PRESTWICK, NEWQUAY);
     expect(() => launch(engine, 'AEGIS-FT-001', TYPHOON, PRESTWICK, NEWQUAY)).toThrow(/airborne/);
     expect(() =>
-      engine.applyCommand({ type: 'setLoad', aircraftId: 'AEGIS-FT-001', fuelKg: 1, payloadKg: 0 }),
+      engine.applyCommand({ type: 'serviceAircraft', aircraftId: 'AEGIS-FT-001', fuelKg: 1 }),
     ).toThrow(/airborne/);
     expect(() =>
       engine.applyCommand({ type: 'startMaintenance', aircraftId: 'AEGIS-FT-001' }),
@@ -318,7 +313,9 @@ describe('flying', () => {
     expect(steps).toBe(estimate?.durationS);
     const landed = aircraftOf(engine, 'AEGIS-TR-001');
     expect(landed.location).toEqual(AKROTIRI);
-    expect(landed.status).toBe('available');
+    // It is turned round before it is available again (ADR 0027).
+    expect(landed.status).toBe('servicing');
+    expect(landed.service).toMatchObject({ reason: 'turnaround', stage: 'checks' });
     expect(landed.fuelKg).toBe(estimate?.fuelAtDestinationKg);
     expect(landed.fuelKg).toBeLessThan(load.fuelKg);
     expect(landed.flights).toBe(1);
@@ -328,7 +325,7 @@ describe('flying', () => {
     const flight = engine.snapshot().fleet.flights[0];
     expect(flight).toMatchObject({
       status: 'completed',
-      arrivedTick: steps,
+      arrivedTick: engine.clock.tick,
       progress: { phase: 'landed' },
     });
   });
@@ -354,7 +351,7 @@ describe('flying', () => {
     // Heading is roughly south-east from Cornwall to Cyprus.
     expect(later.headingDeg).toBeGreaterThan(90);
     expect(later.headingDeg).toBeLessThan(150);
-    expect(later.etaTick).toBe(estimate?.durationS);
+    expect(later.etaTick).toBe(later.departedTick + (estimate?.durationS ?? 0));
     expect(later.totalM).toBeCloseTo(greatCircleDistance(NEWQUAY, AKROTIRI), 3);
   });
 
@@ -467,6 +464,12 @@ describe('determinism and continuity', () => {
       runner.execute({ type: 'setSpeed', speed });
       runner.execute({ type: 'acquireAircraft', ...typhoonOrder() });
       const plan = generatePlan(TYPHOON, PRESTWICK, NEWQUAY);
+      // The fuel is loaded first, in simulated time, at whatever speed the world runs.
+      runner.execute({ type: 'serviceAircraft', aircraftId: 'AEGIS-FT-001', fuelKg: 5000 });
+      while (runner.view().fleet.aircraft[0]?.status === 'servicing') {
+        host.elapse(sliceMs);
+        runner.advance();
+      }
       runner.execute({
         type: 'launchFlight',
         aircraftId: 'AEGIS-FT-001',
@@ -549,7 +552,7 @@ describe('maintenance', () => {
     flyOut(engine, 'AEGIS-FT-001');
     expect(aircraftOf(engine, 'AEGIS-FT-001').status).toBe('maintenance_due');
     expect(() => launch(engine, 'AEGIS-FT-001', TYPHOON, NEWQUAY, PRESTWICK)).toThrow(
-      /not available \(maintenance due\)/,
+      /due maintenance and cannot launch/,
     );
 
     const startTick = engine.clock.tick;

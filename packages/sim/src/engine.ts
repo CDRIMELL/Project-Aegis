@@ -19,7 +19,14 @@ import {
   type MissionCommand,
   type MissionsView,
 } from './missions';
-import { EMPTY_LOG, SimLog, type EmitEvent, type LogSnapshot } from './log';
+import {
+  EMPTY_LOG,
+  SimLog,
+  type EmitEvent,
+  type LogPayload,
+  type LogSnapshot,
+  type LogSubject,
+} from './log';
 import {
   OLDEST_LOADABLE_MODEL_VERSION,
   SIM_MODEL_VERSION,
@@ -260,11 +267,20 @@ export class SimulationEngine {
     let effect;
     const context = this.planContext();
     const hazards = this.events.hazards();
+    // What the command caused beyond itself (ADR 0027). Recorded after the command's own entry,
+    // and never if the command is refused.
+    const caused: { type: string; subject: LogSubject; payload?: LogPayload }[] = [];
+    const report: EmitEvent = (type, subject, payload) => {
+      caused.push({ type, subject, ...(payload && { payload }) });
+    };
     if (isMissionCommand(command)) {
-      effect = this.missions.apply(command, this.tick, this.fleet, {
-        weather: this.weather,
-        hazards,
-      });
+      effect = this.missions.apply(
+        command,
+        this.tick,
+        this.fleet,
+        { weather: this.weather, hazards },
+        report,
+      );
     } else {
       if (command.type === 'launchFlight') {
         // An aircraft committed to a mission flies that mission, or is released from it first.
@@ -275,7 +291,7 @@ export class SimulationEngine {
           );
         }
       }
-      effect = this.fleet.apply(command, this.tick, context);
+      effect = this.fleet.apply(command, this.tick, context, report);
     }
     if (effect === null) return false;
     this.log.append(
@@ -286,6 +302,7 @@ export class SimulationEngine {
       effect,
       { ...command },
     );
+    for (const event of caused) this.emit(event.type, event.subject, event.payload);
     return true;
   }
 

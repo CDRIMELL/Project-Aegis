@@ -14,7 +14,7 @@ import {
   defaultConfiguration,
   type Checkpoint,
 } from '@aegis/sim';
-import { FIXTURES, fixtureOrder } from '@aegis/sim/testing';
+import { FIXTURES, fixtureOrder, fuelled, launchMissionWhenReady } from '@aegis/sim/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MIGRATIONS_FOLDER, NodeSqliteTransport, migrate, openNodeDatabase } from './node';
 import { SqliteWorldStore, WorldStorageError } from './world-store';
@@ -70,7 +70,7 @@ function delivering(seed?: string): SimulationEngine {
     load: { fuelKg: 60_000, payloadKg: 3000 },
   });
   engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-  engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+  launchMissionWhenReady(engine, 'MSN-000001');
   engine.runSteps(5400);
   return engine;
 }
@@ -367,6 +367,7 @@ describe('migration 0008 on an existing world', { timeout: 60_000 }, () => {
     // A second mission, in flight when the world was saved.
     const aircraft = engine.snapshot().fleet.aircraft.find((each) => each.id === TRANSPORT);
     if (!aircraft?.location) throw new Error('the transport should have landed');
+    fuelled(engine, TRANSPORT, 60_000);
     engine.applyCommand({
       type: 'launchFlight',
       aircraftId: TRANSPORT,

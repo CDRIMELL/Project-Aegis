@@ -8,6 +8,7 @@ import {
   text,
   type AnySQLiteColumn,
 } from 'drizzle-orm/sqlite-core';
+import { AIRCRAFT_STATUSES } from '@aegis/domain';
 import { simMission } from './mission-schema';
 
 /*
@@ -18,13 +19,7 @@ import { simMission } from './mission-schema';
  * Links between simulated rows are real foreign keys.
  */
 
-export const AIRCRAFT_STATUSES = [
-  'available',
-  'in_flight',
-  'maintenance_due',
-  'in_maintenance',
-  'unserviceable',
-] as const;
+export { AIRCRAFT_STATUSES } from '@aegis/domain';
 
 /** One simulated aircraft: an instance of a real reference type. */
 export const simAircraft = sqliteTable(
@@ -47,6 +42,12 @@ export const simAircraft = sqliteTable(
     flights: integer('flights').notNull(),
     flightSecondsSinceMaintenance: real('flight_seconds_since_maintenance').notNull(),
     maintenanceCompleteTick: integer('maintenance_complete_tick'),
+    /**
+     * JSON: the ground servicing under way (ADR 0027): why, its stage, when the checks end, the
+     * fuel to bring the aircraft to and the transfer in progress. NULL unless `status` is
+     * `servicing`.
+     */
+    service: text('service'),
     activeFlightId: text('active_flight_id'),
     acquiredTick: integer('acquired_tick').notNull(),
     /** JSON: the performance model the aircraft was acquired with; NULL if none could be derived. */

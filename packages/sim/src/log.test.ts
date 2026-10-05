@@ -10,6 +10,7 @@ import {
   MemoryWorldStore,
   fixtureLaunch,
   fixtureOrder,
+  launchFuelled,
 } from './testing';
 import { SIM_MODEL_VERSION, type WorldSnapshot } from './world';
 
@@ -29,7 +30,8 @@ function scriptedWorld(): SimulationEngine {
     ],
   });
   engine.runSteps(30);
-  engine.applyCommand(
+  launchFuelled(
+    engine,
     fixtureLaunch('AEGIS-FT-001', models.fastJet, places.prestwick, places.newquay),
   );
   engine.runSteps(4000);
@@ -50,7 +52,11 @@ describe('command and event log', () => {
     const order = fixtureOrder('fastJet', places.prestwick);
     engine.applyCommand({ type: 'acquireAircraft', ...order });
     engine.runSteps(7);
-    const launch = fixtureLaunch('AEGIS-FT-001', models.fastJet, places.prestwick, places.newquay);
+    // With the fuel already aboard, so that the launch is the only thing that happens.
+    const launch = {
+      ...fixtureLaunch('AEGIS-FT-001', models.fastJet, places.prestwick, places.newquay),
+      load: { fuelKg: models.fastJet.fuelCapacityKg, payloadKg: 0 },
+    };
     engine.applyCommand(launch);
 
     expect(entries(engine)).toEqual([
@@ -92,12 +98,22 @@ describe('command and event log', () => {
     const log = entries(scriptedWorld());
     expect(log.map((entry) => `${entry.kind}:${entry.type}`)).toEqual([
       'command:seedStarterFleet',
+      // Fuel for the flight is loaded first, and what the command caused follows it (ADR 0027).
+      'command:serviceAircraft',
+      'event:servicingStarted',
+      'event:refuellingStarted',
+      'event:refuellingCompleted',
+      'event:servicingCompleted',
       'command:launchFlight',
       'event:flightCompleted',
+      // The turnaround after landing.
+      'event:servicingStarted',
+      'event:servicingCompleted',
       'command:startMaintenance',
       'event:maintenanceCompleted',
     ]);
-    const landed = log[2] as LogEntry;
+    expect(log[2]).toMatchObject({ actor: 'world', tick: 30, aircraftId: 'AEGIS-FT-001' });
+    const landed = log[7] as LogEntry;
     expect(landed).toMatchObject({
       actor: 'world',
       aircraftId: 'AEGIS-FT-001',
@@ -105,9 +121,11 @@ describe('command and event log', () => {
       payload: { destination: 'EGHQ' },
     });
     expect(landed.tick).toBeGreaterThan(30);
-    expect(landed.tick).toBeLessThan(4030);
-    expect((log[4] as LogEntry).tick).toBe(4030 + MAINTENANCE.durationSeconds);
-    expect(log.map((entry) => entry.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(landed.tick).toBeLessThan(5030);
+    expect((log.at(-1) as LogEntry).tick).toBe(
+      (log.at(-2) as LogEntry).tick + MAINTENANCE.durationSeconds,
+    );
+    expect(log.map((entry) => entry.seq)).toEqual(log.map((_, index) => index + 1));
   });
 
   it('does not record a rejected command or one that had no effect', () => {
@@ -178,7 +196,10 @@ describe('command and event log', () => {
     const engine = scriptedWorld();
     const restored = SimulationEngine.restore(copyOf(engine.snapshot()));
     restored.applyCommand({ type: 'setHome', aircraftId: 'AEGIS-TR-001', home: places.exeter });
-    expect(entries(restored).at(-1)).toMatchObject({ seq: 6, type: 'setHome' });
+    expect(entries(restored).at(-1)).toMatchObject({
+      seq: entries(engine).length + 1,
+      type: 'setHome',
+    });
   });
 
   it('refuses a saved log with a gap', () => {

@@ -23,7 +23,14 @@ import {
   type SimView,
   type WorldCommand,
 } from '@aegis/sim';
-import { FIXTURES, ManualHostClock, fixtureOrder } from '@aegis/sim/testing';
+import {
+  FIXTURES,
+  ManualHostClock,
+  advanceUntilServiced,
+  untilServiced,
+  fixtureOrder,
+  launchMissionWhenReady,
+} from '@aegis/sim/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openNodeDatabase, type NodeDatabase } from './node';
 import { SqliteWorldStore, WorldStorageError } from './world-store';
@@ -64,6 +71,9 @@ const createTraining = (
   ),
 });
 
+const missionOf = (engine: SimulationEngine, id: string) =>
+  engine.snapshot().missions.missions.find((mission) => mission.id === id);
+
 /** A world with one mission in each of several states, and one in flight. */
 function busyWorld(): SimulationEngine {
   const engine = SimulationEngine.create(newWorld());
@@ -72,10 +82,9 @@ function busyWorld(): SimulationEngine {
   apply(SEED_FLEET);
   apply({ type: 'setOperatingArea', places: OPERATING_AREA });
   // 1: completed. 2: cancelled. 3: draft. 4: active. The world generates 5 at the first hour.
+  // All four are created before any time passes, so that they take the first four numbers:
+  // preparing and flying the first now takes more than the hour in which the world makes its own.
   apply(createTraining(fleet(), engine.planContext()));
-  apply({ type: 'acceptMission', missionId: 'MSN-000001' });
-  apply({ type: 'launchMission', missionId: 'MSN-000001' });
-  engine.runSteps(3400);
   apply(createTraining(fleet(), engine.planContext()));
   apply({ type: 'cancelMission', missionId: 'MSN-000002' });
   apply({
@@ -84,8 +93,14 @@ function busyWorld(): SimulationEngine {
     ...defaultConfiguration('logistics', briefFor('logistics', {}), null),
   });
   apply(createTraining(fleet(), engine.planContext()));
+  apply({ type: 'acceptMission', missionId: 'MSN-000001' });
+  launchMissionWhenReady(engine, 'MSN-000001');
+  for (let i = 0; i < 400 && missionOf(engine, 'MSN-000001')?.status === 'active'; i++) {
+    engine.runSteps(60);
+  }
+  untilServiced(engine, 'AEGIS-TR-001');
   apply({ type: 'acceptMission', missionId: 'MSN-000004' });
-  apply({ type: 'launchMission', missionId: 'MSN-000004' });
+  launchMissionWhenReady(engine, 'MSN-000004');
   engine.runSteps(700);
   return engine;
 }
@@ -237,7 +252,7 @@ describe('mission persistence', () => {
     engine.applyCommand(createTraining(engine.snapshot().fleet.aircraft, engine.planContext()));
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
     engine.runSteps(5 * 3600);
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     const saved = checkpoint(engine);
     await store.save(saved);
 
@@ -383,6 +398,7 @@ describe('mission continuity across application restarts', () => {
       createTraining(session.runner.view().fleet.aircraft, planContextOf(session.runner.view())),
     );
     session.runner.execute({ type: 'acceptMission', missionId: 'MSN-000001' });
+    advanceUntilServiced(session.runner, session.host, 'AEGIS-TR-001');
     session.runner.execute({ type: 'launchMission', missionId: 'MSN-000001' });
     run(session, 12_000);
     return session;
@@ -414,13 +430,20 @@ describe('mission continuity across application restarts', () => {
       'seedStarterFleet',
       'createMission',
       'acceptMission',
+      'servicingStarted',
+      'refuellingStarted',
+      'refuellingCompleted',
+      'servicingCompleted',
       'launchMission',
       'objectiveCompleted',
       'flightCompleted',
+      'servicingStarted',
       'objectiveCompleted',
       'objectiveCompleted',
       'objectiveCompleted',
       'missionCompleted',
+      // The turnaround ends after the mission has.
+      'servicingCompleted',
     ]);
   });
 

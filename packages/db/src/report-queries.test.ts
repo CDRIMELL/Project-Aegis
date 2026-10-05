@@ -23,7 +23,14 @@ import {
   type Checkpoint,
   type WorldCommand,
 } from '@aegis/sim';
-import { FIXTURES, fixtureLaunch, fixtureOrder } from '@aegis/sim/testing';
+import {
+  FIXTURES,
+  fixtureLaunch,
+  fixtureOrder,
+  fuelled,
+  launchFuelled,
+  launchMissionWhenReady,
+} from '@aegis/sim/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openNodeDatabase, type NodeDatabase } from './node';
 import { loadReportData } from './report-queries';
@@ -72,7 +79,7 @@ function serviceable(engine: SimulationEngine): void {
 
 function fly(engine: SimulationEngine, missionId: string): void {
   engine.applyCommand({ type: 'acceptMission', missionId });
-  engine.applyCommand({ type: 'launchMission', missionId });
+  launchMissionWhenReady(engine, missionId);
   for (let i = 0; i < 400 && missionOf(engine, missionId)?.status === 'active'; i++) {
     engine.runSteps(60);
   }
@@ -99,7 +106,7 @@ function operations(seed = 'reported-world'): SimulationEngine {
   });
   engine.runSteps(600);
   fly(engine, training(engine));
-  apply(fixtureLaunch(JET, models.fastJet, places.prestwick, places.newquay));
+  launchFuelled(engine, fixtureLaunch(JET, models.fastJet, places.prestwick, places.newquay));
   engine.runSteps(2 * HOUR);
   apply({ type: 'startMaintenance', aircraftId: TRANSPORT });
   engine.runSteps(MAINTENANCE.durationSeconds + HOUR);
@@ -108,7 +115,7 @@ function operations(seed = 'reported-world'): SimulationEngine {
   const late = training(engine);
   apply({ type: 'acceptMission', missionId: late });
   engine.runSteps(5 * HOUR);
-  apply({ type: 'launchMission', missionId: late });
+  launchMissionWhenReady(engine, late);
   for (let i = 0; i < 400 && missionOf(engine, late)?.status === 'active'; i++) engine.runSteps(60);
   engine.runSteps(12 * HOUR);
   return engine;
@@ -223,8 +230,11 @@ describe('reports from a saved world', () => {
       const due = finding ? until - finding.startTick : 0;
       expect(row.time.byStatus.maintenance_due).toBe(due);
       expect(row.aircraft.status).toBe(finding ? 'maintenance_due' : 'available');
+      // Time being serviced on the ground counts against availability, as maintenance does.
       expect(row.availability).toBeCloseTo(
-        1 - (row.time.byStatus.in_maintenance + due) / (until - row.aircraft.acquiredTick),
+        1 -
+          (row.time.byStatus.in_maintenance + due + row.time.byStatus.servicing) /
+            (until - row.aircraft.acquiredTick),
         12,
       );
     }
@@ -273,7 +283,7 @@ describe('reports from a saved world', () => {
         load: { fuelKg: 60_000, payloadKg: 2000 },
       });
       engine.applyCommand({ type: 'acceptMission', missionId: id });
-      engine.applyCommand({ type: 'launchMission', missionId: id });
+      launchMissionWhenReady(engine, id);
       return id;
     };
 
@@ -291,7 +301,7 @@ describe('reports from a saved world', () => {
     land();
     engine.runSteps(60);
     // Second, from Rome: aborted, and turned back to Rome.
-    engine.applyCommand({ type: 'setLoad', aircraftId: TRANSPORT, fuelKg: 60_000, payloadKg: 0 });
+    fuelled(engine, TRANSPORT, 60_000);
     const aborted = deliver();
     engine.runSteps(3600);
     engine.applyCommand({
@@ -427,7 +437,9 @@ describe('reports from a saved world', () => {
     });
     expect(midFlight.aircraft.find((row) => row.aircraft.id === JET)?.time.byStatus).toMatchObject({
       in_flight: jetFlight.durationS - 600,
-      available: 600,
+      // Landed, and in its post-flight checks.
+      servicing: 600,
+      available: 0,
     });
     // Any way a stretch of time is divided, the parts add up to the whole.
     const cut = visit.startedTick + HOUR;

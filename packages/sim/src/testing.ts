@@ -167,9 +167,108 @@ export function fixtureLaunch(
   payloadKg = 0,
   /** The world the flight will leave in, so that its fuel allows for the weather. */
   context: PlanContext | null = null,
-): FleetCommand {
+): Extract<FleetCommand, { type: 'launchFlight' }> {
   const plan = generatePlan(model, origin, destination);
   const fuelKg = suggestedFuelKg(model, plan, payloadKg, context);
   if (fuelKg === null) throw new Error('Fixture route cannot be flown');
   return { type: 'launchFlight', aircraftId, plan, load: { fuelKg, payloadKg } };
+}
+
+/** What the helpers below need of an engine. */
+interface Steppable {
+  applyCommand(command: FleetCommand): boolean;
+  runSteps(steps: number): void;
+  snapshot(): { readonly fleet: { readonly aircraft: readonly { id: string; status: string }[] } };
+}
+
+/** Runs the world until an aircraft is no longer being serviced on the ground (ADR 0027). */
+export function untilServiced(engine: Steppable, aircraftId: string, limitS = 4 * 3600): void {
+  const servicing = () =>
+    engine.snapshot().fleet.aircraft.find((aircraft) => aircraft.id === aircraftId)?.status ===
+    'servicing';
+  for (let elapsed = 0; servicing(); elapsed++) {
+    if (elapsed > limitS) throw new Error(`${aircraftId} was still being serviced`);
+    engine.runSteps(1);
+  }
+}
+
+/**
+ * Brings an aircraft's fuel to a quantity and runs the world until that is done: what an operator
+ * does before a launch, now that fuel takes time to load.
+ */
+export function fuelled(engine: Steppable, aircraftId: string, fuelKg: number): void {
+  untilServiced(engine, aircraftId);
+  const status = engine.snapshot().fleet.aircraft.find((each) => each.id === aircraftId)?.status;
+  // Anything else cannot be fuelled, and the launch that follows says why it cannot go.
+  if (status !== 'available') return;
+  engine.applyCommand({ type: 'serviceAircraft', aircraftId, fuelKg });
+  untilServiced(engine, aircraftId);
+}
+
+/** What the helpers below need of an engine. */
+interface Launching extends Steppable {
+  snapshot(): {
+    readonly fleet: { readonly aircraft: readonly { id: string; status: string }[] };
+    readonly missions: {
+      readonly missions: readonly { id: string; aircraftId: string | null }[];
+    };
+  };
+  applyCommand(command: never): boolean;
+}
+
+/** Launches a flight once the fuel it departs with has been loaded. */
+export function launchFuelled(
+  engine: Steppable,
+  command: Extract<FleetCommand, { type: 'launchFlight' }>,
+): boolean {
+  fuelled(engine, command.aircraftId, command.load.fuelKg);
+  return engine.applyCommand(command);
+}
+
+/** Launches an accepted mission once its aircraft has been prepared. */
+export function launchMissionWhenReady(engine: Launching, missionId: string): boolean {
+  const aircraftId = engine
+    .snapshot()
+    .missions.missions.find((mission) => mission.id === missionId)?.aircraftId;
+  if (aircraftId) untilServiced(engine, aircraftId);
+  return engine.applyCommand({ type: 'launchMission', missionId } as never);
+}
+
+/**
+ * A launch command for the direct route with the tanks as full as they are when an aircraft is
+ * acquired: a flight that needs no fuelling first, for tests that are about something else.
+ */
+export function fixtureLaunchFull(
+  aircraftId: string,
+  model: PerformanceModel,
+  origin: RoutePoint,
+  destination: RoutePoint,
+  payloadKg = 0,
+): Extract<FleetCommand, { type: 'launchFlight' }> {
+  return {
+    type: 'launchFlight',
+    aircraftId,
+    plan: generatePlan(model, origin, destination),
+    load: { fuelKg: model.fuelCapacityKg, payloadKg },
+  };
+}
+
+/** Advances a runner's world, in slices of real time, until an aircraft is no longer serviced. */
+export function advanceUntilServiced(
+  runner: {
+    advance(): void;
+    view(): { readonly fleet: { readonly aircraft: readonly { id: string; status: string }[] } };
+  },
+  host: ManualHostClock,
+  aircraftId: string,
+  sliceMs = 100,
+): void {
+  const servicing = () =>
+    runner.view().fleet.aircraft.find((aircraft) => aircraft.id === aircraftId)?.status ===
+    'servicing';
+  for (let slices = 0; servicing(); slices++) {
+    if (slices > 1_000_000) throw new Error(`${aircraftId} was still being serviced`);
+    host.elapse(sliceMs);
+    runner.advance();
+  }
 }

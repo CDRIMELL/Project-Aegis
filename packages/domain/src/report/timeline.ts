@@ -20,6 +20,8 @@ export const STATUS_LOG_TYPES = [
   'maintenanceDue',
   'startMaintenance',
   'maintenanceCompleted',
+  'servicingStarted',
+  'servicingCompleted',
   'eventStarted',
 ] as const;
 
@@ -40,7 +42,14 @@ function changeOf(entry: LogRecord): Pick<StatusChange, 'status' | 'before'> | n
     case 'launchMission':
       return entry.kind === 'command' ? { status: 'in_flight', before: 'available' } : null;
     case 'flightCompleted':
+      // What follows in the same step says what the aircraft then is: a turnaround beginning,
+      // or maintenance falling due.
       return { status: 'available', before: 'in_flight' };
+    case 'servicingStarted':
+      // A turnaround after landing, or a preparation for a flight (ADR 0027).
+      return { status: 'servicing', before: 'available' };
+    case 'servicingCompleted':
+      return { status: 'available', before: 'servicing' };
     case 'flightFuelExhausted':
       return { status: 'unserviceable', before: 'in_flight' };
     case 'maintenanceDue':
@@ -96,6 +105,48 @@ export function maintenanceVisits(log: readonly LogRecord[]): MaintenanceVisit[]
   return visits;
 }
 
+/** One finished ground service: a turnaround after landing, or a preparation for a flight. */
+export interface ServiceRecord {
+  readonly aircraftId: string;
+  /** The mission the aircraft was being prepared for, when a mission asked for it. */
+  readonly missionId: string | null;
+  readonly reason: 'turnaround' | 'preparation';
+  readonly startedTick: number;
+  readonly completedTick: number;
+  readonly durationS: number;
+  readonly checksS: number;
+  /** Time in the refuelling stage, connecting included. */
+  readonly refuelS: number;
+  /** Fuel put aboard; negative when fuel was taken off. */
+  readonly loadedKg: number;
+  /** Fuel aboard when the service ended. */
+  readonly fuelKg: number;
+}
+
+const numberOf = (value: unknown): number => (typeof value === 'number' ? value : 0);
+
+/** The ground services a log records as finished, in the order they finished (ADR 0027). */
+export function serviceRecords(log: readonly LogRecord[]): ServiceRecord[] {
+  const records: ServiceRecord[] = [];
+  for (const entry of log) {
+    if (entry.type !== 'servicingCompleted' || entry.aircraftId === null) continue;
+    const durationS = numberOf(entry.payload.durationS);
+    records.push({
+      aircraftId: entry.aircraftId,
+      missionId: entry.missionId,
+      reason: entry.payload.reason === 'preparation' ? 'preparation' : 'turnaround',
+      startedTick: entry.tick - durationS,
+      completedTick: entry.tick,
+      durationS,
+      checksS: numberOf(entry.payload.checksS),
+      refuelS: numberOf(entry.payload.refuelS),
+      loadedKg: numberOf(entry.payload.loadedKg),
+      fuelKg: numberOf(entry.payload.fuelKg),
+    });
+  }
+  return records;
+}
+
 export interface StatusTime {
   /** Seconds in the window for which the status is known, by status. */
   readonly byStatus: Readonly<Record<AircraftCondition, number>>;
@@ -107,6 +158,7 @@ export interface StatusTime {
 const NO_TIME: Readonly<Record<AircraftCondition, number>> = {
   available: 0,
   in_flight: 0,
+  servicing: 0,
   maintenance_due: 0,
   in_maintenance: 0,
   unserviceable: 0,
@@ -149,12 +201,16 @@ export function statusTime(
   return { byStatus, recordedS, notRecordedS: toTick - ownedFrom - recordedS };
 }
 
-/** Share of recorded time, 0 to 1, the aircraft could have flown or was flying. */
+/**
+ * Share of recorded time, 0 to 1, the aircraft could have flown or was flying. Time being
+ * serviced on the ground counts against it, as time down for maintenance does: in neither could
+ * the aircraft have been launched.
+ */
 export function availability(time: StatusTime): number | null {
   if (time.recordedS <= 0) return null;
   const down =
     time.byStatus.maintenance_due + time.byStatus.in_maintenance + time.byStatus.unserviceable;
-  return (time.recordedS - down) / time.recordedS;
+  return (time.recordedS - down - time.byStatus.servicing) / time.recordedS;
 }
 
 /** Share of recorded time, 0 to 1, the aircraft was airborne. */

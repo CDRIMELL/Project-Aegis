@@ -1,4 +1,5 @@
 import type { EventStatus, EventType } from '../event';
+import { AIRCRAFT_STATUSES, type AircraftStatus } from '../ground';
 import type { RevisionIntent } from '../flight/revision';
 import type { MissionPriority, MissionSource, MissionStatus, MissionType } from '../mission';
 
@@ -7,14 +8,9 @@ import type { MissionPriority, MissionSource, MissionStatus, MissionType } from 
  * Each carries the values recorded when the thing happened; nothing here is re-evaluated.
  */
 
-export const AIRCRAFT_CONDITIONS = [
-  'available',
-  'in_flight',
-  'maintenance_due',
-  'in_maintenance',
-  'unserviceable',
-] as const;
-export type AircraftCondition = (typeof AIRCRAFT_CONDITIONS)[number];
+/** The states a report accounts an aircraft's time to: the aircraft statuses (ADR 0027). */
+export const AIRCRAFT_CONDITIONS = AIRCRAFT_STATUSES;
+export type AircraftCondition = AircraftStatus;
 
 /** An aircraft as it is at the report's moment. */
 export interface AircraftRecord {

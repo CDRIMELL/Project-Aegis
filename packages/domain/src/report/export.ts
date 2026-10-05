@@ -3,7 +3,7 @@ import { MISSION_TEMPLATES, type MissionStatus, type MissionType } from '../miss
 import { tickToIso } from './period';
 import type { EventRecord, FlightRecord, MissionRecord } from './records';
 import type { AircraftUtilisation, MaintenanceOutlookRow, Report } from './summary';
-import type { MaintenanceVisit } from './timeline';
+import type { MaintenanceVisit, ServiceRecord } from './timeline';
 
 /*
  * Report export (ADR 0025): a report as a table, and a table as CSV or JSON text. Pure: the same
@@ -63,6 +63,13 @@ export function filterAircraft(report: Report, filter: ReportFilter): AircraftUt
 export function filterOutlook(report: Report, filter: ReportFilter): MaintenanceOutlookRow[] {
   return report.outlook.filter(
     (row) => filter.aircraftId === null || row.aircraft.id === filter.aircraftId,
+  );
+}
+
+/** Ground services finished in the period, for the aircraft the filter names. */
+export function filterServices(report: Report, filter: ReportFilter): ServiceRecord[] {
+  return report.services.filter(
+    (service) => filter.aircraftId === null || service.aircraftId === filter.aircraftId,
   );
 }
 
@@ -218,6 +225,54 @@ function summaryTable(report: Report): ReportTable {
       value: totals.maintenanceVisits,
       unit: 'visits',
     },
+    {
+      key: 'turnarounds',
+      label: 'Turnarounds completed after landing',
+      value: totals.turnarounds,
+      unit: 'turnarounds',
+    },
+    {
+      key: 'turnaround_hours',
+      label: 'Time in turnaround',
+      value: hours(totals.turnaroundSeconds),
+      unit: 'h',
+    },
+    {
+      key: 'service_hours',
+      label: 'Time aircraft spent being serviced on the ground',
+      value: hours(totals.serviceSeconds),
+      unit: 'h',
+    },
+    {
+      key: 'refuelling_hours',
+      label: 'Time transferring fuel on the ground, connecting included',
+      value: hours(totals.refuellingSeconds),
+      unit: 'h',
+    },
+    {
+      key: 'fuel_loaded',
+      label: 'Fuel loaded on the ground',
+      value: round(totals.fuelLoadedKg),
+      unit: 'kg',
+    },
+    {
+      key: 'fuel_removed',
+      label: 'Fuel taken off on the ground',
+      value: round(totals.fuelRemovedKg),
+      unit: 'kg',
+    },
+    {
+      key: 'mission_preparations',
+      label: 'Missions whose aircraft had to be prepared before launch',
+      value: totals.missionPreparations,
+      unit: 'missions',
+    },
+    {
+      key: 'mission_preparation_hours',
+      label: 'Time those missions waited for their aircraft',
+      value: hours(totals.missionPreparationSeconds),
+      unit: 'h',
+    },
     { key: 'events_started', label: 'Events started', value: totals.eventsStarted, unit: 'events' },
     { key: 'aircraft', label: 'Aircraft', value: fleet.aircraft, unit: 'aircraft' },
     {
@@ -365,6 +420,17 @@ function fleetTable(report: Report, filter: ReportFilter): ReportTable {
         key: 'maintenance_visits',
         header: 'Maintenance completed',
         value: (r) => r.maintenanceVisits,
+      },
+      {
+        key: 'servicing_h',
+        header: 'Being serviced (h)',
+        value: (r) => hours(r.time.byStatus.servicing),
+      },
+      { key: 'services', header: 'Ground services completed', value: (r) => r.services },
+      {
+        key: 'fuel_loaded_kg',
+        header: 'Fuel loaded on the ground (kg)',
+        value: (r) => round(r.fuelLoadedKg),
       },
       {
         key: 'availability_pct',

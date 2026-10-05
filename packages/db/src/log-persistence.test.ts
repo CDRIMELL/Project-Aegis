@@ -10,7 +10,7 @@ import {
   type Checkpoint,
   type LogEntry,
 } from '@aegis/sim';
-import { FIXTURES, ManualHostClock, fixtureLaunch, fixtureOrder } from '@aegis/sim/testing';
+import { FIXTURES, ManualHostClock, fixtureLaunchFull, fixtureOrder } from '@aegis/sim/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openNodeDatabase, type NodeDatabase } from './node';
 import { SqliteWorldStore, WorldStorageError } from './world-store';
@@ -22,7 +22,8 @@ const SEED_FLEET = {
   type: 'seedStarterFleet',
   aircraft: [fixtureOrder('fastJet', places.prestwick), fixtureOrder('transport', places.newquay)],
 } as const;
-const LAUNCH = fixtureLaunch('AEGIS-FT-001', models.fastJet, places.prestwick, places.newquay);
+// With the fuel it was acquired with, so that nothing has to be loaded first (ADR 0027).
+const LAUNCH = fixtureLaunchFull('AEGIS-FT-001', models.fastJet, places.prestwick, places.newquay);
 
 const checkpoint = (engine: SimulationEngine, seq = 1): Checkpoint => ({
   seq,
@@ -60,6 +61,9 @@ describe('log persistence', () => {
       'seedStarterFleet',
       'launchFlight',
       'flightCompleted',
+      // The turnaround after landing (ADR 0027).
+      'servicingStarted',
+      'servicingCompleted',
     ]);
   });
 
@@ -212,6 +216,8 @@ describe('log continuity across application restarts', () => {
       'seedStarterFleet',
       'launchFlight',
       'flightCompleted',
+      'servicingStarted',
+      'servicingCompleted',
       'startMaintenance',
     ]);
     // Pacing commands are not part of the log.

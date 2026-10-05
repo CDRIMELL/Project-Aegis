@@ -2,6 +2,8 @@ import {
   decodeRngState,
   encodeRngState,
   isSpeedMultiplier,
+  SERVICE_REASONS,
+  SERVICE_STAGES,
   simInstant,
   type FlightPlan,
   type FlightRevision,
@@ -154,6 +156,25 @@ const revisionsJson = z.array(
   }),
 );
 const cautionJson = z.object({ eventId: z.string().min(1), sinceTick: count });
+const transferJson = z.object({
+  startTick: count,
+  flowStartTick: count,
+  fromKg: quantity,
+  toKg: quantity,
+  rateKgS: z.number().positive(),
+  completeTick: count,
+});
+const serviceJson = z.object({
+  reason: z.enum(SERVICE_REASONS),
+  startedTick: count,
+  stage: z.enum(SERVICE_STAGES),
+  checksCompleteTick: count,
+  fuelAtStartKg: quantity,
+  targetFuelKg: quantity.nullable(),
+  transfer: transferJson.nullable(),
+  refuellingSinceTick: count.nullable(),
+  missionId: z.string().min(1).nullable(),
+});
 const performanceJson = z.object({
   modelVersion: z.int().positive(),
   emptyMassKg: z.number().positive(),
@@ -200,6 +221,7 @@ const aircraftRow = z.object({
   flights: count,
   flightSecondsSinceMaintenance: quantity,
   maintenanceCompleteTick: count.nullable(),
+  service: z.string().nullable(),
   activeFlightId: z.string().nullable(),
   acquiredTick: count,
   performance: z.string().nullable(),
@@ -418,6 +440,7 @@ function toAircraft(row: unknown): AircraftState {
     flights: a.flights,
     flightSecondsSinceMaintenance: a.flightSecondsSinceMaintenance,
     maintenanceCompleteTick: a.maintenanceCompleteTick,
+    service: a.service === null ? null : json(serviceJson, a.service, `${what} service`),
     activeFlightId: a.activeFlightId,
     acquiredTick: a.acquiredTick,
     performance:
@@ -697,10 +720,12 @@ export class SqliteWorldStore implements WorldStore {
     const streamNames = streams.map((stream) => stream.name);
 
     const aircraftRows = fleet.aircraft.map((aircraft) => {
-      const { id, home, location, performance, performanceMissing, ...columns } = aircraft;
+      const { id, home, location, performance, performanceMissing, service, ...columns } = aircraft;
       return {
         id,
         ...columns,
+        // Written as NULL when there is none, so that a finished service is cleared.
+        service: service === null ? null : JSON.stringify(service),
         home: JSON.stringify(home),
         location: location === null ? null : JSON.stringify(location),
         performance: performance === null ? null : JSON.stringify(performance),

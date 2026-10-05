@@ -18,7 +18,7 @@ import {
   objectivesMet,
   resetObjectives,
   routeProblems,
-  suggestedFuelKg,
+  offeredFuelKg,
   type FlightLoad,
   type FlightPlan,
   type Hazards,
@@ -124,7 +124,7 @@ export interface ConfigurationOptions {
 
 /**
  * The configuration a template gives a brief and an aircraft: the default route from where the
- * aircraft is, fuel to arrive on reserve, and the template's objectives. The player may then
+ * aircraft is, fuel to arrive on reserve with a contingency, and the template's objectives. The player may then
  * change any of it. Without an aircraft that can fly, or with an incomplete brief, the result has
  * no route and the mission stays a draft.
  */
@@ -142,7 +142,7 @@ export function defaultConfiguration(
   let load: FlightLoad | null = null;
   if (model && plan) {
     const fuelKg =
-      suggestedFuelKg(model, plan, brief.payloadKg, options.context ?? null) ??
+      offeredFuelKg(model, plan, brief.payloadKg, options.context ?? null) ??
       // The route is beyond the aircraft: offer the most it can carry and let validation say so.
       Math.max(
         Math.min(
@@ -255,10 +255,23 @@ export interface FleetPort {
     tick: number,
     hazards: Hazards,
   ): string | null;
+  /**
+   * Brings a grounded aircraft's fuel to a target over time, exactly as the `serviceAircraft`
+   * command does (ADR 0027). Returns true if anything changed.
+   */
+  service(
+    aircraftId: string,
+    fuelKg: number,
+    tick: number,
+    missionId: string | null,
+    emit: EmitEvent,
+  ): boolean;
   /** Removes the payload from an aircraft on the ground. */
   unload(aircraftId: string): void;
   rebase(aircraftId: string, home: RoutePoint): void;
 }
+
+const NO_EVENTS: EmitEvent = () => undefined;
 
 export interface MissionsView {
   /** Newest first. */
@@ -435,6 +448,8 @@ export class Missions {
     tick: number,
     fleet: FleetPort,
     world: MissionWorld = { weather: null, hazards: { closures: [], disruptions: [] } },
+    /** Where the command reports what it caused, beyond itself (ADR 0027). */
+    emit: EmitEvent = NO_EVENTS,
   ): CommandEffect | null {
     const context: PlanContext | null = world.weather
       ? { weather: world.weather, departureTick: tick, hazards: world.hazards }
@@ -580,6 +595,12 @@ export class Missions {
           acceptance: assessment,
           assessment,
         });
+        // Committing the aircraft begins loading the mission's fuel (ADR 0027). An aircraft that
+        // cannot be fuelled yet, because maintenance comes first, is prepared by the operator
+        // when it can be.
+        if (mission.load && (aircraft.status === 'available' || aircraft.status === 'servicing')) {
+          fleet.service(aircraft.id, mission.load.fuelKg, tick, mission.id, emit);
+        }
         return { missionId: mission.id, aircraftId: aircraft.id };
       }
 

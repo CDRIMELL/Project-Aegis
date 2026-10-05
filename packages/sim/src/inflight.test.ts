@@ -18,7 +18,7 @@ import { CommandRejected, MAINTENANCE, type AircraftState, type FlightState } fr
 import type { LogEntry } from './log';
 import { ABORTED_REMARK, defaultConfiguration } from './missions';
 import { replayComparable, replayWorld } from './replay';
-import { FIXTURES, fixtureOrder } from './testing';
+import { FIXTURES, fixtureOrder, fuelled, untilServiced } from './testing';
 import { SIM_MODEL_VERSION } from './world';
 
 /*
@@ -80,6 +80,7 @@ const events = (engine: SimulationEngine, type: string) =>
 
 /** Newquay to Akrotiri with fuel to spare: about four and a half hours, 3,500 km. */
 function launchLong(engine: SimulationEngine, fuelKg = 60_000): void {
+  fuelled(engine, TRANSPORT, fuelKg);
   engine.applyCommand({
     type: 'launchFlight',
     aircraftId: TRANSPORT,
@@ -195,7 +196,7 @@ describe('changing a route in flight', { timeout: 60_000 }, () => {
 
     runUntil(engine, landed);
     expect(flightOf(engine).status).toBe('completed');
-    expect(aircraftOf(engine)).toMatchObject({ location: ROME, status: 'available' });
+    expect(aircraftOf(engine)).toMatchObject({ location: ROME, status: 'servicing' });
     expect(events(engine, 'flightCompleted')[0]?.payload).toMatchObject({
       destination: 'LIRF',
       plannedDestination: 'LCRA',
@@ -490,7 +491,7 @@ describe('a destination closed on arrival', { timeout: 60_000 }, () => {
     );
 
     runUntil(engine, landed);
-    expect(aircraftOf(engine)).toMatchObject({ location: places.akrotiri, status: 'available' });
+    expect(aircraftOf(engine)).toMatchObject({ location: places.akrotiri, status: 'servicing' });
     expect(events(engine, 'flightHoldEnded')[0]?.payload).toMatchObject({ reason: 'reopened' });
     expect(flightOf(engine).arrivedTick).toBeGreaterThan(T.topOfDescent + 1800);
     expect(flightOf(engine).progress.fuelKg).toBeLessThan(T.fuelKg);
@@ -546,7 +547,7 @@ describe('a destination closed on arrival', { timeout: 60_000 }, () => {
     expect(revise(engine, 'divert', [cyprus])).toBe(true);
     expect(flightOf(engine).progress.hold).toBeNull();
     runUntil(engine, landed);
-    expect(aircraftOf(engine)).toMatchObject({ location: cyprus, status: 'available' });
+    expect(aircraftOf(engine)).toMatchObject({ location: cyprus, status: 'servicing' });
     expect(flightOf(engine).progress.heldS).toBeGreaterThanOrEqual(600);
     expect(events(engine, 'flightHoldEnded')).toHaveLength(0);
   });
@@ -606,7 +607,9 @@ describe('aborting a mission in flight', { timeout: 60_000 }, () => {
       }),
     });
     const id = `MSN-${String(engine.snapshot().missions.nextNumber - 1).padStart(6, '0')}`;
+    // Accepting begins loading the mission's fuel; it launches when that is done (ADR 0027).
     engine.applyCommand({ type: 'acceptMission', missionId: id });
+    untilServiced(engine, TRANSPORT);
     engine.applyCommand({ type: 'launchMission', missionId: id });
     return id;
   }
@@ -625,6 +628,7 @@ describe('aborting a mission in flight', { timeout: 60_000 }, () => {
       load: { fuelKg: 60_000, payloadKg: config.load?.payloadKg ?? 5000 },
     });
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
+    untilServiced(engine, TRANSPORT);
     engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
     return 'MSN-000001';
   }
@@ -669,7 +673,7 @@ describe('aborting a mission in flight', { timeout: 60_000 }, () => {
     expect(flightOf(engine)).toEqual(flightBefore);
     expect(flightOf(engine).status).toBe('active');
     runUntil(engine, landed);
-    expect(aircraftOf(engine)).toMatchObject({ location: places.newquay, status: 'available' });
+    expect(aircraftOf(engine)).toMatchObject({ location: places.newquay, status: 'servicing' });
     // Landing changes nothing about a mission that was already over.
     expect(missionOf(engine, id)).toEqual(aborted);
     expect(events(engine, 'missionCompleted')).toHaveLength(0);
@@ -833,8 +837,9 @@ describe('the technical caution', { timeout: 60_000 }, () => {
     const hours = ((flightOf(cautioned).arrivedTick ?? 0) - since) / HOUR;
     const extra = aircraftOf(twin).conditionPct - aircraftOf(cautioned).conditionPct;
     expect(extra).toBeCloseTo(MAINTENANCE.cautionWearPctPerFlightHour * hours, 9);
-    expect(aircraftOf(twin).status).toBe('available');
-    expect(aircraftOf(cautioned).status).toBe('maintenance_due');
+    // The one without a caution is turned round; the one with it waits for maintenance instead.
+    expect(aircraftOf(twin).status).toBe('servicing');
+    expect(aircraftOf(cautioned)).toMatchObject({ status: 'maintenance_due', service: null });
     expect(events(cautioned, 'maintenanceDue')[0]?.payload).toEqual({
       reason: 'A technical caution showed in flight.',
     });
@@ -885,8 +890,10 @@ describe('the technical caution', { timeout: 60_000 }, () => {
           places: [places.prestwick, places.newquay, places.exeter, places.akrotiri],
         });
         for (let leg = 0; leg < 12; leg++) {
+          untilServiced(engine, TRANSPORT);
           const at = aircraftOf(engine);
           if (at.status !== 'available' || !at.location) break;
+          fuelled(engine, TRANSPORT, 60_000);
           const to = at.location.code === 'EGHQ' ? places.akrotiri : places.newquay;
           try {
             engine.applyCommand({
@@ -959,6 +966,7 @@ describe('determinism, replay and upgrade', { timeout: 60_000 }, () => {
       load: { fuelKg: 60_000, payloadKg: 3000 },
     });
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
+    while (aircraftOf(engine).status === 'servicing') step(engine, 1);
     engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
     step(engine, 3000);
     engine.applyCommand({ type: 'holdFlight', aircraftId: TRANSPORT });
@@ -1031,8 +1039,10 @@ describe('determinism, replay and upgrade', { timeout: 60_000 }, () => {
       // A small operating area, so that when the world closes an aerodrome it is often this one.
       engine.applyCommand({ type: 'setOperatingArea', places: [places.akrotiri, places.exeter] });
       for (let leg = 0; leg < 6 && !found; leg++) {
+        untilServiced(engine, TRANSPORT);
         const at = aircraftOf(engine);
         if (at.status !== 'available' || !at.location) break;
+        fuelled(engine, TRANSPORT, 60_000);
         const to = at.location.code === 'EGHQ' ? places.akrotiri : places.newquay;
         try {
           engine.applyCommand({
@@ -1098,7 +1108,7 @@ describe('determinism, replay and upgrade', { timeout: 60_000 }, () => {
     const savedAt = engine.clock.tick;
     const upgraded = SimulationEngine.restore(snapshot as never);
     expect(upgraded.snapshot().modelVersion).toBe(SIM_MODEL_VERSION);
-    expect(SIM_MODEL_VERSION).toBe(6);
+    expect(SIM_MODEL_VERSION).toBe(7);
     // What was logged under the old rules is kept; replay starts at the upgrade.
     expect(upgraded.snapshot().log.completeFromTick).toBe(savedAt);
     const flight = flightOf(upgraded);

@@ -8,7 +8,7 @@ import type { MissionsSnapshot } from './missions';
  * Version of the simulation rules. A saved world records the version that produced it;
  * bump this whenever a change would make an existing world behave differently.
  */
-export const SIM_MODEL_VERSION = 6;
+export const SIM_MODEL_VERSION = 7;
 
 /**
  * Oldest model version this build can load. Older worlds are upgraded on load: a model-1 world
@@ -18,7 +18,9 @@ export const SIM_MODEL_VERSION = 6;
  * missions have no acceptance figures, and its log is likewise complete only from the upgrade,
  * because accepting a mission now records them (ADR 0024); a model-5 world's flights have no
  * revisions and are as launched, and from the upgrade an aircraft that arrives at a closed
- * aerodrome holds instead of landing, including one already airborne (ADR 0026).
+ * aerodrome holds instead of landing, including one already airborne (ADR 0026); a model-6
+ * world's aircraft are not being serviced, and from the upgrade a landing begins a turnaround and
+ * a launch needs its fuel aboard (ADR 0027).
  */
 export const OLDEST_LOADABLE_MODEL_VERSION = 1;
 

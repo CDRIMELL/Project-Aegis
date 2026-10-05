@@ -5,7 +5,6 @@ import {
   RECENT_EVENTS,
   SimulationEngine,
   SimulationRunner,
-  planContextOf,
   replayComparable,
   replayWorld,
   type Checkpoint,
@@ -13,7 +12,14 @@ import {
   type WorldCommand,
 } from '@aegis/sim';
 import type { WorldEvent } from '@aegis/domain';
-import { FIXTURES, ManualHostClock, fixtureLaunch, fixtureOrder } from '@aegis/sim/testing';
+import {
+  FIXTURES,
+  ManualHostClock,
+  fixtureLaunch,
+  fixtureLaunchFull,
+  fixtureOrder,
+  launchFuelled,
+} from '@aegis/sim/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openNodeDatabase, type NodeDatabase } from './node';
 import { SqliteWorldStore, WorldStorageError } from './world-store';
@@ -41,7 +47,8 @@ function eventfulWorld(): SimulationEngine {
   const jet = engine.snapshot().fleet.aircraft.find((a) => a.id === 'AEGIS-FT-001');
   if (jet?.status === 'available') {
     try {
-      engine.applyCommand(
+      launchFuelled(
+        engine,
         fixtureLaunch(
           'AEGIS-FT-001',
           models.fastJet,
@@ -115,7 +122,8 @@ describe('event and environment persistence', () => {
   it('keeps the held conditions of a flight in the air, so it resumes in the same weather', async () => {
     const engine = SimulationEngine.create(newWorld());
     engine.applyCommand(SEED_FLEET);
-    engine.applyCommand(
+    launchFuelled(
+      engine,
       fixtureLaunch(
         'AEGIS-TR-001',
         models.transport,
@@ -148,7 +156,8 @@ describe('event and environment persistence', () => {
   it('loads a flight saved before the environment existed as one in still air', async () => {
     const engine = SimulationEngine.create(newWorld());
     engine.applyCommand(SEED_FLEET);
-    engine.applyCommand(
+    launchFuelled(
+      engine,
       fixtureLaunch('AEGIS-TR-001', models.transport, places.newquay, places.akrotiri),
     );
     engine.runSteps(100);
@@ -312,15 +321,9 @@ describe('environment and events across application restarts', () => {
     first.runner.execute(SET_AREA);
     // Twelve simulated hours, so that events exist.
     run(first, (12 * HOUR * 1000) / 100);
+    // With the fuel it was acquired with: nothing has to be loaded first (ADR 0027).
     first.runner.execute(
-      fixtureLaunch(
-        'AEGIS-TR-001',
-        models.transport,
-        places.newquay,
-        places.akrotiri,
-        0,
-        planContextOf(first.runner.view()),
-      ),
+      fixtureLaunchFull('AEGIS-TR-001', models.transport, places.newquay, places.akrotiri),
     );
     run(first, 60_000);
     await first.runner.flush();

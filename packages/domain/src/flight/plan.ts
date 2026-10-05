@@ -393,6 +393,28 @@ export function suggestedFuelKg(
   return Math.min(Math.ceil(high / 10) * 10, Math.floor(ceilingKg));
 }
 
+/**
+ * The fuel to offer for a plan: what arrives with the reserve, and a contingency on the trip fuel
+ * for leaving later than now (ADR 0027), within what the aircraft can lift. `null` if no load
+ * completes the plan.
+ */
+export function offeredFuelKg(
+  model: PerformanceModel,
+  plan: FlightPlan,
+  payloadKg: number,
+  context: PlanContext | null = null,
+): number | null {
+  const exact = suggestedFuelKg(model, plan, payloadKg, context);
+  if (exact === null) return null;
+  const ceilingKg = Math.min(
+    model.fuelCapacityKg,
+    model.maxTakeoffMassKg - model.emptyMassKg - payloadKg,
+  );
+  const tripKg = Math.max(exact - model.reserveFuelKg, 0);
+  const withContingency = exact + FLIGHT_ASSUMPTIONS.contingency.fractionOfTripFuel * tripKg;
+  return Math.min(Math.ceil(withContingency / 10) * 10, Math.floor(ceilingKg));
+}
+
 /** A sensible first plan: the direct route at the model's cruise altitude and speed. */
 export function generatePlan(
   model: PerformanceModel,

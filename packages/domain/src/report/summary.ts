@@ -21,10 +21,12 @@ import type {
 import {
   availability,
   maintenanceVisits,
+  serviceRecords,
   statusChanges,
   statusTime,
   utilisation,
   type MaintenanceVisit,
+  type ServiceRecord,
   type StatusChange,
   type StatusTime,
 } from './timeline';
@@ -70,6 +72,23 @@ export interface ActivityTotals {
   readonly offersLapsed: number;
   readonly maintenanceVisits: number;
   readonly maintenanceSeconds: number;
+  /** Ground services finished in the period: turnarounds and preparations (ADR 0027). */
+  readonly services: number;
+  readonly serviceSeconds: number;
+  readonly turnarounds: number;
+  readonly turnaroundSeconds: number;
+  /** Services that moved fuel, and the time they spent doing it, connecting included. */
+  readonly refuellings: number;
+  readonly refuellingSeconds: number;
+  /** Fuel put aboard on the ground, and fuel taken off. */
+  readonly fuelLoadedKg: number;
+  readonly fuelRemovedKg: number;
+  /**
+   * Preparations a mission asked for: launches that had to wait for their aircraft, and for how
+   * long in all.
+   */
+  readonly missionPreparations: number;
+  readonly missionPreparationSeconds: number;
   /** Events that began in the period. */
   readonly eventsStarted: number;
 }
@@ -85,6 +104,9 @@ export interface AircraftUtilisation {
   /** Mean duration of the flights in the period; `null` when there were none. */
   readonly meanFlightSeconds: number | null;
   readonly maintenanceVisits: number;
+  /** Ground services finished in the period, and the fuel they put aboard. */
+  readonly services: number;
+  readonly fuelLoadedKg: number;
   readonly time: StatusTime;
   /** 0 to 1; `null` when the period holds no recorded time for the aircraft. */
   readonly availability: number | null;
@@ -169,6 +191,8 @@ export interface Report {
   readonly maintenance: readonly MaintenanceVisit[];
   /** Still under way at the report's moment. */
   readonly maintenanceUnderWay: readonly MaintenanceVisit[];
+  /** Ground services finished in the period, by completion then aircraft. */
+  readonly services: readonly ServiceRecord[];
   /** Open at some moment in the period, by start then identifier. */
   readonly events: readonly EventRecord[];
   /**
@@ -216,7 +240,13 @@ export function activityTotals(
   missions: readonly MissionRecord[],
   visits: readonly MaintenanceVisit[],
   eventsStarted: number,
+  services: readonly ServiceRecord[] = [],
 ): ActivityTotals {
+  const turnarounds = services.filter((service) => service.reason === 'turnaround');
+  const refuellings = services.filter((service) => service.refuelS > 0);
+  const forMissions = services.filter(
+    (service) => service.reason === 'preparation' && service.missionId !== null,
+  );
   const withWeather = flights.filter(
     (flight) => flight.stillAirFuelUsedKg !== null && flight.stillAirDurationS !== null,
   );
@@ -250,6 +280,16 @@ export function activityTotals(
     offersLapsed: missions.filter((mission) => LAPSED.has(mission.status)).length,
     maintenanceVisits: visits.length,
     maintenanceSeconds: sum(visits, (visit) => (visit.completedTick ?? 0) - visit.startedTick),
+    services: services.length,
+    serviceSeconds: sum(services, (service) => service.durationS),
+    turnarounds: turnarounds.length,
+    turnaroundSeconds: sum(turnarounds, (service) => service.durationS),
+    refuellings: refuellings.length,
+    refuellingSeconds: sum(refuellings, (service) => service.refuelS),
+    fuelLoadedKg: sum(services, (service) => Math.max(service.loadedKg, 0)),
+    fuelRemovedKg: sum(services, (service) => Math.max(-service.loadedKg, 0)),
+    missionPreparations: forMissions.length,
+    missionPreparationSeconds: sum(forMissions, (service) => service.durationS),
     eventsStarted,
   };
 }
@@ -371,6 +411,9 @@ export function buildReport(
   const visits = maintenanceVisits(data.statusLog);
   const maintenance = visits.filter((visit) => inPeriod(visit.completedTick, period));
   const maintenanceUnderWay = visits.filter((visit) => visit.completedTick === null);
+  const services = serviceRecords(data.statusLog).filter((service) =>
+    inPeriod(service.completedTick, period),
+  );
 
   const changes = new Map<string, StatusChange[]>();
   for (const change of statusChanges(data.statusLog)) {
@@ -403,6 +446,11 @@ export function buildReport(
         missionsFailed: ownMissions.filter((mission) => mission.status === 'failed').length,
         meanFlightSeconds: own.length === 0 ? null : flightSeconds / own.length,
         maintenanceVisits: maintenance.filter((visit) => visit.aircraftId === each.id).length,
+        services: services.filter((service) => service.aircraftId === each.id).length,
+        fuelLoadedKg: sum(
+          services.filter((service) => service.aircraftId === each.id),
+          (service) => Math.max(service.loadedKg, 0),
+        ),
         time,
         availability: availability(time),
         utilisation: utilisation(time),
@@ -486,7 +534,7 @@ export function buildReport(
     asOfTick: data.asOfTick,
     epochMs: data.epochMs,
     modelVersion: data.modelVersion,
-    totals: activityTotals(flights, missions, maintenance, started(elapsed)),
+    totals: activityTotals(flights, missions, maintenance, started(elapsed), services),
     fleet,
     aircraft,
     outlook: maintenanceOutlook(data.aircraft, thresholds),
@@ -494,6 +542,7 @@ export function buildReport(
     missions,
     maintenance,
     maintenanceUnderWay,
+    services,
     events,
     // A period that ended before the report's moment has nothing in progress: it is over.
     inProgress:

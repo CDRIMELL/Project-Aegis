@@ -20,6 +20,9 @@ import {
   MemoryWorldStore,
   fixtureLaunch,
   fixtureOrder,
+  launchFuelled,
+  launchMissionWhenReady,
+  untilServiced,
 } from './testing';
 import { SIM_MODEL_VERSION, type WorldSnapshot } from './world';
 
@@ -214,11 +217,30 @@ describe('mission lifecycle', () => {
     expect(mission.assessment?.assessedTick).toBe(5);
     expect(mission.assessment?.durationS).toBeGreaterThan(0);
     expect(mission.assessment?.risk.contributors.length).toBeGreaterThan(0);
-    expect(log(engine).at(-1)).toMatchObject({
+    const entries = log(engine);
+    const accepted = entries.findIndex((entry) => entry.type === 'acceptMission');
+    expect(entries[accepted]).toMatchObject({
       type: 'acceptMission',
       actor: 'player',
       missionId: 'MSN-000001',
       aircraftId: TRANSPORT,
+    });
+    // Committing the aircraft began loading the mission's fuel, and the log says so (ADR 0027).
+    expect(entries.slice(accepted + 1).map((entry) => entry.type)).toEqual([
+      'servicingStarted',
+      'refuellingStarted',
+    ]);
+    expect(entries[accepted + 1]).toMatchObject({
+      kind: 'event',
+      actor: 'world',
+      tick: 5,
+      missionId: 'MSN-000001',
+      aircraftId: TRANSPORT,
+      payload: { reason: 'preparation', targetFuelKg: mission.load?.fuelKg },
+    });
+    expect(aircraftOf(engine, TRANSPORT)).toMatchObject({
+      status: 'servicing',
+      service: { reason: 'preparation', stage: 'refuelling', missionId: 'MSN-000001' },
     });
   });
 
@@ -235,7 +257,7 @@ describe('mission lifecycle', () => {
     // Six hours later the weather on the route is not what it was.
     engine.runSteps(6 * 3600);
     expect(missionOf(engine).acceptance).toEqual(accepted.acceptance);
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     const atLaunch = missionOf(engine);
     expect(atLaunch.acceptance).toEqual(accepted.acceptance);
     expect(atLaunch.assessment?.assessedTick).toBe(5 + 6 * 3600);
@@ -275,7 +297,7 @@ describe('mission lifecycle', () => {
     expect(mission.assessment).toEqual(missionOf(engine).assessment);
     expect(upgraded.snapshot().modelVersion).toBe(SIM_MODEL_VERSION);
     // It can still be launched and flown.
-    upgraded.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(upgraded, 'MSN-000001');
     runUntilFinished(upgraded);
     expect(missionOf(upgraded)).toMatchObject({ status: 'completed', acceptance: null });
   });
@@ -320,7 +342,7 @@ describe('mission lifecycle', () => {
       acceptance: null,
       assessment: null,
     });
-    expect(engine.applyCommand(flight)).toBe(true);
+    expect(launchFuelled(engine, flight)).toBe(true);
   });
 
   it('only lets an accepted mission be edited after it is released', () => {
@@ -347,7 +369,8 @@ describe('mission lifecycle', () => {
     expect(missionOf(engine)).toMatchObject({ status: 'cancelled', completedTick: 0 });
     // The aircraft is free again.
     expect(
-      engine.applyCommand(
+      launchFuelled(
+        engine,
         fixtureLaunch(TRANSPORT, models.transport, places.newquay, places.exeter),
       ),
     ).toBe(true);
@@ -355,7 +378,7 @@ describe('mission lifecycle', () => {
     const second = world();
     training(second);
     second.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-    second.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(second, 'MSN-000001');
     expect(() => second.applyCommand({ type: 'cancelMission', missionId: 'MSN-000001' })).toThrow(
       /is active; it cannot be cancelled/,
     );
@@ -386,7 +409,8 @@ describe('mission lifecycle', () => {
     expect(log(engine).at(-1)).toMatchObject({ type: 'missionFailed', tick: 20_001 });
     // A failed mission no longer holds its aircraft.
     expect(
-      engine.applyCommand(
+      launchFuelled(
+        engine,
         fixtureLaunch(TRANSPORT, models.transport, places.newquay, places.exeter),
       ),
     ).toBe(true);
@@ -399,7 +423,7 @@ describe('mission and flight', () => {
     training(engine);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
     engine.runSteps(30);
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     return engine;
   }
 
@@ -410,7 +434,7 @@ describe('mission and flight', () => {
     expect(mission).toMatchObject({
       status: 'active',
       flightId: 'FLT-000001',
-      actualStartTick: 30,
+      actualStartTick: engine.clock.tick,
     });
     expect(flight).toMatchObject({
       id: 'FLT-000001',
@@ -434,10 +458,11 @@ describe('mission and flight', () => {
     const engine = world();
     training(engine);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
+    untilServiced(engine, TRANSPORT);
     engine.applyCommand({ type: 'startMaintenance', aircraftId: TRANSPORT });
     const before = engine.snapshot();
     expect(() => engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' })).toThrow(
-      /not available \(in maintenance\)/,
+      /AEGIS-TR-001 is in maintenance/,
     );
     expect(engine.snapshot()).toEqual(before);
   });
@@ -491,7 +516,7 @@ describe('mission and flight', () => {
     runUntilFinished(engine);
     const aircraft = aircraftOf(engine, TRANSPORT);
     expect(aircraft).toMatchObject({
-      status: 'available',
+      status: 'servicing',
       location: places.newquay,
       flights: 1,
       activeFlightId: null,
@@ -507,16 +532,22 @@ describe('mission and flight', () => {
       'seedStarterFleet',
       'createMission',
       'acceptMission',
+      'servicingStarted',
+      'refuellingStarted',
+      'refuellingCompleted',
+      'servicingCompleted',
       'launchMission',
       'objectiveCompleted',
       'flightCompleted',
+      'servicingStarted',
       'objectiveCompleted',
       'objectiveCompleted',
       'objectiveCompleted',
       'missionCompleted',
     ]);
     const missionEntries = log(engine).filter((entry) => entry.missionId === 'MSN-000001');
-    expect(missionEntries).toHaveLength(9);
+    // The mission's own entries, and the preparation of its aircraft, which names it.
+    expect(missionEntries).toHaveLength(13);
     expect(log(engine).map((entry) => entry.seq)).toEqual(log(engine).map((_, i) => i + 1));
     expect(log(engine).at(-1)).toMatchObject({
       kind: 'event',
@@ -534,7 +565,7 @@ describe('mission and flight', () => {
       TRANSPORT,
     );
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     engine.runSteps(60);
     expect(aircraftOf(engine, TRANSPORT).payloadKg).toBe(9000);
     runUntilFinished(engine);
@@ -548,7 +579,7 @@ describe('mission and flight', () => {
     const engine = world();
     create(engine, 'ferry', briefFor('ferry', { destination: places.exeter }), TRANSPORT);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     runUntilFinished(engine);
     expect(aircraftOf(engine, TRANSPORT).home).toEqual(places.exeter);
   });
@@ -561,11 +592,12 @@ describe('mission and flight', () => {
       'emergency_response',
       briefFor('emergency_response', { destination: places.exeter, payloadKg: 5000 }),
       TRANSPORT,
-      { completeByTick: 120 },
+      { completeByTick: 2400 },
     );
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
-    engine.runSteps(121);
+    launchMissionWhenReady(engine, 'MSN-000001');
+    expect(engine.clock.tick).toBeLessThan(2400);
+    engine.runSteps(2401 - engine.clock.tick);
     // The deadline has passed: the objective has failed, the mission is still flying.
     const late = missionOf(engine);
     expect(late.status).toBe('active');
@@ -585,7 +617,7 @@ describe('mission and flight', () => {
       },
     });
     expect(aircraftOf(engine, TRANSPORT)).toMatchObject({
-      status: 'available',
+      status: 'servicing',
       location: places.exeter,
     });
     expect(logTypes(engine)).toContain('objectiveFailed');
@@ -608,7 +640,7 @@ describe('mission and flight', () => {
       ),
     });
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     runUntilFinished(engine);
     const mission = missionOf(engine);
     expect(mission.status).toBe('completed');
@@ -632,7 +664,7 @@ describe('determinism', () => {
     training(engine);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
     stepTo(100);
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     stepTo(9000);
     return engine.snapshot();
   }
@@ -646,11 +678,11 @@ describe('determinism', () => {
     training(engine);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
     engine.runSteps(25);
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     runUntilFinished(engine);
     create(engine, 'ferry', briefFor('ferry', { destination: places.exeter }), TRANSPORT);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000002' });
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000002' });
+    launchMissionWhenReady(engine, 'MSN-000002');
     engine.runSteps(400);
 
     const replayed = replayWorld(newWorld('replayed'), log(engine), engine.clock.tick);
@@ -822,7 +854,7 @@ describe('world-generated opportunities', () => {
     });
     expect(missionOf(engine, offer.id).status).toBe('planned');
     engine.applyCommand({ type: 'acceptMission', missionId: offer.id });
-    engine.applyCommand({ type: 'launchMission', missionId: offer.id });
+    launchMissionWhenReady(engine, offer.id);
     runUntilFinished(engine, offer.id);
 
     const mission = missionOf(engine, offer.id);
@@ -863,7 +895,7 @@ describe('world-generated opportunities', () => {
       }),
     });
     engine.applyCommand({ type: 'acceptMission', missionId: offer.id });
-    engine.applyCommand({ type: 'launchMission', missionId: offer.id });
+    launchMissionWhenReady(engine, offer.id);
     engine.runSteps(GENERATION.intervalTicks * 3);
 
     // More than the in-memory tail may have accumulated; rebuild the whole log by replaying.
@@ -880,7 +912,7 @@ describe('missions across save and restore', () => {
       let engine = world('restore');
       training(engine);
       engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-      engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+      launchMissionWhenReady(engine, 'MSN-000001');
       engine.runSteps(1500);
       if (interrupt) engine = SimulationEngine.restore(copyOf(engine.snapshot()));
       engine.runSteps(9000);
@@ -895,7 +927,7 @@ describe('missions across save and restore', () => {
     const engine = world();
     training(engine);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-    engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    launchMissionWhenReady(engine, 'MSN-000001');
     const snapshot = copyOf(engine.snapshot());
     const broken: WorldSnapshot = {
       ...snapshot,
@@ -950,6 +982,8 @@ describe('missions across save and restore', () => {
       'seedStarterFleet',
       'createMission',
       'acceptMission',
+      'servicingStarted',
+      'refuellingStarted',
     ]);
     expect(() => {
       runner.execute({ type: 'launchMission', missionId: 'MSN-000404' });
