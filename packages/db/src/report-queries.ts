@@ -3,11 +3,13 @@ import {
   type AircraftRecord,
   type EventRecord,
   type FlightRecord,
+  type InProgressFlight,
+  type InProgressMission,
   type LogRecord,
   type MissionRecord,
   type ReportData,
 } from '@aegis/domain';
-import { and, asc, eq, gte, inArray, isNotNull, lt, lte, max, ne, or } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, like, lt, lte, max, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AegisDb } from './client';
 import {
@@ -35,10 +37,15 @@ const progress = z.object({
   elapsedS: z.number(),
   distanceM: z.number(),
   fuelKg: z.number(),
+  // Absent on a flight from before in-flight control: it did not hold.
+  hold: z.object({ reason: z.enum(['operator', 'closure']) }).nullish(),
+  heldS: z.number().default(0),
+  closureLanding: z.boolean().default(false),
   // Absent on a flight that finished before the environment existed.
   exposure: z.object({ worstSeverity: z.number() }).optional(),
 });
 const plan = z.object({ points: z.array(point).min(2) });
+const revisions = z.array(z.object({ intent: z.enum(['reroute', 'divert', 'return']) }));
 const objectives = z.array(z.object({ required: z.boolean(), status: z.string() }));
 const assessment = z.object({ risk: z.object({ index: z.number() }) });
 const outcome = z.object({ summary: z.string() });
@@ -75,9 +82,20 @@ export async function loadReportData(
 ): Promise<LoadedReportData | null> {
   // A log entry that can change an aircraft's status. Events name an aircraft only when they
   // concern one, which today is an inspection finding.
+  // An event names an aircraft when it concerns one, but only an inspection finding changes the
+  // aircraft's status when it starts; a technical caution shows on an aircraft that stays in flight.
   const statusEntry = and(
-    inArray(simLog.type, [...STATUS_LOG_TYPES]),
     isNotNull(simLog.aircraftId),
+    or(
+      inArray(
+        simLog.type,
+        STATUS_LOG_TYPES.filter((type) => type !== 'eventStarted'),
+      ),
+      and(
+        eq(simLog.type, 'eventStarted'),
+        like(simLog.payload, '%"eventType":"maintenance_finding"%'),
+      ),
+    ),
   );
 
   const [
@@ -90,6 +108,8 @@ export async function loadReportData(
     eventRows,
     windowLog,
     priorLog,
+    activeFlightRows,
+    activeMissionRows,
   ] = await db.batch([
     db.select().from(simWorld),
     db.select().from(simClock),
@@ -146,6 +166,9 @@ export async function loadReportData(
         ),
       )
       .orderBy(asc(simLog.seq)),
+    // What is in the air at this checkpoint, to be shown apart from what has finished.
+    db.select().from(simFlight).where(eq(simFlight.status, 'active')).orderBy(asc(simFlight.id)),
+    db.select().from(simMission).where(eq(simMission.status, 'active')).orderBy(asc(simMission.id)),
   ]);
 
   const world = worlds[0];
@@ -153,11 +176,9 @@ export async function loadReportData(
   const checkpoint = checkpoints[0];
   if (!world || !clock || !checkpoint) return null;
 
-  // Which missions each event affected, and when each event was actually resolved. The events
-  // table keeps the end an event was given when it was created; a maintenance finding has no end
-  // of its own and lasts until the aircraft is maintained, so the log is where its end is.
-  // The log is append-only, so entries up to the checkpoint's tick read the same now as they did
-  // in the batch; and nothing can have happened to an event before it was created.
+  // Which missions each event affected. The log is append-only, so entries up to the checkpoint's
+  // tick read the same now as they did in the batch; and nothing can have happened to an event
+  // before it was created. When an event ended is in the events table itself (ADR 0026).
   const earliestEvent = eventRows.reduce(
     (earliest, row) => Math.min(earliest, row.createdTick),
     Number.POSITIVE_INFINITY,
@@ -170,12 +191,10 @@ export async function loadReportData(
           .from(simLog)
           .where(
             and(
+              eq(simLog.type, 'missionAffected'),
               gte(simLog.tick, earliestEvent),
               lte(simLog.tick, clock.tick),
-              or(
-                and(eq(simLog.type, 'missionAffected'), lt(simLog.tick, toTick)),
-                eq(simLog.type, 'eventResolved'),
-              ),
+              lt(simLog.tick, toTick),
             ),
           )
           .orderBy(asc(simLog.seq));
@@ -194,14 +213,16 @@ export async function loadReportData(
 
   const flights: FlightRecord[] = flightRows.map((row) => {
     const flown = read(progress, row.progress, `${row.id} progress`);
-    const { points } = read(plan, row.plan, `${row.id} plan`);
+    const route = routeOf(row);
     return {
       id: row.id,
       aircraftId: row.aircraftId,
       missionId: row.missionId,
       status: row.status === 'fuel_exhausted' ? 'fuel_exhausted' : 'completed',
-      origin: label(points[0] as z.infer<typeof point>),
-      destination: label(points.at(-1) as z.infer<typeof point>),
+      ...route,
+      heldS: flown.heldS,
+      landedDuringClosure: flown.closureLanding,
+      caution: row.caution !== null,
       departedTick: row.departedTick,
       arrivedTick: row.arrivedTick as number,
       durationS: flown.elapsedS,
@@ -214,6 +235,29 @@ export async function loadReportData(
       worstSeverity: flown.exposure?.worstSeverity ?? null,
     };
   });
+
+  const inProgressFlights: InProgressFlight[] = activeFlightRows.map((row) => {
+    const flown = read(progress, row.progress, `${row.id} progress`);
+    return {
+      id: row.id,
+      aircraftId: row.aircraftId,
+      missionId: row.missionId,
+      ...routeOf(row),
+      departedTick: row.departedTick,
+      elapsedS: flown.elapsedS,
+      distanceM: flown.distanceM,
+      fuelUsedKg: row.fuelAtDepartureKg - flown.fuelKg,
+      holding: flown.hold?.reason ?? null,
+    };
+  });
+  const inProgressMissions: InProgressMission[] = activeMissionRows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    aircraftId: row.aircraftId,
+    flightId: row.flightId,
+    launchedTick: row.actualStartTick,
+  }));
 
   const missions: MissionRecord[] = missionRows.map((row) => {
     const list = read(objectives, row.objectives, `${row.id} objectives`);
@@ -259,15 +303,9 @@ export async function loadReportData(
     payload: read(payload, row.payload, `log entry ${row.seq}`),
   }));
   const affected = new Map<string, string[]>();
-  const resolvedAt = new Map<string, number>();
   for (const row of eventLog) {
     const { eventId } = read(payload, row.payload, `log entry ${row.seq}`);
-    if (typeof eventId !== 'string') continue;
-    if (row.type === 'eventResolved') {
-      resolvedAt.set(eventId, row.tick);
-      continue;
-    }
-    if (row.missionId === null) continue;
+    if (typeof eventId !== 'string' || row.missionId === null) continue;
     const list = affected.get(eventId) ?? [];
     if (!list.includes(row.missionId)) list.push(row.missionId);
     affected.set(eventId, list);
@@ -292,8 +330,7 @@ export async function loadReportData(
           : null,
       createdTick: row.createdTick,
       startTick: row.startTick,
-      // When it actually ended, where the log says; otherwise the end it was given.
-      endTick: (row.status === 'resolved' ? resolvedAt.get(row.id) : undefined) ?? row.endTick,
+      endTick: row.endTick,
       aircraftId: row.aircraftId,
       raisedMissionId: row.missionId,
       affectedMissionIds: affected.get(row.id) ?? [],
@@ -308,8 +345,33 @@ export async function loadReportData(
     logCompleteFromTick: world.logCompleteFromTick,
     aircraft,
     flights,
+    inProgressFlights,
+    inProgressMissions,
     missions,
     events,
     statusLog,
+  };
+}
+
+/** Where a flight went from and to, as flown and as launched, and how its route was changed. */
+function routeOf(row: { id: string; plan: string; plannedPlan: string | null; revisions: string }) {
+  const { points } = read(plan, row.plan, `${row.id} plan`);
+  const destination = label(points.at(-1) as z.infer<typeof point>);
+  // Stored only when it differs: a flight that was never revised was launched as it was flown.
+  const planned =
+    row.plannedPlan === null
+      ? destination
+      : label(
+          read(plan, row.plannedPlan, `${row.id} planned_plan`).points.at(-1) as z.infer<
+            typeof point
+          >,
+        );
+  return {
+    origin: label(points[0] as z.infer<typeof point>),
+    destination,
+    plannedDestination: planned,
+    revisions: read(revisions, row.revisions, `${row.id} revisions`).map(
+      (revision) => revision.intent,
+    ),
   };
 }

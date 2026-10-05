@@ -227,3 +227,95 @@ export function assessRisk(input: RiskInput): RiskAssessment {
       .map(({ contributor }) => contributor),
   };
 }
+
+/** What the in-flight risk index is computed from: the rest of a flight, as projected. */
+export interface FlightRiskInput {
+  readonly model: PerformanceModel;
+  /** False when the fuel on board runs out before the destination. */
+  readonly completes: boolean;
+  readonly landingFuelKg: number;
+  /** The worst weather on the rest of the route, 0 to 1. */
+  readonly worstSeverity: number;
+  readonly arrivalVisibilityKm: number;
+  readonly disruptions: readonly { readonly eventId: string; readonly severity: number }[];
+  /** Seconds the aircraft would hold for a closed destination. */
+  readonly holdS: number;
+  readonly landsDuringClosure: boolean;
+  readonly destinationName: string;
+}
+
+/**
+ * The risk index for the rest of a flight already in the air (ADR 0026).
+ *
+ * It is the mission risk model, not a second one: the same factors, weights, scale and wording,
+ * restricted to the factors a decision made in flight can still change. The factors fixed at
+ * launch (suitability, range, time pressure and the rest) are left out, so the index is lower
+ * than a mission's and is comparable only with another in-flight index. It explains a choice; it
+ * does not make it.
+ */
+export function assessFlightRisk(input: FlightRiskInput): RiskAssessment {
+  const { model } = input;
+  const factors: { id: RiskFactor; value: number; explanation: string }[] = [];
+  const add = (id: RiskFactor, value: number, explanation: string) =>
+    factors.push({ id, value: clamp01(value), explanation });
+
+  if (!input.completes) {
+    add('fuel_margin', 1, 'The fuel on board runs out before the destination.');
+  } else {
+    const ratio = model.reserveFuelKg > 0 ? input.landingFuelKg / model.reserveFuelKg : 1;
+    add(
+      'fuel_margin',
+      1 - ratio,
+      `Lands with ${kg(input.landingFuelKg)} against a reserve of ${kg(model.reserveFuelKg)}.`,
+    );
+  }
+  add(
+    'weather_severity',
+    (input.worstSeverity - 0.2) / 0.6,
+    `The worst conditions on the rest of the route have a severity of ${Math.round(input.worstSeverity * 100)} out of 100.`,
+  );
+  add(
+    'visibility',
+    (10 - input.arrivalVisibilityKm) / 9,
+    `Visibility at the destination on arrival is forecast to be ${input.arrivalVisibilityKm.toFixed(0)} km.`,
+  );
+  const worstEvent = input.disruptions.reduce((worst, d) => Math.max(worst, d.severity), 0);
+  const closure = input.landsDuringClosure ? 1 : input.holdS > 0 ? 0.5 : 0;
+  const parts: string[] = [];
+  if (input.landsDuringClosure) {
+    parts.push(
+      `${input.destinationName} is closed: the aircraft would hold, then land during the closure with its fuel at reserve.`,
+    );
+  } else if (input.holdS > 0) {
+    parts.push(
+      `${input.destinationName} is closed on arrival: the aircraft would hold for ${Math.max(1, Math.round(input.holdS / 60))} min.`,
+    );
+  }
+  if (input.disruptions.length > 0) {
+    parts.push(
+      `The route passes through ${input.disruptions.length} affected area${input.disruptions.length === 1 ? '' : 's'}: ${input.disruptions.map((d) => d.eventId).join(', ')}.`,
+    );
+  }
+  add(
+    'events',
+    Math.max(worstEvent, closure),
+    parts.length === 0 ? 'No announced event lies on the rest of the route.' : parts.join(' '),
+  );
+
+  const totalWeight = Object.values(RISK_WEIGHTS).reduce((sum, weight) => sum + weight, 0);
+  const contributors: RiskContributor[] = factors.map((factor) => ({
+    id: factor.id,
+    label: LABELS[factor.id],
+    value: factor.value,
+    weight: RISK_WEIGHTS[factor.id],
+    points: (100 * RISK_WEIGHTS[factor.id] * factor.value) / totalWeight,
+    explanation: factor.explanation,
+  }));
+  return {
+    index: Math.round(contributors.reduce((sum, c) => sum + c.points, 0)),
+    contributors: contributors
+      .map((contributor, order) => ({ contributor, order }))
+      .sort((a, b) => b.contributor.points - a.contributor.points || a.order - b.order)
+      .map(({ contributor }) => contributor),
+  };
+}

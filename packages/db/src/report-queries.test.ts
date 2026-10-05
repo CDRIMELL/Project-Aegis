@@ -232,6 +232,173 @@ describe('reports from a saved world', () => {
     expect(report.fleet.availability).toBeGreaterThan(0.5);
   });
 
+  it('reports a diversion, an aborted mission and a flight still in the air, from a real history', async () => {
+    const ROME = {
+      ...places.exeter,
+      refId: 'fixture:lirf',
+      name: 'Rome',
+      code: 'LIRF',
+      lat: 41.8003,
+      lon: 12.2389,
+    };
+    const engine = SimulationEngine.create({ seed: 'operated-reports', epoch: FIXTURES.epoch });
+    engine.applyCommand({
+      type: 'seedStarterFleet',
+      aircraft: [
+        fixtureOrder('fastJet', places.prestwick),
+        fixtureOrder('transport', places.newquay),
+      ],
+    });
+    const transport = () => {
+      const found = engine.snapshot().fleet.aircraft.find((each) => each.id === TRANSPORT);
+      if (!found) throw new Error('no transport');
+      return found;
+    };
+    const flying = () => transport().activeFlightId !== null;
+    const land = () => {
+      for (let i = 0; i < 4000 && flying(); i++) engine.runSteps(20);
+    };
+    const deliver = () => {
+      const before = engine.snapshot().missions.nextNumber;
+      const id = `MSN-${String(before).padStart(6, '0')}`;
+      engine.applyCommand({
+        type: 'createMission',
+        missionType: 'logistics',
+        ...defaultConfiguration(
+          'logistics',
+          briefFor('logistics', { destination: places.akrotiri, payloadKg: 2000 }),
+          transport(),
+          { context: engine.planContext() },
+        ),
+        load: { fuelKg: 60_000, payloadKg: 2000 },
+      });
+      engine.applyCommand({ type: 'acceptMission', missionId: id });
+      engine.applyCommand({ type: 'launchMission', missionId: id });
+      return id;
+    };
+
+    // First: diverted to Rome, after holding for ten minutes. The delivery fails on landing.
+    const diverted = deliver();
+    engine.runSteps(5400);
+    engine.applyCommand({ type: 'holdFlight', aircraftId: TRANSPORT });
+    engine.runSteps(600);
+    engine.applyCommand({
+      type: 'reviseFlight',
+      aircraftId: TRANSPORT,
+      intent: 'divert',
+      points: [ROME],
+    });
+    land();
+    engine.runSteps(60);
+    // Second, from Rome: aborted, and turned back to Rome.
+    engine.applyCommand({ type: 'setLoad', aircraftId: TRANSPORT, fuelKg: 60_000, payloadKg: 0 });
+    const aborted = deliver();
+    engine.runSteps(3600);
+    engine.applyCommand({
+      type: 'abortMission',
+      missionId: aborted,
+      landing: { intent: 'return', points: [ROME] },
+    });
+    const abortTick = engine.clock.tick;
+    land();
+    engine.runSteps(60);
+    // Third: still in the air when the world is saved.
+    const airborne = deliver();
+    engine.runSteps(2400);
+    await store.save(checkpoint(engine));
+
+    const report = await reportFrom(database);
+    expect(report.flights.map((flight) => [flight.destination, flight.plannedDestination])).toEqual(
+      [
+        ['LIRF', 'LCRA'],
+        ['LIRF', 'LCRA'],
+      ],
+    );
+    expect(report.flights[0]).toMatchObject({ revisions: ['divert'], heldS: 600 });
+    expect(report.flights[1]).toMatchObject({ revisions: ['return'], heldS: 0 });
+    expect(report.missions.map((mission) => [mission.id, mission.status])).toEqual([
+      [diverted, 'failed'],
+      [aborted, 'aborted'],
+    ]);
+    expect(report.missions[0]?.summary).toMatch(/Landed at Rome, not at Akrotiri/);
+    // The aborted mission ended when it was aborted, not when its flight landed.
+    expect(report.missions[1]?.completedTick).toBe(abortTick);
+    expect(report.flights[1]?.arrivedTick).toBeGreaterThan(abortTick);
+    expect(report.totals).toMatchObject({
+      flights: 2,
+      missionsFailed: 1,
+      missionsAborted: 1,
+      missionsCompleted: 0,
+      flightsDiverted: 2,
+      routeRevisions: 2,
+      heldSeconds: 600,
+    });
+
+    // What is in the air is shown apart, with what it has used so far, and is in no total.
+    const snapshot = engine.snapshot();
+    const active = snapshot.fleet.flights.find((flight) => flight.status === 'active');
+    expect(report.inProgress.flights).toEqual([
+      expect.objectContaining({
+        id: active?.id,
+        aircraftId: TRANSPORT,
+        missionId: airborne,
+        destination: 'LCRA',
+        elapsedS: 2400,
+        fuelUsedKg: (active?.fuelAtDepartureKg ?? 0) - (active?.progress.fuelKg ?? 0),
+        holding: null,
+      }),
+    ]);
+    expect(report.inProgress.missions.map((mission) => mission.id)).toEqual([airborne]);
+    const finished = snapshot.fleet.flights.filter((flight) => flight.status !== 'active');
+    expect(report.totals.flightSeconds).toBe(
+      finished.reduce((sum, flight) => sum + flight.progress.elapsedS, 0),
+    );
+    // The aircraft's time in the air does include the flight under way: it is airborne now,
+    // and the period runs to the present tick inclusive, which is one more than has elapsed.
+    const row = report.aircraft.find((each) => each.aircraft.id === TRANSPORT);
+    expect(row?.time.byStatus.in_flight).toBe(
+      snapshot.fleet.flights.reduce((sum, flight) => sum + flight.progress.elapsedS, 0) + 1,
+    );
+    expect(row?.time.notRecordedS).toBe(0);
+
+    // A period that is over shows nothing in progress, and is the same as it will always be.
+    const past = await reportFrom(database, { fromTick: 0, toTick: abortTick + 1 });
+    expect(past.inProgress).toEqual({ flights: [], missions: [] });
+    expect(past.missions.map((mission) => mission.id)).toEqual([diverted, aborted]);
+    expect(past.flights).toHaveLength(1);
+  });
+
+  it('does not take a technical caution for a change of status', async () => {
+    const engine = operations();
+    await store.save(checkpoint(engine));
+    const before = await reportFrom(database);
+    const flight = before.flights.find((each) => each.aircraftId === TRANSPORT);
+    if (!flight) throw new Error('no transport flight');
+    // A caution shows on the transport ten minutes into a flight: an event that names the
+    // aircraft, and leaves it exactly as airborne as it was.
+    database.transport.connection
+      .prepare(
+        `INSERT INTO sim_log (seq, tick, kind, type, actor, aircraft_id, payload)
+         VALUES (?, ?, 'event', 'eventStarted', 'world', ?, ?)`,
+      )
+      .run(
+        engine.snapshot().log.nextSeq,
+        flight.departedTick + 600,
+        TRANSPORT,
+        JSON.stringify({ eventId: 'EVT-000777', eventType: 'technical_caution' }),
+      );
+    const after = await reportFrom(database);
+    expect(after.aircraft.map((row) => row.time)).toEqual(before.aircraft.map((row) => row.time));
+    // A period that opens after the caution still knows the aircraft was in flight.
+    const window = { fromTick: flight.departedTick + 900, toTick: flight.arrivedTick };
+    const inFlight = await reportFrom(database, window);
+    expect(inFlight.aircraft.find((row) => row.aircraft.id === TRANSPORT)?.time).toMatchObject({
+      recordedS: window.toTick - window.fromTick,
+      notRecordedS: 0,
+      byStatus: expect.objectContaining({ in_flight: window.toTick - window.fromTick }) as unknown,
+    });
+  });
+
   it('knows what each aircraft was when a period opened, from the last transition before it', async () => {
     const engine = operations();
     await store.save(checkpoint(engine));

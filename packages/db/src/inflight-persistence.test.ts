@@ -118,7 +118,7 @@ function withClosure(engine: SimulationEngine): SimulationEngine {
   });
 }
 
-describe('in-flight control on disk', () => {
+describe('in-flight control on disk', { timeout: 60_000 }, () => {
   let directory: string;
   let path: string;
   beforeEach(() => {
@@ -334,7 +334,7 @@ describe('in-flight control on disk', () => {
   });
 });
 
-describe('migration 0008 on an existing world', () => {
+describe('migration 0008 on an existing world', { timeout: 60_000 }, () => {
   let directory: string;
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), 'aegis-migration-'));

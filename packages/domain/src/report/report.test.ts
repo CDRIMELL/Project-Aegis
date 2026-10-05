@@ -63,6 +63,11 @@ const flight = (
   status: 'completed',
   origin: 'EGHQ',
   destination: 'EGHQ',
+  plannedDestination: 'EGHQ',
+  revisions: [],
+  heldS: 0,
+  landedDuringClosure: false,
+  caution: false,
   departedTick,
   arrivedTick,
   durationS: arrivedTick - departedTick,
@@ -181,6 +186,8 @@ const DATA: ReportData = {
       stillAirFuelUsedKg: null,
     }),
   ],
+  inProgressFlights: [],
+  inProgressMissions: [],
   missions: [
     mission('MSN-000001', 'completed', 3700, {
       flightId: 'FLT-000001',
@@ -502,6 +509,7 @@ describe('a report for a period', () => {
         completed: 0,
         failed: 1,
         cancelled: 0,
+        aborted: 0,
         lapsed: 0,
         fuelUsedKg: 6000,
         flightSeconds: 4000,
@@ -511,6 +519,7 @@ describe('a report for a period', () => {
         completed: 2,
         failed: 0,
         cancelled: 1,
+        aborted: 0,
         lapsed: 1,
         fuelUsedKg: 3700 * 1.5,
         flightSeconds: 3700,
@@ -603,6 +612,160 @@ describe('a report for a period', () => {
       reason: 'Has flown 82 % of the hours allowed between maintenance.',
     });
     expect(outlook.find((row) => row.aircraft.id === 'D')?.conditionMarginPct).toBe(0);
+  });
+});
+
+describe('what was done in flight', () => {
+  /** A is diverted and holds; B's mission is aborted and it turns back; C is still in the air. */
+  const operated: ReportData = {
+    ...DATA,
+    flights: [
+      flight('FLT-000001', 'A', 100, 3700, {
+        missionId: 'MSN-000001',
+        destination: 'LIRF',
+        plannedDestination: 'LCRA',
+        revisions: ['reroute', 'divert'],
+        heldS: 900,
+        stillAirDurationS: null,
+        stillAirFuelUsedKg: null,
+      }),
+      flight('FLT-000002', 'B', 5000, 9000, {
+        missionId: 'MSN-000002',
+        destination: 'EGHQ',
+        plannedDestination: 'LCRA',
+        revisions: ['return'],
+        landedDuringClosure: true,
+        caution: true,
+      }),
+    ],
+    missions: [
+      mission('MSN-000001', 'failed', 3700, { flightId: 'FLT-000001' }),
+      mission('MSN-000002', 'aborted', 7000, { aircraftId: 'B', flightId: 'FLT-000002' }),
+    ],
+    inProgressFlights: [
+      {
+        id: 'FLT-000009',
+        aircraftId: 'C',
+        missionId: 'MSN-000009',
+        origin: 'EGHQ',
+        destination: 'LCRA',
+        plannedDestination: 'LCRA',
+        departedTick: 128_000,
+        elapsedS: 2000,
+        distanceM: 400_000,
+        fuelUsedKg: 3000,
+        holding: 'closure',
+        revisions: [],
+      },
+    ],
+    inProgressMissions: [
+      {
+        id: 'MSN-000009',
+        type: 'logistics',
+        title: 'Delivery',
+        aircraftId: 'C',
+        flightId: 'FLT-000009',
+        launchedTick: 128_000,
+      },
+    ],
+  };
+
+  it('counts aborted missions, diversions, changes of route and time held', () => {
+    const { totals, missionTypes } = report(BOTH, operated);
+    expect(totals).toMatchObject({
+      missionsCompleted: 0,
+      missionsFailed: 1,
+      missionsAborted: 1,
+      missionsCancelled: 0,
+      flightsDiverted: 2,
+      routeRevisions: 3,
+      heldSeconds: 900,
+    });
+    expect(missionTypes).toEqual([
+      expect.objectContaining({ type: 'training', failed: 1, aborted: 1, completed: 0 }),
+    ]);
+    // Neither flight has a plan flown in still air to be compared with.
+    expect(totals.weatherFuelKg).toBe(100);
+  });
+
+  it('reports where a flight was launched to beside where it landed, and never overwrites one with the other', () => {
+    const fuel = reportTable('fuel', report(BOTH, operated)).rows;
+    expect(fuel[0]).toMatchObject({
+      flight: 'FLT-000001',
+      to: 'LIRF',
+      planned_to: 'LCRA',
+      revisions: 'reroute divert',
+      held_h: 0.25,
+      landed_during_closure: 'no',
+      caution: 'no',
+    });
+    expect(fuel[1]).toMatchObject({
+      to: 'EGHQ',
+      planned_to: 'LCRA',
+      revisions: 'return',
+      landed_during_closure: 'yes',
+      caution: 'yes',
+    });
+    const missions = reportTable('missions', report(BOTH, operated)).rows;
+    expect(missions[0]).toMatchObject({
+      mission: 'MSN-000001',
+      outcome: 'failed',
+      landed_at: 'LIRF',
+      planned_to: 'LCRA',
+    });
+    // The aborted mission ended at the abort; its flight landed later, and is the flight's row.
+    expect(missions[1]).toMatchObject({
+      mission: 'MSN-000002',
+      outcome: 'aborted',
+      landed_at: 'EGHQ',
+      planned_to: 'LCRA',
+    });
+    // An undiverted flight reports the same place twice, and no changes.
+    expect(reportTable('fuel', report(BOTH)).rows[0]).toMatchObject({
+      to: 'EGHQ',
+      planned_to: 'EGHQ',
+      revisions: '',
+      held_h: 0,
+    });
+    const summary = reportTable('summary', report(BOTH, operated)).rows;
+    expect(summary.find((row) => row.metric === 'missions_aborted')?.value).toBe(1);
+    expect(summary.find((row) => row.metric === 'flights_diverted')?.value).toBe(2);
+    expect(summary.find((row) => row.metric === 'held_hours')?.value).toBe(0.25);
+  });
+
+  it('shows what is still in the air apart, and counts none of it', () => {
+    const current = report({ fromTick: 0, toTick: 10_000_000 }, operated);
+    expect(current.inProgress.flights).toHaveLength(1);
+    expect(current.inProgress.flights[0]).toMatchObject({
+      id: 'FLT-000009',
+      elapsedS: 2000,
+      fuelUsedKg: 3000,
+      holding: 'closure',
+    });
+    expect(current.inProgress.missions.map((each) => each.id)).toEqual(['MSN-000009']);
+    // Totals, lists and series hold only what has finished.
+    const without = report(
+      { fromTick: 0, toTick: 10_000_000 },
+      { ...operated, inProgressFlights: [], inProgressMissions: [] },
+    );
+    expect(current.totals).toEqual(without.totals);
+    expect(current.flights).toEqual(without.flights);
+    expect(current.missions).toEqual(without.missions);
+    expect(current.series).toEqual(without.series);
+    expect(current.aircraft).toEqual(without.aircraft);
+    expect(current.totals.flights).toBe(2);
+    expect(current.totals.fuelUsedKg).toBe(7600 * 1.5);
+    for (const name of ['summary', 'missions', 'fleet', 'fuel'] as const) {
+      expect(toCsv(reportTable(name, current))).toBe(toCsv(reportTable(name, without)));
+      expect(toCsv(reportTable(name, current))).not.toContain('FLT-000009');
+    }
+  });
+
+  it('shows nothing in progress for a period that is already over', () => {
+    expect(report(DAY_ONE, operated).inProgress).toEqual({ flights: [], missions: [] });
+    // A period that reaches the present does.
+    const today = report({ fromTick: MIDNIGHT, toTick: operated.asOfTick + 1 }, operated);
+    expect(today.inProgress.flights).toHaveLength(1);
   });
 });
 

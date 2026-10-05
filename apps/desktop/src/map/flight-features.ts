@@ -1,4 +1,10 @@
-import { intermediatePoint, positionAlong, routeGeometry, type RoutePoint } from '@aegis/domain';
+import {
+  intermediatePoint,
+  positionAlong,
+  remainingPoints,
+  routeGeometry,
+  type RoutePoint,
+} from '@aegis/domain';
 import type { FlightView } from '@aegis/sim';
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 
@@ -83,19 +89,55 @@ export function aircraftFeatures(
   };
 }
 
-/** The planned route of each active flight, as one line per flight. */
+export interface RouteProperties {
+  readonly id: string;
+  readonly selected: boolean;
+  /** True for the part already flown, which is drawn dimmer. */
+  readonly flown: boolean;
+}
+
+/**
+ * The route of each active flight as two lines: what it has flown, and what is still to come.
+ * The route is the one the flight is on now, whatever it was launched with (ADR 0026).
+ */
 export function activeRouteFeatures(
   flights: readonly FlightView[],
   selectedAircraftId: string | null,
-): FeatureCollection<LineString, { id: string; selected: boolean }> {
-  return {
-    type: 'FeatureCollection',
-    features: flights.map((flight) => ({
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: routeCoordinates(flight.points) },
-      properties: { id: flight.aircraftId, selected: flight.aircraftId === selectedAircraftId },
-    })),
-  };
+): FeatureCollection<LineString, RouteProperties> {
+  const features: Feature<LineString, RouteProperties>[] = [];
+  for (const flight of flights) {
+    const here: RoutePoint = {
+      kind: 'waypoint',
+      name: 'Present position',
+      lat: flight.lat,
+      lon: flight.lon,
+      elevationM: 0,
+    };
+    const ahead = remainingPoints(
+      { points: flight.points, cruiseAltitudeM: 0, cruiseSpeedKmh: 1 },
+      flight.distanceM,
+    );
+    const behind = flight.points.slice(0, flight.points.length - ahead.length);
+    const base = { id: flight.aircraftId, selected: flight.aircraftId === selectedAircraftId };
+    const line = (points: readonly RoutePoint[], flown: boolean) => {
+      // A leg of no length (the aircraft exactly on a point) draws nothing.
+      const distinct = points.filter(
+        (point, index) =>
+          index === 0 ||
+          point.lat !== points[index - 1]?.lat ||
+          point.lon !== points[index - 1]?.lon,
+      );
+      if (distinct.length < 2) return;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: routeCoordinates(distinct) },
+        properties: { ...base, flown },
+      });
+    };
+    line([...behind, here], true);
+    line([here, ...ahead], false);
+  }
+  return { type: 'FeatureCollection', features };
 }
 
 export type DraftPointRole = 'origin' | 'destination' | 'waypoint' | 'midpoint';

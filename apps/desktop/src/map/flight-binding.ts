@@ -1,5 +1,6 @@
 import type { FlightView, SimView } from '@aegis/sim';
 import { insertWaypoint, moveWaypoint, removeWaypoint } from '../fleet/plan-edit';
+import { followAircraft } from '../operations/inflight-logic';
 import { select, useMapStore } from '../state/map-store';
 import { editDraft, usePlanStore } from '../state/plan-store';
 import { useSimStore } from '../state/sim-store';
@@ -66,7 +67,14 @@ export function startFlightBinding(): void {
 
   const drawRoutes = (flights: readonly FlightView[]): void => {
     const selected = highlighted();
-    const key = `${flights.map((flight) => flight.id).join(',')}|${selected ?? ''}`;
+    // Redrawn when a flight starts or ends, a route is changed, the selection moves, or an
+    // aircraft has covered another fiftieth of its route: the flown part is drawn dimmer.
+    const key = `${flights
+      .map(
+        (flight) =>
+          `${flight.id}:${flight.revisions.length}:${Math.floor((flight.distanceM / Math.max(flight.totalM, 1)) * 50)}`,
+      )
+      .join(',')}|${selected ?? ''}`;
     if (key === routesKey) return;
     routesKey = key;
     controller.setFlightRoutes(activeRouteFeatures(flights, selected));
@@ -90,6 +98,18 @@ export function startFlightBinding(): void {
       if (!airborne.has(id)) pairs.delete(id);
     }
     drawRoutes(flights);
+    // A draft of the rest of a flight starts where the aircraft is, and follows it.
+    const plan = usePlanStore.getState();
+    const revised = plan.revision
+      ? flights.find((flight) => flight.aircraftId === plan.planningAircraftId)
+      : undefined;
+    if (revised && plan.draft) {
+      const followed = followAircraft(plan.draft, revised);
+      if (followed !== plan.draft) usePlanStore.setState({ draft: followed });
+    } else if (plan.revision && plan.planningAircraftId && !revised && view) {
+      // The flight landed while its route was being changed: there is nothing left to change.
+      usePlanStore.setState({ planningAircraftId: null, draft: null, revision: null });
+    }
     // While nothing is flying there is no animation loop; draw once per update instead.
     if (frame === null) drawAircraft();
   };

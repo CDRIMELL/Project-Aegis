@@ -30,6 +30,7 @@ import { useSimStore } from '../../state/sim-store';
 import { useAsync } from '../shared/useAsync';
 import { AircraftPanel } from './AircraftPanel';
 import { FlightPlannerPanel } from './FlightPlannerPanel';
+import { RevisionPanel } from './RevisionPanel';
 import { MissionPanel } from './MissionPanel';
 import { SelectionDetail } from './SelectionDetail';
 
@@ -280,6 +281,12 @@ function SidePanel() {
   const planningId = usePlanStore((state) => state.planningAircraftId);
   const planningMissionId = usePlanStore((state) => state.missionId);
   const draft = usePlanStore((state) => state.draft);
+  const revision = usePlanStore((state) => state.revision);
+  const flight = useSimStore(
+    (state) =>
+      state.view?.fleet.activeFlights.find((candidate) => candidate.aircraftId === planningId) ??
+      null,
+  );
   const missionId = planningMissionId ?? (selection?.type === 'mission' ? selection.id : null);
   const mission = useSimStore(
     (state) =>
@@ -290,6 +297,15 @@ function SidePanel() {
     (state) => state.view?.fleet.aircraft.find((candidate) => candidate.id === wantedId) ?? null,
   );
 
+  // The rest of a flight in the air is being changed. If the flight lands first, there is
+  // nothing left to change, and the panel gives way to the aircraft.
+  if (planningId && aircraft && revision) {
+    return flight && draft ? (
+      <RevisionPanel aircraft={aircraft} flight={flight} draft={draft} revision={revision} />
+    ) : (
+      <AircraftPanel aircraft={aircraft} />
+    );
+  }
   if (planningId && aircraft) {
     return (
       <FlightPlannerPanel

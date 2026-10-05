@@ -139,7 +139,10 @@ function EventDetail({ event }: { readonly event: WorldEvent }) {
     () => (weather && at ? conditionsAt(weather, tick - (tick % REFRESH_TICKS), at, 0) : null),
     [weather, at, tick],
   );
-  const lasting = event.type === 'maintenance_finding';
+  // A finding and a caution have no end of their own: they last until the aircraft is maintained.
+  const lasting =
+    (event.type === 'maintenance_finding' || event.type === 'technical_caution') &&
+    event.status !== 'resolved';
 
   return (
     <div className="flex max-w-6xl flex-col gap-4">
@@ -215,14 +218,16 @@ function EventDetail({ event }: { readonly event: WorldEvent }) {
             </ul>
             <Hint>
               {event.type === 'aerodrome_closure'
-                ? 'Aircraft already airborne and bound for the aerodrome still land there. The planner refuses a departure from it, and a plan that would arrive during the closure.'
+                ? 'The planner refuses a departure from it, and a plan that would arrive during the closure. An aircraft already in the air that arrives while it is closed holds short of it until it reopens, or is diverted; with its fuel down to reserve it lands regardless and is inspected.'
                 : event.type === 'severe_weather'
                   ? 'The effect is the weather itself: the planner and the simulation both fly through it.'
                   : event.type === 'navigation_disruption'
                     ? 'A route through the area is allowed, with a warning and a higher risk index.'
                     : event.type === 'logistics_disruption'
                       ? 'An urgent delivery is offered in Missions while the disruption lasts.'
-                      : 'The aircraft cannot launch until maintenance has been done. Start it from Fleet.'}
+                      : event.type === 'technical_caution'
+                        ? 'The aircraft may fly on. It wears faster for as long as it does, and is due maintenance when it lands. Whether to land early is the operator’s decision.'
+                        : 'The aircraft cannot launch until maintenance has been done. Start it from Fleet.'}
             </Hint>
           </div>
         </Panel>
@@ -241,7 +246,8 @@ function eventRowDetail(event: WorldEvent, tick: number): string {
   if (event.status === 'scheduled') {
     return `${place} · starts ${relativeTick(tick, event.startTick) ?? ''}`;
   }
-  if (event.status === 'active' && event.type !== 'maintenance_finding') {
+  const untimed = event.type === 'maintenance_finding' || event.type === 'technical_caution';
+  if (event.status === 'active' && !untimed) {
     return `${place} · ends ${relativeTick(tick, event.endTick) ?? ''}`;
   }
   return place;

@@ -59,7 +59,13 @@ const LOG_WORDS: Readonly<Record<string, string>> = {
   acceptMission: 'Mission accepted; aircraft assigned',
   releaseMission: 'Acceptance withdrawn; aircraft released',
   cancelMission: 'Mission cancelled',
+  abortMission: 'Mission aborted in flight',
   launchMission: 'Mission launched',
+  reviseFlight: 'Route changed in flight',
+  holdFlight: 'Hold ordered',
+  resumeFlight: 'Hold ended by order',
+  flightHolding: 'Holding: destination closed',
+  flightHoldEnded: 'Hold ended',
   opportunityGenerated: 'Opportunity generated',
   opportunityExpired: 'Opportunity expired',
   objectiveCompleted: 'Objective completed',
@@ -83,9 +89,64 @@ function weatherCost(payload: LogEntry['payload']): string | null {
   return `Weather: ${time} and ${burn} than in still air.`;
 }
 
+const REVISION = { reroute: 'Rerouted', divert: 'Diverted', return: 'Turned back' } as const;
+const HOLD_END: Readonly<Record<string, string>> = {
+  reopened: 'The aerodrome reopened.',
+  fuel_at_reserve: 'Fuel was down to reserve.',
+  landing_during_closure: 'Fuel was down to reserve; landing during the closure.',
+};
+
+/** The destination a logged list of route points ends at. */
+function lastPointName(points: unknown): string | null {
+  if (!Array.isArray(points)) return null;
+  const last: unknown = points.at(-1);
+  if (typeof last !== 'object' || last === null) return null;
+  const { code, name } = last as { code?: unknown; name?: unknown };
+  return typeof code === 'string' ? code : typeof name === 'string' ? name : null;
+}
+
+function revisionDetail(payload: LogEntry['payload']): string {
+  const intent = payload.intent;
+  const word =
+    intent === 'reroute' || intent === 'divert' || intent === 'return'
+      ? REVISION[intent]
+      : 'Changed';
+  const to = lastPointName(payload.points);
+  return to ? `${word}, to land at ${to}.` : `${word}.`;
+}
+
+function abortDetail(payload: LogEntry['payload']): string {
+  const landing = payload.landing;
+  if (typeof landing !== 'object' || landing === null) return '';
+  const { intent, points } = landing as { intent?: unknown; points?: unknown };
+  if (intent === 'continue') return 'The aircraft goes on to its destination.';
+  const to = lastPointName(points);
+  return `The aircraft ${intent === 'return' ? 'turns back' : 'diverts'}${to ? ` to ${to}` : ''}.`;
+}
+
+/** How a flight ended: where, if not where it was launched to, and what the weather cost. */
+function landing(payload: LogEntry['payload']): string | null {
+  const parts: string[] = [];
+  if (typeof payload.plannedDestination === 'string' && typeof payload.destination === 'string') {
+    if (payload.plannedDestination !== payload.destination) {
+      parts.push(`Landed at ${payload.destination}, launched for ${payload.plannedDestination}.`);
+    }
+  }
+  if (payload.landedDuringClosure === true) parts.push('Landed during a closure, fuel at reserve.');
+  if (typeof payload.heldS === 'number') parts.push(`Held for ${minutes(payload.heldS)}.`);
+  const weather = weatherCost(payload);
+  if (weather) parts.push(weather);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 function logDetail(entry: LogEntry): string {
   const { payload } = entry;
-  if (entry.type === 'flightCompleted') return weatherCost(payload) ?? entry.flightId ?? '';
+  if (entry.type === 'flightCompleted') return landing(payload) ?? entry.flightId ?? '';
+  if (entry.type === 'reviseFlight') return revisionDetail(payload);
+  if (entry.type === 'abortMission') return abortDetail(payload);
+  if (entry.type === 'flightHoldEnded') {
+    return typeof payload.reason === 'string' ? (HOLD_END[payload.reason] ?? '') : '';
+  }
   if (entry.type === 'missionAffected' && typeof payload.eventId === 'string') {
     return `${payload.eventId}: ${typeof payload.summary === 'string' ? payload.summary : ''}`;
   }

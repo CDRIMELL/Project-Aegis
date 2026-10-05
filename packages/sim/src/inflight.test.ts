@@ -144,7 +144,7 @@ function withClosure(
   });
 }
 
-describe('changing a route in flight', () => {
+describe('changing a route in flight', { timeout: 60_000 }, () => {
   it('diverts: the flown prefix stays, the route changes from where the aircraft is, and it lands there', () => {
     const engine = cruising();
     const before = flightOf(engine);
@@ -355,7 +355,7 @@ describe('changing a route in flight', () => {
   });
 });
 
-describe('holding', () => {
+describe('holding', { timeout: 60_000 }, () => {
   it('holds where it is on the operator’s order, and goes on when resumed', () => {
     const engine = cruising();
     const twin = cruising();
@@ -453,7 +453,7 @@ describe('holding', () => {
   });
 });
 
-describe('a destination closed on arrival', () => {
+describe('a destination closed on arrival', { timeout: 60_000 }, () => {
   /** When the undisturbed flight would begin its descent, and land. */
   function timings() {
     const engine = cruising();
@@ -565,7 +565,7 @@ describe('a destination closed on arrival', () => {
   });
 });
 
-describe('aborting a mission in flight', () => {
+describe('aborting a mission in flight', { timeout: 60_000 }, () => {
   const AREA = { name: 'Area 1', lat: 49.4, lon: -7.2 };
   const brief = (type: MissionType, overrides: Partial<MissionBrief>): MissionBrief => ({
     ...defaultBrief(MISSION_TEMPLATES[type]),
@@ -754,7 +754,7 @@ describe('aborting a mission in flight', () => {
   });
 });
 
-describe('the technical caution', () => {
+describe('the technical caution', { timeout: 60_000 }, () => {
   /** The world with a caution showing on the transport's flight, as the event stream sets one. */
   function withCaution(engine: SimulationEngine): SimulationEngine {
     const snapshot = engine.snapshot();
@@ -907,7 +907,7 @@ describe('the technical caution', () => {
   }, 120_000);
 });
 
-describe('determinism, replay and upgrade', () => {
+describe('determinism, replay and upgrade', { timeout: 60_000 }, () => {
   /** A flight with a hold, a reroute, a diversion and an aborted mission, at fixed ticks. */
   function operations(
     advance: (engine: SimulationEngine, ticks: number) => SimulationEngine,

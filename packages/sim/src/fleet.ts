@@ -782,7 +782,13 @@ export class Fleet {
           tick,
           context?.hazards ?? NO_HAZARDS,
         );
-        return flightId === null ? null : { aircraftId: command.aircraftId, flightId };
+        return flightId === null
+          ? null
+          : {
+              aircraftId: command.aircraftId,
+              flightId,
+              missionId: this.flights.get(flightId)?.missionId ?? null,
+            };
       }
 
       case 'holdFlight': {
@@ -810,7 +816,7 @@ export class Fleet {
           stillAirDurationS: null,
           stillAirFuelUsedKg: null,
         });
-        return { aircraftId: aircraft.id, flightId: flight.id };
+        return { aircraftId: aircraft.id, flightId: flight.id, missionId: flight.missionId };
       }
 
       case 'resumeFlight': {
@@ -828,7 +834,7 @@ export class Fleet {
           ...resumed,
           ...this.projection(resumed, model, context?.hazards ?? NO_HAZARDS),
         });
-        return { aircraftId: aircraft.id, flightId: flight.id };
+        return { aircraftId: aircraft.id, flightId: flight.id, missionId: flight.missionId };
       }
 
       case 'updatePerformance': {

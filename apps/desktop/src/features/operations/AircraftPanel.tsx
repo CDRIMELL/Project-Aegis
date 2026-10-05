@@ -7,13 +7,32 @@ import {
   kilometresPerHourToKnots,
 } from '@aegis/domain';
 import type { AircraftState, FlightView } from '@aegis/sim';
-import { Button, DataField, DataList, DetailPanel, Hint, Meter, SectionLabel } from '@aegis/ui';
+import {
+  Button,
+  DataField,
+  DataList,
+  DetailPanel,
+  Hint,
+  Meter,
+  Notice,
+  SectionLabel,
+} from '@aegis/ui';
 import { Route } from 'lucide-react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import { formatDuration, formatInteger, formatKg, formatKm } from '../../format';
 import { formatCoordinates } from '../../map/features';
+import {
+  advisoriesFor,
+  currentEstimate,
+  operationsFor,
+  remainderOf,
+  revisionDraft,
+  type Operation,
+} from '../../operations/inflight-logic';
+import { simClient } from '../../sim/client';
 import { select } from '../../state/map-store';
-import { beginPlanning } from '../../state/plan-store';
+import { beginPlanning, beginRevision } from '../../state/plan-store';
 import { useSimStore } from '../../state/sim-store';
 import {
   AircraftStatusBadge,
@@ -21,6 +40,7 @@ import {
   fuelFraction,
   placeName,
 } from '../shared/fleet-display';
+import { usePlanContext } from '../shared/usePlanContext';
 import { formatPrecipitation, formatWind } from '../shared/weather-display';
 
 const PHASE = {
@@ -82,7 +102,7 @@ function Telemetry({ flight }: { readonly flight: FlightView }) {
           <DataField
             label="Fuel at destination"
             value={formatKg(flight.estimatedFuelAtDestinationKg)}
-            hint="The planner's estimate at launch."
+            hint="Projected from the flight's own state when it launched, changed route or stopped holding."
           />
           <DataField label="Elapsed" value={formatDuration(flight.elapsedS)} />
         </DataList>
@@ -117,6 +137,138 @@ function Telemetry({ flight }: { readonly flight: FlightView }) {
   );
 }
 
+const INTENT_WORD = {
+  reroute: 'Rerouted',
+  divert: 'Diverting',
+  return: 'Returning to base',
+} as const;
+
+/**
+ * What the operator can do with the flight now (ADR 0026), and what they should know first.
+ * Every action that applies is shown; one that cannot be taken says why.
+ */
+function Operations({
+  aircraft,
+  flight,
+}: {
+  readonly aircraft: AircraftState;
+  readonly flight: FlightView;
+}) {
+  const mission = useSimStore(
+    (state) =>
+      state.view?.missions.missions.find(
+        (candidate) => candidate.id === flight.missionId && candidate.status === 'active',
+      ) ?? null,
+  );
+  const context = usePlanContext();
+  const model = aircraft.performance;
+  // A projection flies the rest of the route, so it is made once a minute of simulation time,
+  // and at once when the route or the hold changes.
+  const bucket = useSimStore((state) => Math.floor((state.view?.clock.tick ?? 0) / 60));
+  const key = `${bucket}:${flight.revisions.length}:${flight.hold ?? ''}:${flight.closureLanding}`;
+  const advisories = useMemo(
+    () =>
+      model && context
+        ? advisoriesFor(flight, model, currentEstimate(model, flight, context).projection)
+        : [],
+    // The flight changes ten times a second; the key says when it is worth looking again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [key, model, context],
+  );
+  const operations = operationsFor(flight, aircraft, mission);
+  const origin = flight.points[0];
+
+  const act = (operation: Operation) => {
+    switch (operation) {
+      case 'hold':
+        simClient.send({ type: 'holdFlight', aircraftId: aircraft.id });
+        break;
+      case 'resume':
+        simClient.send({ type: 'resumeFlight', aircraftId: aircraft.id });
+        break;
+      case 'reroute':
+      case 'divert':
+        beginRevision(revisionDraft(flight, remainderOf(flight)), {
+          intent: operation,
+          abortMissionId: null,
+          abortContinue: false,
+        });
+        break;
+      case 'return':
+        if (origin) {
+          beginRevision(revisionDraft(flight, [origin]), {
+            intent: 'return',
+            abortMissionId: null,
+            abortContinue: false,
+          });
+        }
+        break;
+      case 'abort':
+        if (mission) {
+          // The landing is the operator's to choose; it opens on "go on", which changes no route.
+          beginRevision(revisionDraft(flight, remainderOf(flight)), {
+            intent: 'divert',
+            abortMissionId: mission.id,
+            abortContinue: true,
+          });
+        }
+        break;
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-2.5">
+      <SectionLabel>Operations</SectionLabel>
+      {advisories.map((advisory) => (
+        <Notice key={advisory.title} tone={advisory.tone} title={advisory.title}>
+          {advisory.detail}
+        </Notice>
+      ))}
+      {(flight.intent !== null || flight.hold !== null) && (
+        <DataList columns={1}>
+          {flight.intent !== null && (
+            <DataField
+              label="Route"
+              value={`${INTENT_WORD[flight.intent]} · launched for ${placeName(flight.plannedDestination)}`}
+              hint={`${flight.revisions.length} change${flight.revisions.length === 1 ? '' : 's'} of route since launch.`}
+              prose
+            />
+          )}
+          {flight.hold !== null && (
+            <DataField
+              label="Holding"
+              value={`${formatDuration(flight.heldS)} so far`}
+              hint="Circling where it is, burning fuel at the holding assumption."
+            />
+          )}
+        </DataList>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {operations.map((operation) => (
+          <Button
+            key={operation.operation}
+            size="sm"
+            disabled={!operation.available}
+            title={operation.reason ?? undefined}
+            onClick={() => {
+              act(operation.operation);
+            }}
+          >
+            {operation.label}
+          </Button>
+        ))}
+      </div>
+      {operations
+        .filter((operation) => !operation.available)
+        .map((operation) => (
+          <Hint key={operation.operation}>
+            {operation.label}: {operation.reason}
+          </Hint>
+        ))}
+    </section>
+  );
+}
+
 /** The selected aircraft: live telemetry while it flies, its state and next actions on the ground. */
 export function AircraftPanel({ aircraft }: { readonly aircraft: AircraftState }) {
   const flight = useSimStore(
@@ -126,7 +278,8 @@ export function AircraftPanel({ aircraft }: { readonly aircraft: AircraftState }
   );
   const navigate = useNavigate();
   const model = aircraft.performance;
-  // The accepted or active mission this aircraft is committed to, if any.
+  // The accepted or active mission this aircraft is committed to, if any. An aborted mission's
+  // aircraft flies on, committed to nothing.
   const mission = useSimStore(
     (state) =>
       state.view?.missions.missions.find(
@@ -151,7 +304,10 @@ export function AircraftPanel({ aircraft }: { readonly aircraft: AircraftState }
       }}
     >
       {flight ? (
-        <Telemetry flight={flight} />
+        <>
+          <Operations aircraft={aircraft} flight={flight} />
+          <Telemetry flight={flight} />
+        </>
       ) : (
         <section className="flex flex-col gap-2.5">
           <SectionLabel>On the ground</SectionLabel>

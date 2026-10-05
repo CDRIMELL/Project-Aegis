@@ -176,6 +176,25 @@ function summaryTable(report: Report): ReportTable {
       unit: 'missions',
     },
     {
+      key: 'missions_aborted',
+      label: 'Missions aborted in flight',
+      value: totals.missionsAborted,
+      unit: 'missions',
+    },
+    {
+      key: 'flights_diverted',
+      label: 'Flights that landed elsewhere than planned',
+      value: totals.flightsDiverted,
+      unit: 'flights',
+    },
+    {
+      key: 'route_revisions',
+      label: 'Changes of route in flight',
+      value: totals.routeRevisions,
+      unit: 'revisions',
+    },
+    { key: 'held_hours', label: 'Time spent holding', value: hours(totals.heldSeconds), unit: 'h' },
+    {
       key: 'offers_lapsed',
       label: 'Offers expired or rejected',
       value: totals.offersLapsed,
@@ -237,6 +256,13 @@ function missionsTable(report: Report, filter: ReportFilter): ReportTable {
       { key: 'priority', header: 'Priority', value: (m) => m.priority },
       { key: 'aircraft', header: 'Aircraft', value: (m) => m.aircraftId },
       { key: 'flight', header: 'Flight', value: (m) => m.flightId },
+      // Where its flight ended, once it has: for a diverted or aborted mission, not where it meant.
+      { key: 'landed_at', header: 'Landed at', value: (m) => flightOf(m)?.destination ?? null },
+      {
+        key: 'planned_to',
+        header: 'Planned to',
+        value: (m) => flightOf(m)?.plannedDestination ?? null,
+      },
       ...when<MissionRecord>('ended', 'Ended', (m) => m.completedTick, report.epochMs),
       ...when<MissionRecord>('launched', 'Launched', (m) => m.actualStartTick, report.epochMs),
       {
@@ -367,7 +393,16 @@ function fuelTable(report: Report, filter: ReportFilter): ReportTable {
         },
       },
       { key: 'from', header: 'From', value: (f) => f.origin },
-      { key: 'to', header: 'To', value: (f) => f.destination },
+      { key: 'to', header: 'Landed at', value: (f) => f.destination },
+      { key: 'planned_to', header: 'Planned to', value: (f) => f.plannedDestination },
+      { key: 'revisions', header: 'Route changes', value: (f) => f.revisions.join(' ') },
+      { key: 'held_h', header: 'Held (h)', value: (f) => hours(f.heldS) },
+      {
+        key: 'landed_during_closure',
+        header: 'Landed during a closure',
+        value: (f) => (f.landedDuringClosure ? 'yes' : 'no'),
+      },
+      { key: 'caution', header: 'Technical caution', value: (f) => (f.caution ? 'yes' : 'no') },
       { key: 'result', header: 'Result', value: (f) => f.status },
       ...when<FlightRecord>('arrived', 'Arrived', (f) => f.arrivedTick, report.epochMs),
       { key: 'flight_h', header: 'Flight time (h)', value: (f) => hours(f.durationS) },

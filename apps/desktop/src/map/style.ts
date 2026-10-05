@@ -375,7 +375,15 @@ export function buildMapStyle(
       paint: {
         'line-color': palette.simulated,
         'line-width': ['case', ['get', 'selected'], 2, 1.25],
-        'line-opacity': ['case', ['get', 'selected'], 0.9, 0.45],
+        // What has been flown is history: fainter than what is still to come.
+        'line-opacity': [
+          'case',
+          ['boolean', ['get', 'flown'], false],
+          ['case', ['get', 'selected'], 0.35, 0.18],
+          ['get', 'selected'],
+          0.9,
+          0.45,
+        ],
       },
     },
     {

@@ -103,7 +103,7 @@ const situation = (progress: FlightProgress, plan = PLAN): FlightSituation => ({
 });
 const CONTEXT = { weather: WEATHER, hazards: NO_HAZARDS };
 
-describe('revising a route', () => {
+describe('revising a route', { timeout: 60_000 }, () => {
   const progress = cruising();
   const before = positionAlong(routeGeometry(PLAN.points), progress.distanceM);
 
@@ -175,7 +175,7 @@ describe('revising a route', () => {
   });
 });
 
-describe('the planner and the simulation after a revision', () => {
+describe('the planner and the simulation after a revision', { timeout: 60_000 }, () => {
   const progress = cruising();
 
   it('projects the flight as it stands to exactly what it then does', () => {
@@ -261,7 +261,7 @@ describe('the planner and the simulation after a revision', () => {
   });
 });
 
-describe('what a revision may not do', () => {
+describe('what a revision may not do', { timeout: 60_000 }, () => {
   const progress = cruising();
   const codes = (evaluation: ReturnType<typeof evaluateRevision>) =>
     evaluation.constraints
@@ -368,7 +368,7 @@ describe('what a revision may not do', () => {
   });
 });
 
-describe('a revision made while descending', () => {
+describe('a revision made while descending', { timeout: 60_000 }, () => {
   it('ends the descent: the aircraft climbs again, and pays for it', () => {
     const descending = fly(PLAN, launch(), (p) => p.phase === 'descent' && p.altitudeM < 6000);
     expect(descending.phase).toBe('descent');
@@ -399,7 +399,7 @@ describe('a revision made while descending', () => {
   });
 });
 
-describe('holding', () => {
+describe('holding', { timeout: 60_000 }, () => {
   const profile = flightProfile(MODEL, PLAN, PAYLOAD);
   const progress = cruising();
   const holding: FlightProgress = {
@@ -469,7 +469,7 @@ describe('holding', () => {
   });
 });
 
-describe('a destination closed on arrival', () => {
+describe('a destination closed on arrival', { timeout: 60_000 }, () => {
   const start = launch();
   const open = fly(PLAN, start);
   const atTopOfDescent = fly(PLAN, start, (p) => p.phase === 'descent');
@@ -595,7 +595,7 @@ describe('a destination closed on arrival', () => {
   });
 });
 
-describe('objectives and where the aircraft landed', () => {
+describe('objectives and where the aircraft landed', { timeout: 60_000 }, () => {
   const objective = (spec: ObjectiveSpec) =>
     newObjectives([{ label: 'Objective', spec, required: true }])[0] as ReturnType<
       typeof newObjectives

@@ -13,6 +13,7 @@ import {
   type EventRecord,
   type EventTypeCount,
   type FlightRecord,
+  type InProgressFlight,
   type MaintenanceOutlookRow,
   type MaintenanceVisit,
   type MissionRecord,
@@ -108,6 +109,81 @@ function NowPanel() {
   );
 }
 
+const INTENT = { reroute: 'rerouted', divert: 'diverted', return: 'turned back' } as const;
+
+/**
+ * Flights and missions under way at the report's moment. Their figures are so far, not final, and
+ * none of them is in any total on this page.
+ */
+function InProgressPanel({ report }: { readonly report: SectionProps['report'] }) {
+  const { flights, missions } = report.inProgress;
+  if (flights.length === 0 && missions.length === 0) return null;
+  const missionOf = (flightId: string) =>
+    missions.find((mission) => mission.flightId === flightId) ?? null;
+  return (
+    <Panel title="In progress · not in any total">
+      <div className="flex flex-col gap-3">
+        <div className="overflow-x-auto">
+          <DataTable<InProgressFlight>
+            caption="Flights in the air at the moment of the report, with their figures so far"
+            rows={flights}
+            rowKey={(flight) => flight.id}
+            columns={[
+              {
+                header: 'Flight',
+                numeric: true,
+                cell: (flight) => (
+                  <TwoLine
+                    top={flight.id}
+                    bottom={`${flight.origin} → ${flight.destination}${flight.destination === flight.plannedDestination ? '' : ` (launched for ${flight.plannedDestination})`}`}
+                  />
+                ),
+              },
+              { header: 'Aircraft', cell: (flight) => <AircraftLink id={flight.aircraftId} /> },
+              {
+                header: 'Mission',
+                cell: (flight) => <MissionLink id={missionOf(flight.id)?.id ?? null} />,
+              },
+              {
+                header: 'So far',
+                numeric: true,
+                align: 'right',
+                cell: (flight) => (
+                  <TwoLine
+                    top={formatDuration(flight.elapsedS)}
+                    bottom={formatKm(flight.distanceM)}
+                  />
+                ),
+              },
+              {
+                header: 'Fuel so far',
+                numeric: true,
+                align: 'right',
+                cell: (flight) => formatKg(flight.fuelUsedKg),
+              },
+              {
+                header: 'State',
+                cell: (flight) =>
+                  flight.holding
+                    ? flight.holding === 'closure'
+                      ? 'Holding: destination closed'
+                      : 'Holding'
+                    : flight.revisions.length > 0
+                      ? `En route, ${INTENT[flight.revisions.at(-1) ?? 'reroute']}`
+                      : 'En route',
+              },
+            ]}
+          />
+        </div>
+        <Hint>
+          Still in the air as of the report. Time, distance and fuel are what has been used so far;
+          they become final, and are counted, in the period in which the flight lands.
+        </Hint>
+      </div>
+    </Panel>
+  );
+}
+
 export function SummarySection({ report, previous }: SectionProps) {
   const { totals, fleet } = report;
   const before = previous?.totals ?? null;
@@ -134,9 +210,10 @@ export function SummarySection({ report, previous }: SectionProps) {
             detail={changeText(totals.missionsFailed, before?.missionsFailed ?? null)}
           />
           <StatTile
-            label="Missions cancelled"
-            value={formatInteger(totals.missionsCancelled)}
-            detail={`${formatInteger(totals.offersLapsed)} offers expired or rejected`}
+            label="Cancelled or aborted"
+            value={formatInteger(totals.missionsCancelled + totals.missionsAborted)}
+            detail={`${formatInteger(totals.missionsCancelled)} before launch · ${formatInteger(totals.missionsAborted)} in flight`}
+            hint="Cancelled: withdrawn before launch. Aborted: given up after launch; the aircraft flew on to land."
           />
           <StatTile
             label="Flights"
@@ -182,6 +259,8 @@ export function SummarySection({ report, previous }: SectionProps) {
           </Hint>
         </div>
       </Panel>
+
+      <InProgressPanel report={report} />
 
       <Panel title="Fleet indicators · AEGIS simulation metrics">
         <DataList columns={4}>
@@ -298,7 +377,7 @@ export function MissionsSection({ report }: SectionProps) {
     const series = (
       name: string,
       tone: ChartSeries['tone'],
-      key: 'completed' | 'failed' | 'cancelled' | 'lapsed',
+      key: 'completed' | 'failed' | 'cancelled' | 'aborted' | 'lapsed',
     ): ChartSeries => ({ name, tone, values: report.missionTypes.map((type) => type[key]) });
     return {
       types: report.missionTypes.map((type) => type.type),
@@ -306,7 +385,8 @@ export function MissionsSection({ report }: SectionProps) {
       series: [
         series('Completed', 'accent', 'completed'),
         series('Failed', 'critical', 'failed'),
-        series('Cancelled', 'warn', 'cancelled'),
+        series('Aborted in flight', 'warn', 'aborted'),
+        series('Cancelled', 'info', 'cancelled'),
         series('Expired or rejected', 'neutral', 'lapsed'),
       ],
     };
@@ -395,7 +475,11 @@ export function MissionsSection({ report }: SectionProps) {
                     return flight ? (
                       <TwoLine
                         top={formatDuration(flight.durationS)}
-                        bottom={formatKm(flight.distanceM)}
+                        bottom={
+                          flight.destination === flight.plannedDestination
+                            ? formatKm(flight.distanceM)
+                            : `landed ${flight.destination}`
+                        }
                       />
                     ) : (
                       '—'
@@ -780,7 +864,10 @@ export function FuelSection({ report, previous }: SectionProps) {
                   sortKey: 'flight',
                   numeric: true,
                   cell: (flight) => (
-                    <TwoLine top={flight.id} bottom={`${flight.origin} → ${flight.destination}`} />
+                    <TwoLine
+                      top={flight.id}
+                      bottom={`${flight.origin} → ${flight.destination}${flight.destination === flight.plannedDestination ? '' : ` (for ${flight.plannedDestination})`}`}
+                    />
                   ),
                 },
                 {

@@ -395,13 +395,49 @@ describe('flight map features', () => {
     expect(aircraftFeatures([], null).features).toEqual([]);
   });
 
-  it('draws a route as a great circle that begins and ends at its aerodromes', () => {
-    const [route] = activeRouteFeatures([flight()], null).features;
-    const coordinates = route?.geometry.coordinates ?? [];
-    expect(coordinates.length).toBeGreaterThan(20);
-    expect(coordinates[0]).toEqual([NEWQUAY.lon, NEWQUAY.lat]);
-    expect(coordinates.at(-1)).toEqual([AKROTIRI.lon, AKROTIRI.lat]);
-    expect(route?.properties).toEqual({ id: 'AEGIS-TR-001', selected: false });
+  it('draws a route as great circles from its origin to the aircraft and on to its destination', () => {
+    const [flown, ahead] = activeRouteFeatures([flight()], null).features;
+    const behind = flown?.geometry.coordinates ?? [];
+    const toCome = ahead?.geometry.coordinates ?? [];
+    expect(behind.length + toCome.length).toBeGreaterThan(20);
+    // What has been flown ends where the aircraft is, and what is to come begins there.
+    expect(behind[0]).toEqual([NEWQUAY.lon, NEWQUAY.lat]);
+    expect(behind.at(-1)).toEqual([2, 48]);
+    expect(toCome[0]).toEqual([2, 48]);
+    expect(toCome.at(-1)).toEqual([AKROTIRI.lon, AKROTIRI.lat]);
+    expect(flown?.properties).toEqual({ id: 'AEGIS-TR-001', selected: false, flown: true });
+    expect(ahead?.properties).toEqual({ id: 'AEGIS-TR-001', selected: false, flown: false });
+  });
+
+  it('draws a diverted flight along the route it is on now, not the one it was launched with', () => {
+    const marker: RoutePoint = {
+      kind: 'waypoint',
+      name: 'Diverted here',
+      lat: 48,
+      lon: 2,
+      elevationM: 0,
+    };
+    const diverted = flight({
+      points: [NEWQUAY, marker, TOKYO],
+      plannedDestination: AKROTIRI,
+      distanceM: greatCircleDistance(NEWQUAY, marker),
+      totalM: greatCircleDistance(NEWQUAY, marker) + greatCircleDistance(marker, TOKYO),
+      intent: 'divert',
+    });
+    const features = activeRouteFeatures([diverted], 'AEGIS-TR-001').features;
+    expect(features.map((feature) => feature.properties.flown)).toEqual([true, false]);
+    expect(features.every((feature) => feature.properties.selected)).toBe(true);
+    const end = features[1]?.geometry.coordinates.at(-1) ?? [0, 0];
+    expect(end[1]).toBeCloseTo(TOKYO.lat, 6);
+    // Nothing is drawn to where it was first going.
+    const all = features.flatMap((feature) => feature.geometry.coordinates);
+    expect(all.some(([lon, lat]) => lon === AKROTIRI.lon && lat === AKROTIRI.lat)).toBe(false);
+  });
+
+  it('draws only what is to come for an aircraft that has not yet left its origin', () => {
+    const waiting = flight({ lat: NEWQUAY.lat, lon: NEWQUAY.lon, distanceM: 0 });
+    const features = activeRouteFeatures([waiting], null).features;
+    expect(features.map((feature) => feature.properties.flown)).toEqual([false]);
   });
 
   it('draws a route across the antimeridian as one continuous line', () => {

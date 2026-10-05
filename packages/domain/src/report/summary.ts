@@ -12,6 +12,8 @@ import type {
   AircraftRecord,
   EventRecord,
   FlightRecord,
+  InProgressFlight,
+  InProgressMission,
   MaintenanceThresholds,
   MissionRecord,
   ReportData,
@@ -51,6 +53,13 @@ export interface ActivityTotals {
   readonly missionsCompleted: number;
   readonly missionsFailed: number;
   readonly missionsCancelled: number;
+  /** Given up by the operator after launch. */
+  readonly missionsAborted: number;
+  /** Flights that landed somewhere other than where they were launched to. */
+  readonly flightsDiverted: number;
+  /** Changes of route made in flight, over the flights that finished. */
+  readonly routeRevisions: number;
+  readonly heldSeconds: number;
   /** Offers that ran out of time or were turned down. */
   readonly offersLapsed: number;
   readonly maintenanceVisits: number;
@@ -110,6 +119,7 @@ export interface MissionTypeCount {
   readonly completed: number;
   readonly failed: number;
   readonly cancelled: number;
+  readonly aborted: number;
   readonly lapsed: number;
   readonly fuelUsedKg: number;
   readonly flightSeconds: number;
@@ -155,6 +165,14 @@ export interface Report {
   readonly maintenanceUnderWay: readonly MaintenanceVisit[];
   /** Open at some moment in the period, by start then identifier. */
   readonly events: readonly EventRecord[];
+  /**
+   * What is under way at the report's moment, when the period reaches it. Elapsed time and fuel
+   * are so far; none of it is in any total, which hold only what has finished.
+   */
+  readonly inProgress: {
+    readonly flights: readonly InProgressFlight[];
+    readonly missions: readonly InProgressMission[];
+  };
   readonly missionTypes: readonly MissionTypeCount[];
   readonly eventTypes: readonly EventTypeCount[];
   readonly series: readonly SeriesPoint[];
@@ -210,6 +228,11 @@ export function activityTotals(
     missionsCompleted: count('completed'),
     missionsFailed: count('failed'),
     missionsCancelled: count('cancelled'),
+    missionsAborted: count('aborted'),
+    flightsDiverted: flights.filter((flight) => flight.destination !== flight.plannedDestination)
+      .length,
+    routeRevisions: sum(flights, (flight) => flight.revisions.length),
+    heldSeconds: sum(flights, (flight) => flight.heldS),
     offersLapsed: missions.filter((mission) => LAPSED.has(mission.status)).length,
     maintenanceVisits: visits.length,
     maintenanceSeconds: sum(visits, (visit) => (visit.completedTick ?? 0) - visit.startedTick),
@@ -393,6 +416,7 @@ export function buildReport(
         completed: ofType.filter((mission) => mission.status === 'completed').length,
         failed: ofType.filter((mission) => mission.status === 'failed').length,
         cancelled: ofType.filter((mission) => mission.status === 'cancelled').length,
+        aborted: ofType.filter((mission) => mission.status === 'aborted').length,
         lapsed: ofType.filter((mission) => LAPSED.has(mission.status)).length,
         fuelUsedKg: sum(flown, (flight) => flight.fuelUsedKg),
         flightSeconds: sum(flown, (flight) => flight.durationS),
@@ -457,6 +481,18 @@ export function buildReport(
     maintenance,
     maintenanceUnderWay,
     events,
+    // A period that ended before the report's moment has nothing in progress: it is over.
+    inProgress:
+      period.toTick > data.asOfTick
+        ? {
+            flights: [...data.inProgressFlights].sort(
+              byTickThenId((flight) => flight.departedTick),
+            ),
+            missions: [...data.inProgressMissions].sort(
+              byTickThenId((mission) => mission.launchedTick ?? 0),
+            ),
+          }
+        : { flights: [], missions: [] },
     missionTypes,
     eventTypes,
     series,

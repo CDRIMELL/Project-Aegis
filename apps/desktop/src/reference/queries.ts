@@ -1,5 +1,5 @@
 import { schema, type AegisDb } from '@aegis/db';
-import { asc, desc, eq, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, between, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import type { MapLocationRow, MapRunwayRow } from '../map/features';
 
 /*
@@ -333,4 +333,27 @@ export async function searchAerodromes(query: string, limit = 8): Promise<Search
  */
 export function loadLargeAerodromes(): Promise<LocationRecord[]> {
   return db.select().from(refLocation).where(eq(refLocation.kind, 'airport_large'));
+}
+
+/**
+ * Large and medium aerodromes around a position, for choosing where an airborne flight could
+ * divert to. Size class and position are the only criteria: nothing about an aerodrome's operator
+ * or use is read. A box in degrees, which is coarse near the poles and does not span the
+ * antimeridian; the caller ranks what it returns by real distance.
+ */
+export function loadAerodromesNear(
+  lat: number,
+  lon: number,
+  spanDeg = 14,
+): Promise<LocationRecord[]> {
+  return db
+    .select()
+    .from(refLocation)
+    .where(
+      and(
+        inArray(refLocation.kind, ['airport_large', 'airport_medium']),
+        between(refLocation.lat, lat - spanDeg, lat + spanDeg),
+        between(refLocation.lon, lon - spanDeg * 1.6, lon + spanDeg * 1.6),
+      ),
+    );
 }

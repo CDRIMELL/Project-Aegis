@@ -1,4 +1,5 @@
 import type { EventStatus, EventType } from '../event';
+import type { RevisionIntent } from '../flight/revision';
 import type { MissionPriority, MissionSource, MissionStatus, MissionType } from '../mission';
 
 /*
@@ -35,7 +36,18 @@ export interface FlightRecord {
   readonly missionId: string | null;
   readonly status: 'completed' | 'fuel_exhausted';
   readonly origin: string;
+  /** Where the flight ended. */
   readonly destination: string;
+  /** Where it was launched to. The same, unless the flight was diverted or turned back. */
+  readonly plannedDestination: string;
+  /** Each change of route made in flight, in order (ADR 0026). */
+  readonly revisions: readonly RevisionIntent[];
+  /** Seconds spent holding. */
+  readonly heldS: number;
+  /** True when it landed at a closed aerodrome with its fuel at reserve. */
+  readonly landedDuringClosure: boolean;
+  /** True when a technical caution showed during the flight. */
+  readonly caution: boolean;
   readonly departedTick: number;
   readonly arrivedTick: number;
   readonly durationS: number;
@@ -49,6 +61,32 @@ export interface FlightRecord {
   readonly stillAirFuelUsedKg: number | null;
   /** The worst weather met, 0 to 1; `null` where it was not recorded. */
   readonly worstSeverity: number | null;
+}
+
+/** A flight that is still in the air at the report's moment. Its figures are so far, not final. */
+export interface InProgressFlight {
+  readonly id: string;
+  readonly aircraftId: string;
+  readonly missionId: string | null;
+  readonly origin: string;
+  readonly destination: string;
+  readonly plannedDestination: string;
+  readonly departedTick: number;
+  readonly elapsedS: number;
+  readonly distanceM: number;
+  readonly fuelUsedKg: number;
+  readonly holding: 'operator' | 'closure' | null;
+  readonly revisions: readonly RevisionIntent[];
+}
+
+/** A mission whose flight is still in the air at the report's moment. */
+export interface InProgressMission {
+  readonly id: string;
+  readonly type: MissionType;
+  readonly title: string;
+  readonly aircraftId: string | null;
+  readonly flightId: string | null;
+  readonly launchedTick: number | null;
 }
 
 /** A mission that has ended, one way or another. */
@@ -119,6 +157,9 @@ export interface ReportData {
   readonly aircraft: readonly AircraftRecord[];
   /** Finished flights, by arrival then identifier. */
   readonly flights: readonly FlightRecord[];
+  /** Flights and missions under way at the report's moment. Counted in no total. */
+  readonly inProgressFlights: readonly InProgressFlight[];
+  readonly inProgressMissions: readonly InProgressMission[];
   /** Ended missions, by end then identifier. */
   readonly missions: readonly MissionRecord[];
   readonly events: readonly EventRecord[];
