@@ -1,5 +1,6 @@
 export * from './components/AppFrame';
 export * from './components/Button';
+export * from './components/Chart';
 export * from './components/controls';
 export * from './components/DataField';
 export * from './components/forms';
@@ -10,5 +11,6 @@ export * from './components/SegmentedControl';
 export * from './components/StatusBadge';
 export * from './components/surfaces';
 export * from './components/TimeReadout';
+export type { ChartSeries, ChartSpec, ChartTone } from './charts/option';
 export * from './fonts';
 export * from './tokens';
