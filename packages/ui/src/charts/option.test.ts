@@ -29,7 +29,7 @@ interface Built {
   legend: { show: boolean };
   animation: boolean;
   xAxis: { type: string; data?: string[]; max?: number; inverse?: boolean };
-  yAxis: { type: string; data?: string[]; max?: number; inverse?: boolean };
+  yAxis: { type: string; data?: string[]; max?: number; inverse?: boolean; minInterval?: number };
   tooltip: { valueFormatter: (value: unknown) => string };
   series: { name: string; type: string; data: (number | null)[]; stack?: string }[];
 }
@@ -71,6 +71,11 @@ describe('chart options', () => {
     expect(option.yAxis).toMatchObject({ type: 'category', inverse: true });
     expect(option.xAxis).toMatchObject({ type: 'value', max: 100 });
     expect(build(SPEC).yAxis.max).toBeUndefined();
+  });
+
+  it('marks an axis of counts in whole numbers only', () => {
+    expect(build({ ...SPEC, counts: true }).yAxis.minInterval).toBe(1);
+    expect(build(SPEC).yAxis.minInterval).toBeUndefined();
   });
 
   it('formats values with the unit, and says when there is none', () => {

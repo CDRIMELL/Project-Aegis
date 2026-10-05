@@ -45,7 +45,7 @@ not from glow, gradients or decoration.
 11. **Reference and simulated are different colours.** On the map and in badges, teal means
     real-world reference data and green means a simulated AEGIS entity. A record's detail panel
     carries a "Reference" badge with its verification level and confidence.
-12. **Canvas renderers use the same tokens.** The map (and later charts) cannot read CSS variables.
+12. **Canvas renderers use the same tokens.** The map and the charts cannot read CSS variables.
     They ask `resolveColorTokens` for the resolved values, so no colour is ever written outside
     `aegis.css`. A test asserts the map style contains no colour that is not in its palette.
 
@@ -96,9 +96,29 @@ A simulated entity carries a green "Simulated" badge, the counterpart of the tea
 A value that is a simulation assumption says so in its label ("Fuel capacity (assumed)") and
 explains the assumption on hover.
 
+## Charts
+
+`Chart` draws a bar or line chart with Apache ECharts. A screen describes the chart in AEGIS terms
+(categories, series, a tone for each series, a unit) and never writes an ECharts option or a
+colour; `charts/option.ts` builds the option from the tokens.
+
+- A chart answers one stated question, and its panel title is that question's subject.
+- Tones are semantic, as for badges: accent for the thing measured, warn and critical for what
+  they say, neutral for what merely is.
+- Nothing animates. A count axis is marked in whole numbers. A gap in the data is a gap.
+- With nothing to draw, the chart says so in words instead of showing empty axes.
+- The figures are always also in a table on the same screen; the chart is never the only way to
+  read them.
+
+Reports also add `StatTile` (a headline figure with its unit and a line of context), `TextLink`
+(a reference to another record) and sortable `DataTable` headers. A table shows the order its
+rows are in; the screen does the sorting.
+
+A report table must fit a content pane about 690 px wide. Where a row needs more than seven or
+eight readings, two related readings share a cell on two lines.
+
 ## Planned
 
 - A virtualised table (TanStack Table and Virtual) for long lists; dialogs, tooltips, selects, tabs
   and toasts, wrapping Radix primitives. Each is added by the first screen that needs it.
-- An ECharts theme generated from tokens through the same resolver the map uses.
 - A component gallery route in development builds for visual review.

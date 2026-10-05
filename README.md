@@ -8,7 +8,7 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 6 of 10 complete.
+Phase 7 of 10 complete.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -33,7 +33,13 @@ Phase 6 of 10 complete.
   events (aerodrome closures, navigation and logistics disruptions, maintenance findings, severe
   weather), each with stated consequences. None of it is real weather or real events.
 
-There is no traffic or economy yet.
+- **Reports:** what the simulated world has done, over a period of simulation time: activity
+  and its change on the period before, missions and their outcomes, how each aircraft was used
+  and how much of the time it could be, fuel, maintenance, events and what the weather cost.
+  Everything is derived from what the world recorded; nothing is stored for reports. Each section
+  opens the records it names and exports as CSV or JSON.
+
+There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices.
 
 ## Requirements
 
@@ -60,7 +66,8 @@ npm run verify:world     # replay the saved world from its seed and log and conf
 npm run verify:reference # check and fingerprint the reference data in the database
 ```
 
-Application data is stored in `%APPDATA%\dev.aegis.desktop\`. Delete `aegis.db` there to start a
+Application data is stored in `%APPDATA%\dev.aegis.desktop\`. Exported reports are written to
+`exports` inside it. Delete `aegis.db` there to start a
 new world; the reference data is reinstalled from the bundle on the next launch. Set
 `AEGIS_DATA_DIR` to use a different directory.
 

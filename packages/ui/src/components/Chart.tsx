@@ -77,7 +77,7 @@ export function Chart({
     };
   }, [drawn]);
 
-  const { kind, categories, series, stacked, horizontal, unit, max, formatValue } = spec;
+  const { kind, categories, series, stacked, horizontal, unit, max, counts, formatValue } = spec;
   useEffect(() => {
     if (!chart.current) return;
     const { palette: colours, fonts: faces } = theme();
@@ -91,6 +91,7 @@ export function Chart({
           ...(horizontal !== undefined && { horizontal }),
           ...(unit !== undefined && { unit }),
           ...(max !== undefined && { max }),
+          ...(counts !== undefined && { counts }),
           ...(formatValue !== undefined && { formatValue }),
         },
         colours,
@@ -98,7 +99,7 @@ export function Chart({
       ),
       { notMerge: true },
     );
-  }, [drawn, kind, categories, series, stacked, horizontal, unit, max, formatValue]);
+  }, [drawn, kind, categories, series, stacked, horizontal, unit, max, counts, formatValue]);
 
   if (!drawn) {
     return (

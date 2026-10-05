@@ -1,6 +1,6 @@
 # AEGIS architecture
 
-This document describes how AEGIS is built as of phase 6. It is the map; the
+This document describes how AEGIS is built as of phase 7. It is the map; the
 [ADRs](adr/README.md) are the reasons. Product intent lives in the master handover specification.
 
 ## What exists today
@@ -67,7 +67,7 @@ launch without touching the real profile.
 
 | Package         | Responsibility                                                             | May depend on        |
 | --------------- | -------------------------------------------------------------------------- | -------------------- |
-| `@aegis/domain` | Value types and pure rules: time, RNG, geodesy, flight, missions, weather  | nothing              |
+| `@aegis/domain` | Value types and pure rules: time, RNG, geodesy, flight, missions, reports  | nothing              |
 | `@aegis/sim`    | Engine, runner, fleet, missions, events, log, persistence (`WorldStore`)   | `domain`             |
 | `@aegis/db`     | Drizzle schema, migrations, SQL transport, `SqliteWorldStore`              | `domain`, `sim`      |
 | `@aegis/ingest` | Reference pipeline: normalise, load, data pack, basemap preparation, CLI   | `domain`, `db`       |
@@ -202,7 +202,9 @@ The decisions are in [ADR 0017](adr/0017-missions.md).
 - **Validation** (`evaluateMission`) is the flight planner's constraints plus the mission's own,
   at the same three severities. A mission cannot relax a flight constraint.
 - **Risk** is an index of named contributors, each with the reason for its value. It explains a
-  plan and decides nothing.
+  plan and decides nothing. A mission keeps two assessments and changes neither afterwards:
+  `acceptance`, what the operator accepted, and `assessment`, evaluated again at launch for the
+  actual departure ([ADR 0024](adr/0024-reports.md)).
 - **Outcome.** When the flight ends the mission is completed if every required objective is
   complete, failed otherwise. A delivered payload is unloaded; a successful ferry rebases the
   aircraft. `MissionOutcome` is where later systems attach.
@@ -270,6 +272,47 @@ There is no diversion: a closure is known before departure or it does not affect
 | Screen                   | `apps/desktop/src/features/overview/`                                    |
 | Map features and binding | `apps/desktop/src/map/environment-features.ts`, `environment-binding.ts` |
 
+## Reports
+
+The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-report-export.md).
+
+- **Derived, not stored.** A report is computed on demand from `sim_flight`, `sim_mission`,
+  `sim_event` and `sim_log`. There are no counters and no summary tables, and the engine does not
+  know reports exist. A report cannot disagree with the world because it holds nothing of its own.
+- **One read, one checkpoint.** `loadReportData` reads everything in a single batch, which the
+  native side runs in one transaction. Pure functions in `packages/domain/src/report/` turn the
+  rows into a `Report`. The screens read at most every five seconds while the world runs.
+- **Periods are simulation time**: a half-open range of ticks. Today, the last 24 hours, 7 days
+  and 30 days are measured back from the simulation clock; a custom period is typed as simulation
+  UTC. Wall-clock time is never used.
+- **Attribution.** A flight, a mission or a maintenance visit belongs to the period in which it
+  finished, with the figures recorded when it did. An event belongs to every period it was open
+  in. Periods therefore add up, and a past period does not change when aircraft later do.
+- **Status history comes from the log.** Each aircraft's time available, airborne, due
+  maintenance, in maintenance and unserviceable is rebuilt from the transitions the log records.
+  Availability and utilisation are shares of the time the aircraft was owned in the period. They
+  are AEGIS simulation metrics and are labelled as such. Time before the log began is reported as
+  not recorded.
+- **Cost follows the period, not the age of the world.** A report reads the status transitions in
+  its window and, for each aircraft, the last one before it, which the database finds. A month
+  from a history of 10,000 flights and 100,000 log entries is read in about a tenth of a second,
+  with no index beyond those the log already has.
+- **Drill-down, not duplication.** Every mission, aircraft and event a report names opens its own
+  existing page. Reports have no detail pages.
+- **Export.** A section is exported as it is filtered on screen, as CSV or JSON, by pure
+  functions; one native command writes the text to the exports folder.
+
+| Layer                   | Where                                                      |
+| ----------------------- | ---------------------------------------------------------- |
+| Periods, summaries      | `packages/domain/src/report/period.ts`, `summary.ts`       |
+| Status history          | `packages/domain/src/report/timeline.ts`                   |
+| CSV and JSON            | `packages/domain/src/report/export.ts`                     |
+| Reads                   | `packages/db/src/report-queries.ts`                        |
+| Writing the export file | `apps/desktop/src-tauri/src/export.rs`                     |
+| Period, sorting, series | `apps/desktop/src/reports/`                                |
+| Screens                 | `apps/desktop/src/features/reports/`                       |
+| Charts                  | `packages/ui/src/charts/option.ts`, `components/Chart.tsx` |
+
 ## Persistence model
 
 - **Checkpoint.** One transaction writes the clock, every RNG stream, the digest, the checkpoint
@@ -317,13 +360,16 @@ At startup the Rust core applies pending migrations, each in its own transaction
 
 ## Native core command surface
 
-| Command    | Purpose                                            | Gated |
-| ---------- | -------------------------------------------------- | ----- |
-| `db_query` | Run one data statement                             | yes   |
-| `db_batch` | Run statements in one all-or-nothing transaction   | yes   |
-| `app_info` | Version, database path, SQLite version, gate state | no    |
+| Command         | Purpose                                            | Gated |
+| --------------- | -------------------------------------------------- | ----- |
+| `db_query`      | Run one data statement                             | yes   |
+| `db_batch`      | Run statements in one all-or-nothing transaction   | yes   |
+| `app_info`      | Version, database path, SQLite version, gate state | no    |
+| `export_report` | Write report text to the exports folder            | yes   |
 
 Only `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `REPLACE` and `WITH` statements are accepted over IPC.
+`export_report` writes only into `exports` in the data directory, under a name it validates, and
+never overwrites; the window has no other access to the file system.
 
 ## Security posture today
 
@@ -344,9 +390,10 @@ into the simulation.
 
 ### Shell and routing
 
-Seven areas: Overview, Operations, Fleet, Missions, Reports, Data, System. All but Reports exist
-and have routes. Overview is the environment and the world's events. Reports is listed in the
-rail, disabled, with the phase that delivers it; there are no placeholder screens. The simulation clock stays in the top bar on
+Seven areas: Overview, Operations, Fleet, Missions, Reports, Data, System. All exist and have
+routes. Overview is the environment and the world's events. Reports interprets what the world has
+recorded; Data remains the place for reference datasets and their provenance, and System for the
+technical log and diagnostics. The simulation clock stays in the top bar on
 every screen (ADR 0015).
 
 ### Map
@@ -394,6 +441,11 @@ needs a GPU and is verified by running the application.
 | Environment      | Vitest                 | Recorded bits of the weather field, continuity, effects, estimate equals flown |
 | Events           | Vitest + `node:sqlite` | Lifecycle, seeded generation, consequences, persistence, replay                |
 | World scenario   | Vitest + `node:sqlite` | Weather on a mission, a closure, a finding, save mid-flight, reopen, replay    |
+| Reports          | Vitest                 | Periods and boundaries, totals, status history, immutability, determinism      |
+| Report reads     | Vitest + `node:sqlite` | Totals equal the engine's counters; reopen, crash, replay; volume              |
+| Export           | Vitest, `cargo test`   | CSV and JSON content and filtering; the file name guard; no overwrite          |
+| Charts           | Vitest                 | Order, tones from tokens only, empty state, no colour literal                  |
+| Report scenario  | Vitest + `node:sqlite` | Missions to different ends, maintenance, reports, export, reopen, replay       |
 
 Persistence tests use the same Drizzle driver and SQL as production; only the transport differs.
 

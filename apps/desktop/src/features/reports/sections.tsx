@@ -214,7 +214,8 @@ export function SummarySection({ report, previous }: SectionProps) {
           <Hint>
             Both rates are shares of the time each aircraft was owned in the period, taken from the
             log of what it did. They describe this simulated fleet and nothing else.
-            {fleet.notRecordedS > 0 &&
+            {/* Said only when it is enough to show: a few seconds would read as 0.0 hours. */}
+            {fleet.notRecordedS >= 360 &&
               ` ${hours(fleet.notRecordedS)} aircraft-hours in the period have no recorded status and are left out.`}
           </Hint>
         </div>
@@ -236,6 +237,7 @@ export function SummarySection({ report, previous }: SectionProps) {
             label="Missions completed and failed over the period"
             kind="bar"
             stacked
+            counts
             categories={series.categories}
             series={series.outcomes}
             empty="No mission was completed or failed in this period."
@@ -250,7 +252,6 @@ export function SummarySection({ report, previous }: SectionProps) {
 
 const MISSION_SORT: Readonly<Record<string, (mission: MissionRecord) => SortValue>> = {
   mission: (mission) => mission.id,
-  outcome: (mission) => mission.status,
   aircraft: (mission) => mission.aircraftId,
   ended: (mission) => mission.completedTick,
   risk: (mission) => mission.launchRisk,
@@ -262,11 +263,13 @@ function riskCell(mission: MissionRecord) {
   }
   return (
     <TwoLine
-      top={mission.launchRisk === null ? 'Not launched' : `${one(mission.launchRisk)} at launch`}
+      top={
+        mission.launchRisk === null ? 'Not launched' : `${Math.round(mission.launchRisk)} launch`
+      }
       bottom={
         mission.acceptanceRisk === null
-          ? 'Acceptance not recorded'
-          : `${one(mission.acceptanceRisk)} as accepted`
+          ? 'Accepted: not recorded'
+          : `${Math.round(mission.acceptanceRisk)} accepted`
       }
     />
   );
@@ -331,6 +334,7 @@ export function MissionsSection({ report }: SectionProps) {
           categories={chart.categories}
           series={chart.series}
           unit="missions"
+          counts
           onSelect={(index) => {
             setReportFilter({ missionType: chart.types[index] ?? null });
           }}
@@ -363,19 +367,23 @@ export function MissionsSection({ report }: SectionProps) {
                 },
                 {
                   header: 'Outcome',
-                  sortKey: 'outcome',
-                  cell: (mission) => <MissionStatusBadge status={mission.status} />,
+                  sortKey: 'ended',
+                  cell: (mission) => (
+                    <TwoLine
+                      top={<MissionStatusBadge status={mission.status} />}
+                      bottom={
+                        <span className="telemetry">
+                          {/* Month, day and time: the year is in the period above. */}
+                          {when(report, mission.completedTick).slice(5)}
+                        </span>
+                      }
+                    />
+                  ),
                 },
                 {
                   header: 'Aircraft',
                   sortKey: 'aircraft',
                   cell: (mission) => <AircraftLink id={mission.aircraftId} />,
-                },
-                {
-                  header: 'Ended',
-                  sortKey: 'ended',
-                  numeric: true,
-                  cell: (mission) => when(report, mission.completedTick),
                 },
                 {
                   header: 'Flight',
@@ -404,7 +412,7 @@ export function MissionsSection({ report }: SectionProps) {
                     return flight ? (
                       <TwoLine
                         top={formatKg(flight.fuelUsedKg)}
-                        bottom={`${againstEstimate(flight.fuelUsedKg, flight.estimatedFuelUsedKg) ?? '—'} on estimate`}
+                        bottom={`${againstEstimate(flight.fuelUsedKg, flight.estimatedFuelUsedKg) ?? '—'} on est.`}
                       />
                     ) : (
                       '—'
@@ -422,7 +430,7 @@ export function MissionsSection({ report }: SectionProps) {
                       bottom={
                         mission.objectivesFailed > 0
                           ? `${mission.objectivesFailed} failed`
-                          : `${mission.requiredComplete} of ${mission.requiredObjectives} required`
+                          : `${mission.requiredComplete} of ${mission.requiredObjectives} req.`
                       }
                     />
                   ),
@@ -449,8 +457,6 @@ const FLEET_SORT: Readonly<Record<string, (row: AircraftUtilisation) => SortValu
   distance: (row) => row.distanceM,
   fuel: (row) => row.fuelUsedKg,
   missions: (row) => row.missionsCompleted,
-  mean: (row) => row.meanFlightSeconds,
-  maintenance: (row) => row.maintenanceVisits,
   condition: (row) => row.aircraft.conditionPct,
   availability: (row) => row.availability,
   utilisation: (row) => row.utilisation,
@@ -568,7 +574,16 @@ export function FleetSection({ report }: SectionProps) {
                   sortKey: 'distance',
                   numeric: true,
                   align: 'right',
-                  cell: (row) => formatKm(row.distanceM),
+                  cell: (row) => (
+                    <TwoLine
+                      top={formatKm(row.distanceM)}
+                      bottom={
+                        row.meanFlightSeconds === null
+                          ? 'no flights'
+                          : `mean ${formatDuration(row.meanFlightSeconds)}`
+                      }
+                    />
+                  ),
                 },
                 {
                   header: 'Fuel',
@@ -590,26 +605,16 @@ export function FleetSection({ report }: SectionProps) {
                   ),
                 },
                 {
-                  header: 'Mean flight',
-                  sortKey: 'mean',
-                  numeric: true,
-                  align: 'right',
-                  cell: (row) =>
-                    row.meanFlightSeconds === null ? '—' : formatDuration(row.meanFlightSeconds),
-                },
-                {
-                  header: 'Maint.',
-                  sortKey: 'maintenance',
-                  numeric: true,
-                  align: 'right',
-                  cell: (row) => row.maintenanceVisits,
-                },
-                {
                   header: 'Condition',
                   sortKey: 'condition',
                   numeric: true,
                   align: 'right',
-                  cell: (row) => `${one(row.aircraft.conditionPct)} %`,
+                  cell: (row) => (
+                    <TwoLine
+                      top={`${one(row.aircraft.conditionPct)} %`}
+                      bottom={`${row.maintenanceVisits} maint.`}
+                    />
+                  ),
                 },
                 {
                   header: 'Avail.',
@@ -632,8 +637,9 @@ export function FleetSection({ report }: SectionProps) {
           </div>
           <Hint>
             Availability and utilisation are AEGIS simulation metrics: shares of the time the
-            aircraft was owned in the period. Condition is as it is now; everything else is what
-            happened in the period. An aircraft that flew less was not worse, only used less.
+            aircraft was owned in the period. Condition is as it is now, with the maintenance visits
+            completed in the period beneath it; everything else is what happened in the period. An
+            aircraft that flew less was not worse, only used less.
           </Hint>
         </div>
       </Panel>
@@ -899,7 +905,7 @@ export function MaintenanceSection({ report }: SectionProps) {
                     ),
                   },
                   {
-                    header: 'Since maintenance',
+                    header: 'Flown since',
                     numeric: true,
                     align: 'right',
                     cell: (row) => (
@@ -1063,6 +1069,7 @@ export function EventsSection({ report }: SectionProps) {
           categories={series.categories}
           series={series.events}
           unit="events"
+          counts
           empty="No event started in this period."
         />
       </Panel>

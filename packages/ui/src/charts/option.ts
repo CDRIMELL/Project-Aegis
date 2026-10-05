@@ -30,6 +30,8 @@ export interface ChartSpec {
   readonly unit?: string;
   /** The top of the value axis, where it is fixed, for example 100 for a percentage. */
   readonly max?: number;
+  /** The values are counts: the axis is marked in whole numbers only. */
+  readonly counts?: boolean;
   readonly formatValue?: (value: number) => string;
 }
 
@@ -85,9 +87,10 @@ export function chartOption(
     type: 'value',
     min: 0,
     ...(spec.max !== undefined && { max: spec.max }),
+    ...(spec.counts && { minInterval: 1 }),
     axisLine: { show: false },
     axisTick: { show: false },
-    axisLabel: { ...label, formatter: (value: number) => format(value) },
+    axisLabel: { ...label, hideOverlap: true, formatter: (value: number) => format(value) },
     splitLine: { lineStyle: { color: palette.grid } },
     splitNumber: 4,
   };

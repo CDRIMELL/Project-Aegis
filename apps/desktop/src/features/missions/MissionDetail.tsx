@@ -270,6 +270,7 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
     return tick - (tick % 600);
   });
   const open = !isFinished(mission.status) && mission.status !== 'active';
+  const epoch = useSimStore((state) => state.view?.epoch ?? null);
   const context = usePlanContext();
   // The forecast flies the whole route, so it is recomputed only when its inputs really change.
   const stableMission = useStable(mission);
@@ -446,13 +447,34 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
           </div>
         </Panel>
         <PlanPanel mission={mission} evaluation={evaluation} />
-        <Panel title="Risk">
+        <Panel
+          title={
+            mission.actualStartTick !== null
+              ? `Risk at launch · ${formatTick(epoch, mission.actualStartTick) ?? ''}`
+              : mission.acceptedTick !== null
+                ? 'Risk if launched now'
+                : 'Risk'
+          }
+        >
           {risk ? (
             <RiskBreakdown risk={risk} />
           ) : (
             <Hint>Risk is assessed once the mission has an aircraft and a route.</Hint>
           )}
         </Panel>
+        {/* What the operator accepted, kept apart from what held at launch (ADR 0024). */}
+        {mission.acceptedTick !== null && (
+          <Panel title={`Risk as accepted · ${formatTick(epoch, mission.acceptedTick) ?? ''}`}>
+            {mission.acceptance ? (
+              <RiskBreakdown risk={mission.acceptance.risk} />
+            ) : (
+              <Hint>
+                Not recorded. This mission was accepted before the figures at acceptance were kept;
+                nothing has been reconstructed for it.
+              </Hint>
+            )}
+          </Panel>
+        )}
       </div>
 
       {evaluation?.plan?.estimate && mission.status !== 'offered' && (
