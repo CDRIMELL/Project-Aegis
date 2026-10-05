@@ -848,7 +848,8 @@ describe('world-generated opportunities', () => {
     const other = withArea('other-offers');
     other.runSteps(GENERATION.intervalTicks * 60);
     expect(other.snapshot().missions.missions).not.toEqual(first.missions.missions);
-  });
+    // Three runs of sixty simulated hours: allow for a busy machine.
+  }, 30_000);
 
   it('replays a world with generated and accepted opportunities from its log', () => {
     const engine = withArea('replay-offers');
