@@ -143,13 +143,15 @@ The decisions and every assumption are in [ADR 0016](adr/0016-fleet-and-flight-m
 - **Planning** (`evaluatePlan`): runs the same step function over the whole route, through the
   weather the flight will meet at the times it will meet it, so the estimate equals the outcome
   for a stated departure time. Constraints are `block`, `warning` or `note`.
-- **Commands**: `acquireAircraft`, `seedStarterFleet`, `setHome`, `setLoad`, `launchFlight`,
-  `startMaintenance`, `updatePerformance`. A refused command throws `CommandRejected` and changes
-  nothing.
+- **Commands**: `acquireAircraft`, `seedStarterFleet`, `setHome`, `serviceAircraft`,
+  `stopServicing`, `launchFlight`, `startMaintenance`, `updatePerformance`, and the in-flight
+  commands below. A refused command throws `CommandRejected` and changes nothing.
 - **Model migration**: `updatePerformance` moves a grounded aircraft to the current flight model.
   An airborne aircraft is refused and finishes its flight under the model it departed with.
 - **Maintenance**: flying wears condition and accumulates hours; a due aircraft cannot launch until
   maintained, which takes simulated time.
+- **On the ground**: an aircraft that lands is serviced before it is available, and fuel takes
+  time to load. See [Ground servicing](#ground-servicing).
 
 | Layer                    | Where                                                          |
 | ------------------------ | -------------------------------------------------------------- |
@@ -195,7 +197,8 @@ The decisions are in [ADR 0017](adr/0017-missions.md).
   `expired`. "Ready" is derived from the aircraft, not stored.
 - **A mission never moves an aircraft.** `launchMission` launches a flight through the fleet,
   which validates it like any other. An aircraft committed to an accepted mission cannot be flown
-  on anything else until it is released.
+  on anything else until it is released. Accepting a mission begins loading its fuel; the mission
+  launches when its aircraft is ready ([ADR 0027](adr/0027-ground-servicing.md)).
 - **Objectives** are judged each step by a pure function of the mission's flight
   (`evaluateObjective`). The planner runs the same function over the planned flight, so the
   player sees what each objective will do before committing.
@@ -323,6 +326,70 @@ launched, and from the upgrade tick the closure rule applies to every flight, in
 already in the air. As with every model change, such a world's log is complete for replay only
 from the upgrade.
 
+## Ground servicing
+
+The decisions are in [ADR 0027](adr/0027-ground-servicing.md).
+
+An aircraft is in exactly one of six states. Whether it is committed to a mission is not one of
+them: that is the accepted or active mission that names it.
+
+| Status            | On the ground | Can be launched | Becomes available                   |
+| ----------------- | ------------- | --------------- | ----------------------------------- |
+| `available`       | yes           | yes, if fuelled | —                                   |
+| `servicing`       | yes           | no              | by itself, when the service ends    |
+| `maintenance_due` | yes           | no              | when the operator has it maintained |
+| `in_maintenance`  | yes           | no              | by itself, when maintenance ends    |
+| `unserviceable`   | yes           | no              | when maintenance has recovered it   |
+| `in_flight`       | no            | no              | after it lands and is turned round  |
+
+- **One record.** While it is `servicing` an aircraft carries one `service`: why (`turnaround`
+  after landing, `preparation` for a flight), its stage (`checks`, then `refuelling`), when the
+  checks end, the fuel to end with, and the fuel transfer under way. The record exists exactly
+  while the status is `servicing`; a saved world that says otherwise is refused.
+- **Landing begins a turnaround.** A healthy aircraft is checked, for a time set by the flight it
+  has just made, and is then available with the fuel it landed with. An aircraft that lands due
+  maintenance is not turned round: maintenance is what it waits for, exactly as before.
+- **Fuel takes time.** `serviceAircraft` brings an aircraft's fuel to a quantity: a time to
+  connect, then the quantity at a rate set by the size of its tanks. More fuel takes longer, and
+  taking fuel off takes as long as putting it on. Given during the checks, the fuel follows them.
+  `stopServicing` ends a transfer where it is; checks cannot be skipped.
+- **Computed, not accumulated.** The fuel aboard during a transfer is a function of the transfer
+  and the tick. The step writes that figure; it never adds to the last one. A world saved
+  part-way continues to the same completion tick and the same fuel, at any speed, and the target
+  is reached exactly. Nothing is logged per step; what a screen shows is derived the same way.
+- **A launch flies what is aboard.** It no longer sets the fuel. It requires the planned fuel to
+  be aboard and is refused, with the difference and the time to load it, when it is not. So an
+  estimate still equals the outcome.
+- **Missions.** Accepting a mission commits its aircraft and begins loading its fuel; if the
+  aircraft is still in its post-flight checks the fuel follows them. The launch is refused until
+  the aircraft is ready, and nothing launches by itself.
+- **One readiness rule.** `launchReadiness` decides whether an aircraft can launch a load from a
+  place now, and why not. The fleet's launch calls it to refuse; the planner, the mission page,
+  the fleet screen and the aircraft panel call it to explain. No component decides readiness.
+- **Commands report what they caused.** A command that starts or ends a service is followed in
+  the log by the events it caused (`servicingStarted`, `refuellingStarted`,
+  `refuellingCompleted`, `servicingCompleted`), the same events the step writes when a stage
+  changes by itself. A refused command leaves none.
+- **The fuel offered allows for the wait.** A flight now leaves after its preparation, in weather
+  that has moved on, so the fuel a plan or a mission is offered is what arrives on the reserve
+  plus a contingency on the trip fuel (`offeredFuelKg`).
+- **Times are simulation assumptions**, stated in the interface (`GROUND_SERVICE`). They are not
+  reference data, and are the same at every aerodrome.
+
+| Layer                     | Where                                                |
+| ------------------------- | ---------------------------------------------------- |
+| Rules, times, readiness   | `packages/domain/src/ground/service.ts`              |
+| State, commands, stepping | `packages/sim/src/fleet.ts`                          |
+| A mission's preparation   | `packages/sim/src/missions.ts`                       |
+| Persistence               | `packages/db/src/fleet-schema.ts`, `world-store.ts`  |
+| What the screens say      | `apps/desktop/src/fleet/ground-logic.ts`             |
+| Panel and fuel control    | `apps/desktop/src/features/shared/GroundService.tsx` |
+
+Simulation model 7. A model-6 world loads and upgrades: none of its aircraft is being serviced.
+From the upgrade tick a landing begins a turnaround and a launch needs its fuel aboard, so a
+mission accepted under model 6 waits for its aircraft to be prepared, which its page offers.
+Migration 0009 adds one nullable column, `sim_aircraft.service`; no table is rebuilt.
+
 ## Reports
 
 The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-report-export.md).
@@ -352,6 +419,11 @@ The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-rep
   its revisions, the time it held and whether it landed during a closure. Fuel is compared with
   the estimate made at launch only for flights flown as launched: an estimate for one route says
   nothing about another. Missions aborted are counted on their own.
+- **Ground operations.** A finished ground service is read from the log like a finished flight:
+  what it was, how long it took, how long it spent on fuel and what it loaded or took off, and
+  the mission it was for. It belongs to the period in which it finished. Time being serviced is
+  part of each aircraft's status history and counts against availability, as time down for
+  maintenance does.
 - **In progress is shown apart.** Flights in the air and missions under way are listed as they
   stand, and are in no total: totals are of what has finished.
 - **Drill-down, not duplication.** Every mission, aircraft and event a report names opens its own
@@ -394,7 +466,7 @@ The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-rep
 | `sim_clock`      | 1    | simulation time, tick, speed, running                    |
 | `sim_checkpoint` | 1    | sequence number, wall-clock time, integrity digest       |
 | `sim_rng_stream` | n    | one row per named RNG stream                             |
-| `sim_aircraft`   | n    | one row per simulated aircraft                           |
+| `sim_aircraft`   | n    | one row per simulated aircraft, with its ground service  |
 | `sim_flight`     | n    | active and finished flights; finished ones are history   |
 | `sim_counter`    | n    | next sequence number per identifier prefix               |
 | `sim_mission`    | n    | every mission and opportunity; finished ones are history |
@@ -510,6 +582,10 @@ needs a GPU and is verified by running the application.
 | In-flight        | Vitest                 | Revision, hold, closure on arrival, abort, caution; preview equals outcome     |
 | In-flight store  | Vitest + `node:sqlite` | Reopen mid-diversion and mid-hold; migration of a database from before 0008    |
 | Control scenario | Vitest + `node:sqlite` | Divert, reroute, abort after an objective, reopen, reports, replay             |
+| Ground rules     | Vitest, fast-check     | Times, fuel at any tick, exact completion, every state of the readiness rule   |
+| Servicing        | Vitest                 | Turnaround, refuelling, refusals, missions, 1x and 100x, save at any tick      |
+| Servicing store  | Vitest + `node:sqlite` | Reopen mid-refuel, crash recovery; migration of a database from before 0009    |
+| Ground scenario  | Vitest + `node:sqlite` | Land, turn round, refuel, close and reopen, launch when ready, reports, replay |
 
 Persistence tests use the same Drizzle driver and SQL as production; only the transport differs.
 
@@ -519,9 +595,9 @@ seed and its logged commands, and `npm run verify:reference` checks integrity, p
 source hashes and fingerprints the reference tables. `npx tsx tools/flyable-types.ts` lists which
 reference types the flight model can fly and what each of the others lacks.
 
-`npx tsx tools/scenario-world.ts <closure|caution> <database>` builds a saved world in which an
-aircraft is bound for an aerodrome the world has just announced it will close, or is flying with
-a technical caution. Nothing is injected: seeds are searched until the world's own events produce
+`npx tsx tools/scenario-world.ts <closure|caution|turnaround> <database>` builds a saved world in
+which an aircraft is bound for an aerodrome the world has just announced it will close, is flying
+with a technical caution, or has just landed and is in its post-flight checks. Nothing is injected: seeds are searched until the world's own events produce
 the situation, so the result replays like any other world. It is for checking a build by hand.
 
 ## Commands

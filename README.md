@@ -8,7 +8,7 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 8A of 10 complete.
+Phase 8B of 10 complete.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -46,8 +46,16 @@ Phase 8A of 10 complete.
   is down to reserve. Where it lands decides the objectives that depend on a place. A technical
   caution can show in flight and puts the aircraft due maintenance when it lands.
 
-There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices. Fuel
-is still loaded instantly at launch; timed turnaround and refuelling are the next phase (8B).
+- **Turnaround and refuelling:** an aircraft that lands is not available at once. It is checked,
+  then fuelled for its next flight over simulated time, and is ready when that is done. A launch
+  flies the fuel that is aboard; what is not aboard is loaded first, and more takes longer.
+  Accepting a mission begins preparing its aircraft, and the mission launches when the aircraft
+  is ready and not before. Every screen that shows an aircraft says what it is doing and when it
+  will be available, from one readiness rule. A service part-done when the application closes
+  resumes where it was.
+
+There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices. How
+long servicing takes is a stated simulation assumption, the same at every aerodrome.
 
 ## Requirements
 

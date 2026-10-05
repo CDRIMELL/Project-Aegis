@@ -1,7 +1,8 @@
 /*
  * Builds a saved world in which something specific is happening, for verifying the application
  * by hand or in a release build: an aircraft bound for a destination the world has just announced
- * it will close, or one flying with a technical caution showing.
+ * it will close, one flying with a technical caution showing, or one that has just landed and is
+ * in its post-flight checks.
  *
  * Nothing is injected. The world is given the starter fleet exactly as the application gives it,
  * and is run forward from a seed, with ordinary commands, until its own seeded events produce the
@@ -10,6 +11,7 @@
  *
  *   npx tsx tools/scenario-world.ts closure <database>
  *   npx tsx tools/scenario-world.ts caution <database>
+ *   npx tsx tools/scenario-world.ts turnaround <database>
  *
  * The database must hold reference data and no world yet:
  *   npm run data:install-pack -- --db <database>
@@ -18,6 +20,7 @@ import { SqliteWorldStore } from '@aegis/db';
 import { openNodeDatabase } from '@aegis/db/node';
 import { generatePlan, simInstant, type RoutePoint } from '@aegis/domain';
 import { SimulationEngine } from '@aegis/sim';
+import { fuelled, untilServiced } from '@aegis/sim/testing';
 import {
   aerodromePoint,
   buildCatalogue,
@@ -31,8 +34,8 @@ import {
 } from '../apps/desktop/src/reference/queries';
 
 const [kind, path] = process.argv.slice(2);
-if ((kind !== 'closure' && kind !== 'caution') || !path) {
-  console.error('usage: scenario-world.ts <closure|caution> <database>');
+if ((kind !== 'closure' && kind !== 'caution' && kind !== 'turnaround') || !path) {
+  console.error('usage: scenario-world.ts <closure|caution|turnaround> <database>');
   process.exit(2);
 }
 
@@ -75,10 +78,13 @@ function attempt(seed: string): SimulationEngine | null {
     return found;
   };
   for (let leg = 0; leg < 8; leg++) {
+    // Turned round after the last leg, and fuelled for this one: both take simulated time.
+    untilServiced(engine, AIRCRAFT);
     const at = aircraft();
     const model = at.performance;
     if (at.status !== 'available' || !at.location || !model) return null;
     const to = at.location.code === 'EGHQ' ? akrotiri : newquay;
+    fuelled(engine, AIRCRAFT, Math.min(46_000, model.fuelCapacityKg));
     try {
       engine.applyCommand({
         type: 'launchFlight',
@@ -93,7 +99,14 @@ function attempt(seed: string): SimulationEngine | null {
     }
     for (let i = 0; i < 3000; i++) {
       const flight = engine.snapshot().fleet.flights.find((each) => each.status === 'active');
-      if (!flight) break;
+      if (!flight) {
+        // Saved two minutes after a landing that began a turnaround: the checks are under way.
+        if (kind === 'turnaround' && aircraft().service?.reason === 'turnaround') {
+          engine.runSteps(120 - (engine.clock.tick - (aircraft().service?.startedTick ?? 0)));
+          return engine;
+        }
+        break;
+      }
       if (kind === 'caution' && flight.caution) return engine;
       if (kind === 'closure') {
         // Saved when the world announces that the destination will be closed at the time the
@@ -155,6 +168,10 @@ console.log(
       tick: snapshot.clock.tick,
       flight: flight?.id,
       to: flight?.plan.points.at(-1)?.code,
+      aircraft: snapshot.fleet.aircraft
+        .filter((each) => each.id === AIRCRAFT)
+        .map((each) => `${each.id} ${each.status} at ${each.location?.code ?? 'airborne'}`),
+      service: snapshot.fleet.aircraft.find((each) => each.id === AIRCRAFT)?.service ?? null,
       caution: flight?.caution ?? null,
       openEvents: snapshot.events.events
         .filter((event) => event.status !== 'resolved')

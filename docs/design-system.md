@@ -85,7 +85,7 @@ through `SANS_FONT_FILES` and `MONO_FONT_FILES`: labels in the sans face, codes 
 | `EmptyState`                               | Nothing to show, and what to do next                      |
 
 | `NumberField`, `SelectField` | Labelled number with unit; labelled choice |
-| `Meter` | A quantity against its capacity, with a semantic tone |
+| `Meter` | A quantity against its capacity, with a semantic tone. Eased between readings, so a quantity that moves is seen to move; still under reduced motion |
 | `ConstraintList` | Findings about a plan, most severe first, each stating its severity in words |
 | `PageHeader` | Heading of a detail view: identity and actions |
 | `ListPane`, `EntityRow` | The list half of a list-and-detail screen |
@@ -103,8 +103,8 @@ explains the assumption on hover.
 colour; `charts/option.ts` builds the option from the tokens.
 
 - A chart answers one stated question, and its panel title is that question's subject.
-- Tones are semantic, as for badges: accent for the thing measured, warn and critical for what
-  they say, neutral for what merely is.
+- Tones are semantic, as for badges: accent for the thing measured, ok for what is ready, info
+  for what is under way, warn and critical for what they say, neutral for what merely is.
 - Nothing animates. A count axis is marked in whole numbers. A gap in the data is a gap.
 - With nothing to draw, the chart says so in words instead of showing empty axes.
 - The figures are always also in a table on the same screen; the chart is never the only way to
