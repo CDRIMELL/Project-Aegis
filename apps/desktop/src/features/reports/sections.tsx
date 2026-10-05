@@ -577,8 +577,8 @@ export function FleetSection({ report }: SectionProps) {
       ids: report.aircraft.map((row) => row.aircraft.id),
       series: [
         share('Airborne', 'accent', 'in_flight'),
-        share('Available', 'ok', 'available'),
-        share('Being serviced', 'info', 'servicing'),
+        share('Available', 'info', 'available'),
+        share('Being serviced', 'muted', 'servicing'),
         share('Due maintenance', 'warn', 'maintenance_due'),
         share('In maintenance', 'neutral', 'in_maintenance'),
         share('Unserviceable', 'critical', 'unserviceable'),

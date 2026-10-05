@@ -325,7 +325,7 @@ function DraftEditor({
             }}
           />
         </div>
-        <div>
+        <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             icon={Fuel}
@@ -335,6 +335,18 @@ function DraftEditor({
           >
             Fuel for this route
           </Button>
+          {!mission && (
+            <Button
+              size="sm"
+              disabled={Math.round(draft.load.fuelKg) === Math.round(aircraft.fuelKg)}
+              title="Plan to leave with the fuel that is aboard now: nothing to load, and no wait for it."
+              onClick={() => {
+                editDraft((current) => setLoad(current, { fuelKg: aircraft.fuelKg }));
+              }}
+            >
+              Use the fuel aboard
+            </Button>
+          )}
         </div>
       </section>
 

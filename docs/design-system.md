@@ -103,8 +103,8 @@ explains the assumption on hover.
 colour; `charts/option.ts` builds the option from the tokens.
 
 - A chart answers one stated question, and its panel title is that question's subject.
-- Tones are semantic, as for badges: accent for the thing measured, ok for what is ready, info
-  for what is under way, warn and critical for what they say, neutral for what merely is.
+- Tones are semantic, as for badges: accent for the thing measured, warn and critical for what
+  they say, neutral for what merely is, and muted for a second such state beside it.
 - Nothing animates. A count axis is marked in whole numbers. A gap in the data is a gap.
 - With nothing to draw, the chart says so in words instead of showing empty axes.
 - The figures are always also in a table on the same screen; the chart is never the only way to
