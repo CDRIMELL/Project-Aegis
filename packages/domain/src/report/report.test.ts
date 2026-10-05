@@ -17,6 +17,7 @@ import {
   presetPeriod,
   previousPeriod,
   reportTable,
+  serviceRecords,
   statusChanges,
   statusTime,
   tickToIso,
@@ -775,6 +776,175 @@ describe('what was done in flight', () => {
     // A period that reaches the present does.
     const today = report({ fromTick: MIDNIGHT, toTick: operated.asOfTick + 1 }, operated);
     expect(today.inProgress.flights).toHaveLength(1);
+  });
+});
+
+describe('ground servicing in a report', () => {
+  /*
+   * G flies an hour, lands into a turnaround that also loads the fuel of its next mission, is
+   * later prepared again by having fuel taken off, and is being prepared a third time when the
+   * report is made.
+   */
+  const forMission = (record: LogRecord): LogRecord => ({ ...record, missionId: 'MSN-000007' });
+  const log: LogRecord[] = [
+    entry(1000, 'command', 'launchFlight', 'G'),
+    entry(4600, 'event', 'flightCompleted', 'G', { turnaroundS: 1020 }),
+    entry(4600, 'event', 'servicingStarted', 'G', { reason: 'turnaround', checksS: 1020 }),
+    forMission(entry(5620, 'event', 'refuellingStarted', 'G', { fromKg: 6000, toKg: 30_000 })),
+    forMission(entry(6520, 'event', 'refuellingCompleted', 'G', { loadedKg: 24_000 })),
+    forMission(
+      entry(6520, 'event', 'servicingCompleted', 'G', {
+        reason: 'turnaround',
+        durationS: 1920,
+        checksS: 1020,
+        refuelS: 900,
+        loadedKg: 24_000,
+        fuelKg: 30_000,
+      }),
+    ),
+    entry(20_000, 'command', 'serviceAircraft', 'G', { fuelKg: 20_000 }),
+    entry(20_000, 'event', 'servicingStarted', 'G', { reason: 'preparation' }),
+    entry(20_800, 'event', 'servicingCompleted', 'G', {
+      reason: 'preparation',
+      durationS: 800,
+      checksS: 0,
+      refuelS: 800,
+      loadedKg: -10_000,
+      fuelKg: 20_000,
+    }),
+    entry(30_000, 'event', 'servicingStarted', 'G', { reason: 'preparation' }),
+  ];
+  const data: ReportData = {
+    ...DATA,
+    asOfTick: 31_000,
+    aircraft: [aircraft('G', { status: 'servicing' })],
+    flights: [],
+    missions: [],
+    events: [],
+    inProgressFlights: [],
+    inProgressMissions: [],
+    statusLog: log,
+  };
+  const WHOLE: ReportPeriod = { fromTick: 0, toTick: 31_001 };
+  const EARLY: ReportPeriod = { fromTick: 0, toTick: 10_000 };
+  const LATE: ReportPeriod = { fromTick: 10_000, toTick: 31_001 };
+
+  it('reads when an aircraft was being serviced, and for how long', () => {
+    expect(statusChanges(log).map((change) => [change.tick, change.status])).toEqual([
+      [1000, 'in_flight'],
+      // Landed, and in the same step into its turnaround.
+      [4600, 'available'],
+      [4600, 'servicing'],
+      [6520, 'available'],
+      [20_000, 'servicing'],
+      [20_800, 'available'],
+      [30_000, 'servicing'],
+    ]);
+    const time = statusTime(aircraft('G'), statusChanges(log), 0, 0, 31_001);
+    expect(time.byStatus).toMatchObject({
+      in_flight: 3600,
+      servicing: 1920 + 800 + 1001,
+      maintenance_due: 0,
+      in_maintenance: 0,
+    });
+    expect(time.recordedS).toBe(31_001);
+    expect(time.notRecordedS).toBe(0);
+    // Time being serviced is time it could not have been launched; it is not time flown.
+    expect(availability(time)).toBeCloseTo((31_001 - 3721) / 31_001, 12);
+    expect(utilisation(time)).toBeCloseTo(3600 / 31_001, 12);
+  });
+
+  it('lists each finished service with what it took and what it loaded', () => {
+    expect(serviceRecords(log)).toEqual([
+      {
+        aircraftId: 'G',
+        missionId: 'MSN-000007',
+        reason: 'turnaround',
+        startedTick: 4600,
+        completedTick: 6520,
+        durationS: 1920,
+        checksS: 1020,
+        refuelS: 900,
+        loadedKg: 24_000,
+        fuelKg: 30_000,
+      },
+      {
+        aircraftId: 'G',
+        missionId: null,
+        reason: 'preparation',
+        startedTick: 20_000,
+        completedTick: 20_800,
+        durationS: 800,
+        checksS: 0,
+        refuelS: 800,
+        loadedKg: -10_000,
+        fuelKg: 20_000,
+      },
+    ]);
+    // Nothing the log does not say is supplied: a damaged entry reads as nothing done.
+    expect(
+      serviceRecords([entry(50, 'event', 'servicingCompleted', 'G', { durationS: 'long' })]),
+    ).toMatchObject([{ durationS: 0, startedTick: 50, completedTick: 50, loadedKg: 0 }]);
+  });
+
+  it('counts a service in the period it finished in, and one under way in none', () => {
+    const early = report(EARLY, data);
+    expect(early.services.map((service) => service.completedTick)).toEqual([6520]);
+    expect(early.totals).toMatchObject({
+      services: 1,
+      serviceSeconds: 1920,
+      turnarounds: 1,
+      turnaroundSeconds: 1920,
+      refuellings: 1,
+      refuellingSeconds: 900,
+      fuelLoadedKg: 24_000,
+      fuelRemovedKg: 0,
+      // The mission's fuel followed the checks: the time it took is the fuelling, not the checks.
+      missionPreparations: 1,
+      missionPreparationSeconds: 900,
+    });
+    const late = report(LATE, data);
+    expect(late.totals).toMatchObject({
+      services: 1,
+      serviceSeconds: 800,
+      turnarounds: 0,
+      refuellings: 1,
+      fuelLoadedKg: 0,
+      fuelRemovedKg: 10_000,
+      missionPreparations: 0,
+      missionPreparationSeconds: 0,
+    });
+    // The one under way is in no total, and its time so far is in the aircraft's day.
+    expect(late.aircraft[0]?.time.byStatus.servicing).toBe(800 + 1001);
+    expect(late.aircraft[0]).toMatchObject({ services: 1, fuelLoadedKg: 0 });
+
+    // Periods add up.
+    const whole = report(WHOLE, data);
+    for (const key of [
+      'services',
+      'serviceSeconds',
+      'refuellingSeconds',
+      'fuelLoadedKg',
+    ] as const) {
+      expect(whole.totals[key]).toBe(early.totals[key] + late.totals[key]);
+    }
+    expect(whole.aircraft[0]?.time.byStatus.servicing).toBe(
+      (early.aircraft[0]?.time.byStatus.servicing ?? 0) +
+        (late.aircraft[0]?.time.byStatus.servicing ?? 0),
+    );
+  });
+
+  it('exports what it shows', () => {
+    const whole = report(WHOLE, data);
+    const summary = reportTable('summary', whole).rows;
+    const value = (key: string) => summary.find((row) => row.metric === key)?.value;
+    expect(value('turnarounds')).toBe(1);
+    expect(value('fuel_loaded')).toBe(24_000);
+    expect(value('fuel_removed')).toBe(10_000);
+    expect(value('mission_preparations')).toBe(1);
+    const csv = toCsv(reportTable('fleet', whole));
+    expect(csv.split('\n')[0]).toContain('Being serviced (h)');
+    expect(csv.split('\n')[0]).toContain('Fuel loaded on the ground (kg)');
   });
 });
 

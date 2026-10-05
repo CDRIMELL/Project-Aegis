@@ -84,8 +84,8 @@ export interface ActivityTotals {
   readonly fuelLoadedKg: number;
   readonly fuelRemovedKg: number;
   /**
-   * Preparations a mission asked for: launches that had to wait for their aircraft, and for how
-   * long in all.
+   * Services that loaded a mission's fuel: launches that had to wait for their aircraft, and
+   * the time that fuel took in all.
    */
   readonly missionPreparations: number;
   readonly missionPreparationSeconds: number;
@@ -244,9 +244,9 @@ export function activityTotals(
 ): ActivityTotals {
   const turnarounds = services.filter((service) => service.reason === 'turnaround');
   const refuellings = services.filter((service) => service.refuelS > 0);
-  const forMissions = services.filter(
-    (service) => service.reason === 'preparation' && service.missionId !== null,
-  );
+  // A mission's fuel is loaded by a preparation, or follows the checks of a turnaround already
+  // under way. Either way the service names the mission.
+  const forMissions = services.filter((service) => service.missionId !== null);
   const withWeather = flights.filter(
     (flight) => flight.stillAirFuelUsedKg !== null && flight.stillAirDurationS !== null,
   );
@@ -289,7 +289,10 @@ export function activityTotals(
     fuelLoadedKg: sum(services, (service) => Math.max(service.loadedKg, 0)),
     fuelRemovedKg: sum(services, (service) => Math.max(-service.loadedKg, 0)),
     missionPreparations: forMissions.length,
-    missionPreparationSeconds: sum(forMissions, (service) => service.durationS),
+    // The time the mission's fuel took: all of a preparation, the fuelling part of a turnaround.
+    missionPreparationSeconds: sum(forMissions, (service) =>
+      service.reason === 'preparation' ? service.durationS : service.refuelS,
+    ),
     eventsStarted,
   };
 }
