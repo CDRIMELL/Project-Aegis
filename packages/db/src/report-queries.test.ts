@@ -232,6 +232,54 @@ describe('reports from a saved world', () => {
     expect(report.fleet.availability).toBeGreaterThan(0.5);
   });
 
+  it('knows what each aircraft was when a period opened, from the last transition before it', async () => {
+    const engine = operations();
+    await store.save(checkpoint(engine));
+    const whole = await reportFrom(database);
+    const visit = whole.maintenance[0];
+    if (!visit?.completedTick) throw new Error('no maintenance visit');
+    // A period that opens an hour into the visit, and one that opens while the jet is airborne.
+    const midVisit = await reportFrom(database, {
+      fromTick: visit.startedTick + HOUR,
+      toTick: visit.completedTick + HOUR,
+    });
+    const transport = midVisit.aircraft.find((row) => row.aircraft.id === TRANSPORT);
+    expect(transport?.time.byStatus).toMatchObject({
+      in_maintenance: MAINTENANCE.durationSeconds - HOUR,
+      available: HOUR,
+    });
+    expect(transport?.time.notRecordedS).toBe(0);
+    // The visit finished in this period and is reported with its true start, before the period.
+    expect(midVisit.maintenance).toEqual([visit]);
+
+    const jetFlight = whole.flights.find((flight) => flight.aircraftId === JET);
+    if (!jetFlight) throw new Error('no jet flight');
+    const midFlight = await reportFrom(database, {
+      fromTick: jetFlight.departedTick + 600,
+      toTick: jetFlight.arrivedTick + 600,
+    });
+    expect(midFlight.aircraft.find((row) => row.aircraft.id === JET)?.time.byStatus).toMatchObject({
+      in_flight: jetFlight.durationS - 600,
+      available: 600,
+    });
+    // Any way a stretch of time is divided, the parts add up to the whole.
+    const cut = visit.startedTick + HOUR;
+    const [first, second] = [
+      await reportFrom(database, { fromTick: 0, toTick: cut }),
+      await reportFrom(database, { fromTick: cut, toTick: ALL.toTick }),
+    ];
+    for (const row of whole.aircraft) {
+      const parts = [first, second].map(
+        (part) => part.aircraft.find((each) => each.aircraft.id === row.aircraft.id)?.time,
+      );
+      for (const status of Object.keys(row.time.byStatus) as (keyof typeof row.time.byStatus)[]) {
+        expect((parts[0]?.byStatus[status] ?? 0) + (parts[1]?.byStatus[status] ?? 0)).toBe(
+          row.time.byStatus[status],
+        );
+      }
+    }
+  });
+
   it('reports the risk accepted and the risk at launch as two figures', async () => {
     const engine = operations();
     await store.save(checkpoint(engine));
@@ -489,7 +537,9 @@ describe('report volume', () => {
       const elapsedMs = performance.now() - started;
 
       expect(report.totals.flights).toBe(360);
-      expect(data.statusLog.length).toBeGreaterThan(2 * FLIGHTS);
+      // Two transitions a flight in the window, and one per aircraft from before it: the twenty
+      // thousand earlier ones are never read.
+      expect(data.statusLog.length).toBeLessThan(2 * 360 + 10);
       const transport = report.aircraft.find((row) => row.aircraft.id === TRANSPORT);
       // Half of every two hours airborne. The window opens one tick into a flight.
       expect(Math.abs((transport?.time.byStatus.in_flight ?? 0) - 360 * 3600)).toBeLessThanOrEqual(
@@ -497,7 +547,7 @@ describe('report volume', () => {
       );
       expect(transport?.utilisation).toBeCloseTo(0.5, 6);
       // Generous for a loaded machine; the figure itself is in the phase report.
-      expect(elapsedMs).toBeLessThan(3000);
+      expect(elapsedMs).toBeLessThan(1500);
       console.info(
         `report over 30 days of ${FLIGHTS} flights, ${seq - 1_000_000} log rows: ${elapsedMs.toFixed(0)} ms`,
       );

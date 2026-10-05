@@ -7,7 +7,7 @@ import {
   type MissionRecord,
   type ReportData,
 } from '@aegis/domain';
-import { and, asc, eq, gte, inArray, isNotNull, lt, ne, or } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, lt, lte, max, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AegisDb } from './client';
 import {
@@ -73,61 +73,108 @@ export async function loadReportData(
   fromTick: number,
   toTick: number,
 ): Promise<LoadedReportData | null> {
-  const [worlds, clocks, checkpoints, aircraftRows, flightRows, missionRows, eventRows, logRows] =
-    await db.batch([
-      db.select().from(simWorld),
-      db.select().from(simClock),
-      db.select().from(simCheckpoint),
-      db.select().from(simAircraft).orderBy(asc(simAircraft.id)),
-      db
-        .select()
-        .from(simFlight)
-        .where(
-          and(
-            ne(simFlight.status, 'active'),
-            gte(simFlight.arrivedTick, fromTick),
-            lt(simFlight.arrivedTick, toTick),
-          ),
-        )
-        .orderBy(asc(simFlight.arrivedTick), asc(simFlight.id)),
-      db
-        .select()
-        .from(simMission)
-        .where(and(gte(simMission.completedTick, fromTick), lt(simMission.completedTick, toTick)))
-        .orderBy(asc(simMission.completedTick), asc(simMission.id)),
-      // Every event that could have been open in the window: started before its end, and either
-      // not over or over only after its start.
-      db
-        .select()
-        .from(simEvent)
-        .where(
-          and(
-            lt(simEvent.startTick, toTick),
-            or(gte(simEvent.endTick, fromTick), inArray(simEvent.status, ['scheduled', 'active'])),
-          ),
-        )
-        .orderBy(asc(simEvent.startTick), asc(simEvent.id)),
-      // Status history needs the transitions from the beginning, not only those in the window:
-      // what an aircraft was at the window's start is settled by what happened before it.
-      db
-        .select()
-        .from(simLog)
-        .where(
-          and(
-            lt(simLog.tick, toTick),
-            or(
-              and(inArray(simLog.type, [...STATUS_LOG_TYPES]), isNotNull(simLog.aircraftId)),
-              eq(simLog.type, 'missionAffected'),
-            ),
-          ),
-        )
-        .orderBy(asc(simLog.seq)),
-    ]);
+  // A log entry that can change an aircraft's status. Events name an aircraft only when they
+  // concern one, which today is an inspection finding.
+  const statusEntry = and(
+    inArray(simLog.type, [...STATUS_LOG_TYPES]),
+    isNotNull(simLog.aircraftId),
+  );
+
+  const [
+    worlds,
+    clocks,
+    checkpoints,
+    aircraftRows,
+    flightRows,
+    missionRows,
+    eventRows,
+    windowLog,
+    priorLog,
+  ] = await db.batch([
+    db.select().from(simWorld),
+    db.select().from(simClock),
+    db.select().from(simCheckpoint),
+    db.select().from(simAircraft).orderBy(asc(simAircraft.id)),
+    db
+      .select()
+      .from(simFlight)
+      .where(
+        and(
+          ne(simFlight.status, 'active'),
+          gte(simFlight.arrivedTick, fromTick),
+          lt(simFlight.arrivedTick, toTick),
+        ),
+      )
+      .orderBy(asc(simFlight.arrivedTick), asc(simFlight.id)),
+    db
+      .select()
+      .from(simMission)
+      .where(and(gte(simMission.completedTick, fromTick), lt(simMission.completedTick, toTick)))
+      .orderBy(asc(simMission.completedTick), asc(simMission.id)),
+    // Every event that could have been open in the window: started before its end, and either
+    // not over or over only after its start.
+    db
+      .select()
+      .from(simEvent)
+      .where(
+        and(
+          lt(simEvent.startTick, toTick),
+          or(gte(simEvent.endTick, fromTick), inArray(simEvent.status, ['scheduled', 'active'])),
+        ),
+      )
+      .orderBy(asc(simEvent.startTick), asc(simEvent.id)),
+    // Status history: the transitions in the window...
+    db
+      .select()
+      .from(simLog)
+      .where(and(gte(simLog.tick, fromTick), lt(simLog.tick, toTick), statusEntry))
+      .orderBy(asc(simLog.seq)),
+    // ...and, for each aircraft, the last one before it, which settles what the aircraft was
+    // when the window opened. The database finds it; the history before the window is never
+    // read into the application, however long it is.
+    db
+      .select()
+      .from(simLog)
+      .where(
+        inArray(
+          simLog.seq,
+          db
+            .select({ seq: max(simLog.seq) })
+            .from(simLog)
+            .where(and(lt(simLog.tick, fromTick), statusEntry))
+            .groupBy(simLog.aircraftId),
+        ),
+      )
+      .orderBy(asc(simLog.seq)),
+  ]);
 
   const world = worlds[0];
   const clock = clocks[0];
   const checkpoint = checkpoints[0];
   if (!world || !clock || !checkpoint) return null;
+
+  // Which missions each event affected. The log is append-only, so entries up to the checkpoint's
+  // tick read the same now as they did in the batch; and an event cannot have affected anything
+  // before it was created.
+  const earliestEvent = eventRows.reduce(
+    (earliest, row) => Math.min(earliest, row.createdTick),
+    Number.POSITIVE_INFINITY,
+  );
+  const affectedRows =
+    eventRows.length === 0
+      ? []
+      : await db
+          .select()
+          .from(simLog)
+          .where(
+            and(
+              eq(simLog.type, 'missionAffected'),
+              gte(simLog.tick, earliestEvent),
+              lte(simLog.tick, clock.tick),
+              lt(simLog.tick, toTick),
+            ),
+          )
+          .orderBy(asc(simLog.seq));
 
   const aircraft: AircraftRecord[] = aircraftRows.map((row) => ({
     id: row.id,
@@ -198,28 +245,22 @@ export async function loadReportData(
     };
   });
 
-  const statusLog: LogRecord[] = [];
+  const statusLog: LogRecord[] = [...priorLog, ...windowLog].map((row) => ({
+    seq: row.seq,
+    tick: row.tick,
+    kind: row.kind,
+    type: row.type,
+    aircraftId: row.aircraftId,
+    missionId: row.missionId,
+    payload: read(payload, row.payload, `log entry ${row.seq}`),
+  }));
   const affected = new Map<string, string[]>();
-  for (const row of logRows) {
-    const data = read(payload, row.payload, `log entry ${row.seq}`);
-    if (row.type === 'missionAffected') {
-      const eventId = data.eventId;
-      if (typeof eventId === 'string' && row.missionId !== null) {
-        const list = affected.get(eventId) ?? [];
-        if (!list.includes(row.missionId)) list.push(row.missionId);
-        affected.set(eventId, list);
-      }
-      continue;
-    }
-    statusLog.push({
-      seq: row.seq,
-      tick: row.tick,
-      kind: row.kind,
-      type: row.type,
-      aircraftId: row.aircraftId,
-      missionId: row.missionId,
-      payload: data,
-    });
+  for (const row of affectedRows) {
+    const { eventId } = read(payload, row.payload, `log entry ${row.seq}`);
+    if (typeof eventId !== 'string' || row.missionId === null) continue;
+    const list = affected.get(eventId) ?? [];
+    if (!list.includes(row.missionId)) list.push(row.missionId);
+    affected.set(eventId, list);
   }
 
   const events: EventRecord[] = eventRows.map((row) => {

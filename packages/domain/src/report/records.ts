@@ -122,7 +122,10 @@ export interface ReportData {
   /** Ended missions, by end then identifier. */
   readonly missions: readonly MissionRecord[];
   readonly events: readonly EventRecord[];
-  /** The log entries that change an aircraft's status, from the start, in sequence. */
+  /**
+   * The log entries that change an aircraft's status, in sequence: every one in the period, and
+   * before it at least the last one for each aircraft, which settles how the period began.
+   */
   readonly statusLog: readonly LogRecord[];
 }
 
