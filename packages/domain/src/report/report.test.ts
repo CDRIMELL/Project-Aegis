@@ -787,9 +787,10 @@ describe('export', () => {
     expect(filterFlights(full, training).map((f) => f.id)).toEqual(['FLT-000001', 'FLT-000003']);
     const closures = { ...NO_FILTER, eventType: 'aerodrome_closure' as const };
     expect(reportTable('events', full, closures).rows).toHaveLength(1);
-    expect(JSON.parse(toJson(reportTable('fuel', full, onlyB), full, onlyB)).meta.filter).toEqual(
-      onlyB,
-    );
+    const exported = JSON.parse(toJson(reportTable('fuel', full, onlyB), full, onlyB)) as {
+      meta: { filter: unknown };
+    };
+    expect(exported.meta.filter).toEqual(onlyB);
   });
 
   it('is byte-identical for the same report, and named from simulation time', () => {
