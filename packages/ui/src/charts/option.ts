@@ -9,7 +9,7 @@ import type { ColorToken } from '../tokens';
  * a browser.
  */
 
-export type ChartTone = 'accent' | 'info' | 'warn' | 'critical' | 'neutral';
+export type ChartTone = 'accent' | 'info' | 'ok' | 'warn' | 'critical' | 'neutral';
 
 export interface ChartSeries {
   readonly name: string;
@@ -39,6 +39,7 @@ export interface ChartSpec {
 export const CHART_TOKENS = {
   accent: '--color-accent',
   info: '--color-info',
+  ok: '--color-ok',
   warn: '--color-warn',
   critical: '--color-critical',
   neutral: '--color-ink-disabled',

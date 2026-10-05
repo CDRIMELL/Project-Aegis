@@ -2,7 +2,7 @@ import {
   evaluatePlan,
   generatePlan,
   intermediatePoint,
-  suggestedFuelKg,
+  offeredFuelKg,
   type FlightLoad,
   type FlightPlan,
   type PerformanceModel,
@@ -22,7 +22,10 @@ export interface PlanDraft {
   readonly load: FlightLoad;
 }
 
-/** Fuel to load by default: enough to arrive with the reserve, or full tanks if that cannot be met. */
+/**
+ * Fuel to load by default: enough to arrive with the reserve, with a contingency for leaving
+ * later than now, or full tanks if that cannot be met.
+ */
 function defaultFuel(
   model: PerformanceModel,
   plan: FlightPlan,
@@ -31,7 +34,7 @@ function defaultFuel(
 ): number {
   const byMass = model.maxTakeoffMassKg - model.emptyMassKg - payloadKg;
   return (
-    suggestedFuelKg(model, plan, payloadKg, context) ??
+    offeredFuelKg(model, plan, payloadKg, context) ??
     Math.max(Math.min(model.fuelCapacityKg, byMass), 0)
   );
 }

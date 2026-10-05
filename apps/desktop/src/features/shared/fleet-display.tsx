@@ -11,6 +11,7 @@ import { useAsync } from './useAsync';
 const STATUS: Readonly<Record<AircraftStatus, { tone: StatusTone; label: string }>> = {
   available: { tone: 'ok', label: 'Available' },
   in_flight: { tone: 'info', label: 'In flight' },
+  servicing: { tone: 'info', label: 'Servicing' },
   maintenance_due: { tone: 'warn', label: 'Maintenance due' },
   in_maintenance: { tone: 'neutral', label: 'In maintenance' },
   unserviceable: { tone: 'critical', label: 'Unserviceable' },

@@ -252,12 +252,30 @@ describe('missions: end-to-end scenario', () => {
   });
 
   it('9-10. accepts the mission and launches it when ready', () => {
-    expect(readiness(session.mission(), session.aircraft()).ready).toBe(false);
+    const ready = () => readiness(session.mission(), session.aircraft(), session.view().clock.tick);
+    expect(ready().ready).toBe(false);
     session.execute({ type: 'acceptMission', missionId: TRAINING });
     const accepted = session.mission();
     expect(accepted.status).toBe('accepted');
     expect(accepted.assessment?.risk.index).toBeDefined();
-    expect(readiness(accepted, session.aircraft())).toEqual({ ready: true, issues: [] });
+    // Accepting began loading the mission's fuel (ADR 0027). Until that is done the mission is
+    // not ready, the launch is refused, and the readiness says when it will be.
+    expect(session.aircraft()).toMatchObject({
+      status: 'servicing',
+      service: { reason: 'preparation', missionId: TRAINING, targetFuelKg: accepted.load?.fuelKg },
+    });
+    const preparing = ready();
+    expect(preparing.ready).toBe(false);
+    expect(preparing.readyTick).toBeGreaterThan(session.view().clock.tick);
+    expect(() => {
+      session.execute({ type: 'launchMission', missionId: TRAINING });
+    }).toThrow(/It will be available in \d+ min/);
+    for (let i = 0; i < 4000 && session.aircraft().status === 'servicing'; i++) session.run(1000);
+    expect(session.aircraft()).toMatchObject({
+      status: 'available',
+      fuelKg: accepted.load?.fuelKg,
+    });
+    expect(ready()).toMatchObject({ ready: true, issues: [] });
 
     // Committed: the aircraft cannot be sent anywhere else.
     expect(() => {
@@ -322,7 +340,7 @@ describe('missions: end-to-end scenario', () => {
     expect(mission.outcome?.fuelUsedKg).toBeCloseTo(launched.assessment?.fuelUsedKg ?? 0, 6);
 
     const aircraft = session.aircraft();
-    expect(aircraft).toMatchObject({ status: 'available', flights: 1, activeFlightId: null });
+    expect(aircraft).toMatchObject({ status: 'servicing', flights: 1, activeFlightId: null });
     expect(aircraft.location?.code).toBe('EGHQ');
     expect(aircraft.conditionPct).toBeLessThan(100);
     expect(aircraft.fuelKg).toBeCloseTo(launched.assessment?.fuelAtDestinationKg ?? 0, 6);
@@ -342,6 +360,11 @@ describe('missions: end-to-end scenario', () => {
       ['command', 'createMission', 'player'],
       ['command', 'updateMission', 'player'],
       ['command', 'acceptMission', 'player'],
+      // The preparation the acceptance began names the mission, so it is part of its history.
+      ['event', 'servicingStarted', 'world'],
+      ['event', 'refuellingStarted', 'world'],
+      ['event', 'refuellingCompleted', 'world'],
+      ['event', 'servicingCompleted', 'world'],
       ['command', 'launchMission', 'player'],
       ['event', 'objectiveCompleted', 'world'],
       ['event', 'flightCompleted', 'world'],
@@ -377,7 +400,7 @@ describe('missions: end-to-end scenario', () => {
     expect(reopened.logLength).toBe(atClose.logLength);
     expect(reopened.integrityDigest).toBe(atClose.integrityDigest);
     expect(session.mission().outcome?.result).toBe('completed');
-    expect(await loadMissionLog(TRAINING)).toHaveLength(10);
+    expect(await loadMissionLog(TRAINING)).toHaveLength(14);
   });
 
   it('18. the world generates a separate opportunity', async () => {
@@ -476,6 +499,13 @@ describe('missions: end-to-end scenario', () => {
     });
 
     session.execute({ type: 'acceptMission', missionId: offerId });
+    for (
+      let i = 0;
+      i < 4000 && session.aircraft(candidate.aircraft.id).status === 'servicing';
+      i++
+    ) {
+      session.run(1000);
+    }
     session.execute({ type: 'launchMission', missionId: offerId });
     expect(session.mission(offerId).status).toBe('active');
     session.runUntilFinished(offerId);
@@ -490,13 +520,15 @@ describe('missions: end-to-end scenario', () => {
     // Its history reads like any other mission's, with the world's part at the start.
     await session.runner.flush();
     const history = (await loadMissionLog(offerId)).map((entry) => entry.type);
-    expect(history.slice(0, 5)).toEqual([
+    expect(history.slice(0, 4)).toEqual([
       'opportunityGenerated',
       'acceptOffer',
       'updateMission',
       'acceptMission',
-      'launchMission',
     ]);
+    // Launched after whatever preparation its aircraft needed, and not before.
+    expect(history.indexOf('launchMission')).toBeGreaterThan(3);
+    expect(history.indexOf('servicingCompleted')).toBeLessThan(history.indexOf('launchMission'));
     expect(history.at(-1)).toBe('missionCompleted');
 
     // And the whole world, both missions and the close and reopen included, is exactly what its

@@ -244,7 +244,15 @@ describe('environment and events: end-to-end scenario', () => {
 
   it('7. accepts and launches', () => {
     session.execute({ type: 'acceptMission', missionId: MISSION });
-    expect(readiness(session.mission(), session.aircraft()).ready).toBe(true);
+    // Accepting begins loading the mission's fuel; it is ready when that is done (ADR 0027).
+    const ready = () =>
+      readiness(session.mission(), session.aircraft(), session.view().clock.tick).ready;
+    // Ready at once only if the aircraft already holds exactly the mission's fuel.
+    const aboard = session.aircraft().fuelKg === session.mission().load?.fuelKg;
+    expect(ready()).toBe(aboard);
+    expect(session.aircraft().status).toBe(aboard ? 'available' : 'servicing');
+    for (let i = 0; i < 400 && session.aircraft().status === 'servicing'; i++) session.runSim(60);
+    expect(ready()).toBe(true);
     session.execute({ type: 'launchMission', missionId: MISSION });
     const mission = session.mission();
     expect(mission.status).toBe('active');

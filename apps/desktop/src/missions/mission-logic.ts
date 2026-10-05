@@ -17,6 +17,7 @@ import {
   type RoutePoint,
   type SimInstant,
 } from '@aegis/domain';
+import { launchState } from '../fleet/ground-logic';
 import {
   MAINTENANCE_POLICY,
   defaultConfiguration,
@@ -159,39 +160,45 @@ export interface Readiness {
   readonly ready: boolean;
   /** Why the mission cannot be launched yet. Empty when it is ready. */
   readonly issues: readonly string[];
+  /** When the servicing under way will leave it ready, as a tick; `null` if it will not. */
+  readonly readyTick: number | null;
+  /** The fuel to ask for so that it becomes ready, when fuel is what is missing. */
+  readonly prepareFuelKg: number | null;
+  /** How long loading that fuel would take from when it can begin. */
+  readonly prepareS: number | null;
 }
+
+const NOT_READY = { ready: false, readyTick: null, prepareFuelKg: null, prepareS: null } as const;
 
 /**
  * Whether an accepted mission can be launched now. Derived, never stored: it depends on the
- * aircraft, which changes as the world runs (ADR 0017). The launch itself is still validated by
- * the simulation; this only tells the player what to expect.
+ * aircraft, which changes as the world runs (ADR 0017). What is asked of the aircraft is decided
+ * by the simulation's one readiness rule (ADR 0027), the same rule that refuses a launch; this
+ * says what to expect, and what the operator can do.
  */
-export function readiness(mission: Mission, aircraft: AircraftState | undefined): Readiness {
-  const issues: string[] = [];
+export function readiness(
+  mission: Mission,
+  aircraft: AircraftState | undefined,
+  tick: number,
+): Readiness {
   if (mission.status !== 'accepted') {
-    issues.push('The mission has not been accepted.');
-    return { ready: false, issues };
+    return { ...NOT_READY, issues: ['The mission has not been accepted.'] };
   }
   const origin = mission.plan?.points[0];
-  if (!aircraft || !origin) {
-    issues.push('The mission has no aircraft or no route.');
-    return { ready: false, issues };
+  const state =
+    origin && mission.load
+      ? launchState(aircraft, { fuelKg: mission.load.fuelKg, origin }, tick)
+      : null;
+  if (!state) {
+    return { ...NOT_READY, issues: ['The mission has no aircraft or no route.'] };
   }
-  if (aircraft.location === null) {
-    issues.push(`${aircraft.id} is airborne.`);
-  } else if (greatCircleDistance(aircraft.location, origin) >= 1000) {
-    issues.push(
-      `${aircraft.id} is at ${aircraft.location.name}; the mission starts at ${origin.name}.`,
-    );
-  }
-  if (aircraft.status === 'maintenance_due') {
-    issues.push(`${aircraft.id} is due maintenance and cannot launch until it is done.`);
-  } else if (aircraft.status === 'in_maintenance') {
-    issues.push(`${aircraft.id} is in maintenance.`);
-  } else if (aircraft.status === 'unserviceable') {
-    issues.push(`${aircraft.id} is unserviceable.`);
-  }
-  return { ready: issues.length === 0, issues };
+  return {
+    ready: state.readiness.ready,
+    issues: state.issues,
+    readyTick: state.readyTick,
+    prepareFuelKg: state.prepareFuelKg,
+    prepareS: state.prepareS,
+  };
 }
 
 /** Evaluates a mission as it stands now: constraints, objective forecast and risk. */

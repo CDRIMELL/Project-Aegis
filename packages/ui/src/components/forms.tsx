@@ -199,7 +199,11 @@ export function Meter({ label, value, reading, tone = 'info' }: MeterProps) {
         className="h-1.5 w-full overflow-hidden rounded-sm bg-surface-hover"
       >
         <div
-          className={cn('h-full origin-left', METER_TONE[tone])}
+          // Eased between readings, so that a quantity that moves is seen to move.
+          className={cn(
+            'h-full origin-left transition-transform duration-300 ease-linear motion-reduce:transition-none',
+            METER_TONE[tone],
+          )}
           style={{ transform: `scaleX(${fraction})` }}
         />
       </div>

@@ -40,6 +40,7 @@ import {
   fuelFraction,
   placeName,
 } from '../shared/fleet-display';
+import { GroundServiceProgress } from '../shared/GroundService';
 import { usePlanContext } from '../shared/usePlanContext';
 import { formatPrecipitation, formatWind } from '../shared/weather-display';
 
@@ -338,6 +339,7 @@ export function AircraftPanel({ aircraft }: { readonly aircraft: AircraftState }
           />
         </section>
       )}
+      {!flight && <GroundServiceProgress aircraft={aircraft} />}
 
       {mission && (
         <section className="flex flex-col gap-2.5">

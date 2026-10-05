@@ -24,6 +24,7 @@ import { formatDuration, formatInteger, formatKg, formatKm } from '../../format'
 import { focusAircraft } from '../../map/flight-binding';
 import { beginPlanning } from '../../state/plan-store';
 import { NO_FLIGHTS, useSimStore } from '../../state/sim-store';
+import { FuelRequestControl, GroundServiceProgress } from '../shared/GroundService';
 import {
   AerodromePicker,
   AircraftStatusBadge,
@@ -131,8 +132,14 @@ function FuelPanel({ aircraft }: { readonly aircraft: AircraftState }) {
             hint={FLIGHT_ASSUMPTIONS.reserve.statement}
           />
         </DataList>
+        {aircraft.status === 'servicing' ? (
+          <GroundServiceProgress aircraft={aircraft} columns={2} />
+        ) : (
+          <FuelRequestControl aircraft={aircraft} />
+        )}
         <Hint>
-          Fuel quantities are simulated. Capacity is an assumption, not a published figure.
+          Fuel quantities are simulated. Capacity is an assumption, not a published figure. Fuel is
+          loaded on the ground over simulated time; a flight departs with what is aboard.
         </Hint>
       </div>
     </Panel>
@@ -155,11 +162,15 @@ function MaintenancePanel({ aircraft }: { readonly aircraft: AircraftState }) {
               ? 'primary'
               : 'secondary'
           }
-          disabled={inMaintenance || aircraft.status === 'in_flight'}
+          disabled={
+            inMaintenance || aircraft.status === 'in_flight' || aircraft.status === 'servicing'
+          }
           title={
             aircraft.status === 'in_flight'
               ? 'The aircraft is airborne.'
-              : `Takes ${formatDuration(MAINTENANCE.durationSeconds)} of simulated time.`
+              : aircraft.status === 'servicing'
+                ? 'The aircraft is being serviced. Maintenance can start when it is available.'
+                : `Takes ${formatDuration(MAINTENANCE.durationSeconds)} of simulated time.`
           }
           onClick={() => {
             startMaintenance(aircraft.id);

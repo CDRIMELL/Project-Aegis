@@ -8,6 +8,7 @@ import {
   filterMaintenance,
   filterMissions,
   filterOutlook,
+  filterServices,
   flownAsLaunched,
   severityWord,
   type AircraftUtilisation,
@@ -19,6 +20,7 @@ import {
   type MaintenanceVisit,
   type MissionRecord,
   type OutlookGroup,
+  type ServiceRecord,
 } from '@aegis/domain';
 import {
   Chart,
@@ -83,15 +85,15 @@ function NowPanel() {
         />
         <StatTile label="Airborne" value={formatInteger(now.airborne)} />
         <StatTile
-          label="Unavailable"
-          value={formatInteger(now.unavailable)}
-          detail={`${formatInteger(now.inMaintenance)} in maintenance`}
-          hint="Due maintenance, in maintenance or unserviceable."
+          label="Being serviced"
+          value={formatInteger(now.servicing)}
+          hint="On the ground in post-flight checks or having fuel loaded. Not available until it is done."
         />
         <StatTile
-          label="Awaiting maintenance"
-          value={formatInteger(now.awaitingMaintenance)}
-          hint="Due maintenance or unserviceable, and not yet being maintained."
+          label="Unavailable"
+          value={formatInteger(now.unavailable)}
+          detail={`${formatInteger(now.awaitingMaintenance)} awaiting, ${formatInteger(now.inMaintenance)} in maintenance`}
+          hint="Due maintenance, in maintenance or unserviceable."
         />
         <StatTile label="Active missions" value={formatInteger(now.activeMissions)} />
         <StatTile
@@ -575,7 +577,8 @@ export function FleetSection({ report }: SectionProps) {
       ids: report.aircraft.map((row) => row.aircraft.id),
       series: [
         share('Airborne', 'accent', 'in_flight'),
-        share('Available', 'info', 'available'),
+        share('Available', 'ok', 'available'),
+        share('Being serviced', 'info', 'servicing'),
         share('Due maintenance', 'warn', 'maintenance_due'),
         share('In maintenance', 'neutral', 'in_maintenance'),
         share('Unserviceable', 'critical', 'unserviceable'),
@@ -611,7 +614,7 @@ export function FleetSection({ report }: SectionProps) {
       </Panel>
       <Panel title="How each aircraft spent the period">
         <Chart
-          label="Hours each aircraft spent airborne, available, due maintenance, in maintenance and unserviceable"
+          label="Hours each aircraft spent airborne, available, being serviced, due maintenance, in maintenance and unserviceable"
           kind="bar"
           stacked
           horizontal
@@ -626,6 +629,7 @@ export function FleetSection({ report }: SectionProps) {
           }}
         />
       </Panel>
+      <GroundOperationsPanel report={report} />
       <Panel title="Utilisation by aircraft">
         <div className="flex flex-col gap-3">
           <FilterBar report={report} show={['aircraftId']} />
@@ -727,13 +731,131 @@ export function FleetSection({ report }: SectionProps) {
           </div>
           <Hint>
             Availability and utilisation are AEGIS simulation metrics: shares of the time the
-            aircraft was owned in the period. Condition is as it is now, with the maintenance visits
-            completed in the period beneath it; everything else is what happened in the period. An
-            aircraft that flew less was not worse, only used less.
+            aircraft was owned in the period. Time being serviced on the ground counts against
+            availability, as time down for maintenance does. Condition is as it is now, with the
+            maintenance visits completed in the period beneath it; everything else is what happened
+            in the period. An aircraft that flew less was not worse, only used less.
           </Hint>
         </div>
       </Panel>
     </>
+  );
+}
+
+const SERVICE_KIND = { turnaround: 'Turnaround', preparation: 'Preparation' } as const;
+
+/**
+ * Ground services finished in the period (ADR 0027): turnarounds after landing and preparations
+ * for a flight, with what each took and the fuel it moved.
+ */
+function GroundOperationsPanel({ report }: { readonly report: SectionProps['report'] }) {
+  const filter = useReportStore((state) => state.filter);
+  const { totals } = report;
+  const services = filterServices(report, filter);
+  const mean = (seconds: number, count: number) =>
+    count === 0 ? 'none in the period' : `mean ${formatDuration(seconds / count)}`;
+  return (
+    <Panel title="Ground operations in the period">
+      <div className="flex flex-col gap-3">
+        <DataList columns={4}>
+          <StatTile
+            label="Turnarounds"
+            value={formatInteger(totals.turnarounds)}
+            detail={mean(totals.turnaroundSeconds, totals.turnarounds)}
+            hint="Post-flight servicing completed in the period, from landing until the aircraft was available."
+          />
+          <StatTile
+            label="Time being serviced"
+            value={hours(totals.serviceSeconds)}
+            unit="h"
+            detail={`${hours(totals.refuellingSeconds)} h transferring fuel`}
+            hint="Over the services completed in the period. Fuel transfer includes the time to connect."
+          />
+          <StatTile
+            label="Fuel loaded"
+            value={formatInteger(totals.fuelLoadedKg)}
+            unit="kg"
+            detail={`${formatInteger(totals.fuelRemovedKg)} kg taken off`}
+            hint="Fuel put aboard on the ground, and fuel taken off, by the services completed in the period."
+          />
+          <StatTile
+            label="Missions prepared"
+            value={formatInteger(totals.missionPreparations)}
+            detail={mean(totals.missionPreparationSeconds, totals.missionPreparations)}
+            hint="Missions whose aircraft had to be prepared before it could launch, and how long each waited."
+          />
+        </DataList>
+        {services.length === 0 ? (
+          <Hint>No ground service was completed in the period.</Hint>
+        ) : (
+          <div className="overflow-x-auto">
+            <DataTable<ServiceRecord>
+              caption="Ground services completed in the period"
+              rows={services}
+              rowKey={(service) => `${service.aircraftId}:${service.completedTick}`}
+              columns={[
+                { header: 'Aircraft', cell: (service) => <AircraftLink id={service.aircraftId} /> },
+                {
+                  header: 'Service',
+                  cell: (service) => (
+                    <TwoLine
+                      top={SERVICE_KIND[service.reason]}
+                      bottom={
+                        service.missionId ? <MissionLink id={service.missionId} /> : 'no mission'
+                      }
+                    />
+                  ),
+                },
+                {
+                  header: 'Ended',
+                  numeric: true,
+                  cell: (service) => (
+                    <TwoLine
+                      top={when(report, service.completedTick)}
+                      bottom={`began ${when(report, service.startedTick)}`}
+                    />
+                  ),
+                },
+                {
+                  header: 'Took',
+                  numeric: true,
+                  align: 'right',
+                  cell: (service) => (
+                    <TwoLine
+                      top={formatDuration(service.durationS)}
+                      bottom={
+                        service.refuelS > 0
+                          ? `${formatDuration(service.refuelS)} on fuel`
+                          : 'no fuel moved'
+                      }
+                    />
+                  ),
+                },
+                {
+                  header: 'Fuel',
+                  numeric: true,
+                  align: 'right',
+                  cell: (service) => (
+                    <TwoLine
+                      top={
+                        service.loadedKg === 0
+                          ? '—'
+                          : `${service.loadedKg > 0 ? '+' : '−'}${formatInteger(Math.abs(service.loadedKg))} kg`
+                      }
+                      bottom={`${formatInteger(service.fuelKg)} kg aboard`}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
+        <Hint>
+          A service belongs to the period in which it finished. Times are simulation assumptions,
+          stated on each aircraft’s page; they are not measures of any real operation.
+        </Hint>
+      </div>
+    </Panel>
   );
 }
 

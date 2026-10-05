@@ -177,6 +177,13 @@ describe('fleet and flight: end-to-end scenario', () => {
   it('7-10. launches, and the aircraft moves and its telemetry changes', () => {
     const model = session.aircraft().performance;
     if (!model) throw new Error('setup');
+    // The plan's fuel is loaded first, which takes simulated time (ADR 0027).
+    const aboard = session.aircraft().fuelKg === draft.load.fuelKg;
+    session.execute({ type: 'serviceAircraft', aircraftId: AIRCRAFT, fuelKg: draft.load.fuelKg });
+    // Nothing to do only if the aircraft already holds exactly the plan's fuel.
+    expect(session.aircraft().status).toBe(aboard ? 'available' : 'servicing');
+    for (let i = 0; i < 4000 && session.aircraft().status === 'servicing'; i++) session.run(1000);
+    expect(session.aircraft()).toMatchObject({ status: 'available', fuelKg: draft.load.fuelKg });
     // Estimated in the world as it is at the moment of launch: this is what will be flown.
     const estimate = evaluateDraft(draft, model, session.context()).estimate;
     launchEstimate = estimate;
@@ -252,7 +259,9 @@ describe('fleet and flight: end-to-end scenario', () => {
 
     const landed = session.aircraft();
     expect(landed).toMatchObject({
-      status: 'available',
+      // Landed, and being turned round before it is available again (ADR 0027).
+      status: 'servicing',
+      service: { reason: 'turnaround', stage: 'checks' },
       location: akrotiri,
       flights: 1,
       payloadKg: 15_000,
@@ -274,7 +283,7 @@ describe('fleet and flight: end-to-end scenario', () => {
     await session.runner.flush();
     const sql = (text: string) => session.database.transport.connection.prepare(text).all();
     expect(sql(`SELECT status, flights FROM sim_aircraft WHERE id = '${AIRCRAFT}'`)).toEqual([
-      { status: 'available', flights: 1 },
+      { status: 'servicing', flights: 1 },
     ]);
     expect(sql('SELECT status FROM sim_flight')).toEqual([{ status: 'completed' }]);
     expect(sql('SELECT count(*) AS n FROM ref_aircraft_type')).toEqual([{ n: 4 }]);

@@ -160,6 +160,8 @@ describe('in-flight control: end-to-end scenario', { timeout: 60_000 }, () => {
       );
       if (!created) throw new Error('the mission was not created');
       execute({ type: 'acceptMission', missionId: created.id });
+      // Accepting begins loading the mission's fuel; it launches when that is done (ADR 0027).
+      for (let i = 0; i < 400 && aircraft(aircraftId).status === 'servicing'; i++) runSim(60);
       execute({ type: 'launchMission', missionId: created.id });
       return created.id;
     };
@@ -523,7 +525,24 @@ describe('in-flight control: end-to-end scenario', { timeout: 60_000 }, () => {
     expect(during.inProgress.flights).toHaveLength(1);
     expect(during.inProgress.flights[0]).toMatchObject({ aircraftId: ATLAS, elapsedS: 600 });
     expect(during.inProgress.flights[0]?.fuelUsedKg).toBeGreaterThan(0);
-    expect(during.totals).toEqual(report.totals);
+    // The flight and its mission are in no total. The preparation of its aircraft has finished,
+    // and a finished ground service is counted like anything else that has finished.
+    const GROUND: readonly string[] = [
+      'services',
+      'serviceSeconds',
+      'refuellings',
+      'refuellingSeconds',
+      'fuelLoadedKg',
+      'fuelRemovedKg',
+      'missionPreparations',
+      'missionPreparationSeconds',
+    ];
+    const flown = (totals: object) =>
+      Object.fromEntries(Object.entries(totals).filter(([key]) => !GROUND.includes(key)));
+    expect(flown(during.totals)).toEqual(flown(report.totals));
+    expect(during.totals.missionPreparations).toBe(report.totals.missionPreparations + 1);
+    expect(during.totals.services).toBe(report.totals.services + 1);
+    expect(during.totals.turnarounds).toBe(report.totals.turnarounds);
     session.land(ATLAS);
   });
 

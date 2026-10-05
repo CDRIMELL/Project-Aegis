@@ -139,6 +139,8 @@ export interface CurrentPicture {
   /** Due maintenance and waiting for it to be started. */
   readonly awaitingMaintenance: number;
   readonly inMaintenance: number;
+  /** On the ground being turned round or fuelled: not available, and not down. */
+  readonly servicing: number;
   readonly activeMissions: number;
   /** Planned or accepted, and not yet launched. */
   readonly pendingMissions: number;
@@ -160,6 +162,7 @@ export function currentPicture(view: SimView): CurrentPicture {
     unavailable: count('maintenance_due') + count('in_maintenance') + count('unserviceable'),
     awaitingMaintenance: count('maintenance_due') + count('unserviceable'),
     inMaintenance: count('in_maintenance'),
+    servicing: count('servicing'),
     activeMissions: missions.filter((mission) => mission.status === 'active').length,
     pendingMissions: missions.filter(
       (mission) => mission.status === 'planned' || mission.status === 'accepted',

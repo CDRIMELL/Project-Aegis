@@ -72,7 +72,7 @@ const migrationRequested = new Set<string>();
 /**
  * Moves grounded aircraft onto the current flight model (ADR 0019). An aircraft is migrated when
  * its stored model is from an older version, or when it had none and the reference data can now
- * support one. Airborne aircraft are left alone and picked up after they land.
+ * support one. Airborne aircraft, and those being serviced, are left alone and picked up after.
  */
 function migratePerformanceIfNeeded(): void {
   const view = useSimStore.getState().view;
@@ -81,7 +81,8 @@ function migratePerformanceIfNeeded(): void {
   const byType = new Map(entries.map((entry) => [entry.type.id, entry]));
   for (const aircraft of view.fleet.aircraft) {
     const entry = byType.get(aircraft.typeId);
-    if (!entry || aircraft.location === null) continue;
+    // An aircraft being serviced takes a new model once that is done (ADR 0027).
+    if (!entry || aircraft.location === null || aircraft.status === 'servicing') continue;
     const latest = entry.performance.available ? entry.performance.model : null;
     const outdated =
       aircraft.performance === null
@@ -139,6 +140,15 @@ export function acquireAircraft(entry: CatalogueEntry, home: RoutePoint): void {
 
 export function setHome(aircraftId: string, home: RoutePoint): void {
   simClient.send({ type: 'setHome', aircraftId, home });
+}
+
+/** Brings a grounded aircraft's fuel to a quantity, over simulated time (ADR 0027). */
+export function serviceAircraft(aircraftId: string, fuelKg: number): void {
+  simClient.send({ type: 'serviceAircraft', aircraftId, fuelKg });
+}
+
+export function stopServicing(aircraftId: string): void {
+  simClient.send({ type: 'stopServicing', aircraftId });
 }
 
 export function startMaintenance(aircraftId: string): void {

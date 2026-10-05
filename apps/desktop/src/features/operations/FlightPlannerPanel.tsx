@@ -16,6 +16,7 @@ import {
 import { ArrowDown, ArrowUp, Fuel, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
+import { launchState } from '../../fleet/ground-logic';
 import {
   evaluateDraft,
   generateDraft,
@@ -29,6 +30,7 @@ import {
   shiftWaypoint,
   type PlanDraft,
 } from '../../fleet/plan-edit';
+import { serviceAircraft } from '../../fleet/service';
 import { formatDuration, formatInteger, formatKg, formatKm } from '../../format';
 import { formatCoordinates } from '../../map/features';
 import { mapController } from '../../map/controller';
@@ -44,6 +46,7 @@ import {
   SimulatedBadge,
   placeName,
 } from '../shared/fleet-display';
+import { GroundServiceProgress } from '../shared/GroundService';
 import { ObjectiveList } from '../shared/mission-display';
 import { usePlanContext } from '../shared/usePlanContext';
 import { useStable } from '../shared/useStable';
@@ -190,12 +193,23 @@ function DraftEditor({
   const model = aircraft.performance;
   const navigate = useNavigate();
   const simTime = useSimStore((state) => state.view?.clock.simTime ?? null);
+  const tick = useSimStore((state) => state.view?.clock.tick ?? 0);
   const context = usePlanContext();
   const evaluation = useMemo(
     () => (model ? evaluateDraft(draft, model, context) : null),
     [draft, model, context],
   );
   if (!model || !evaluation) return null;
+  // Whether the aircraft can launch this load now, by the simulation's own rule (ADR 0027). A
+  // mission's route is saved to the mission, and launched from there.
+  const launch = mission
+    ? null
+    : launchState(
+        aircraft,
+        { fuelKg: draft.load.fuelKg, origin: draft.plan.points[0] ?? null },
+        tick,
+      );
+  const ready = launch?.readiness.ready ?? false;
   const estimate = evaluation.estimate;
 
   return (
@@ -293,7 +307,7 @@ function DraftEditor({
             min={0}
             max={model.fuelCapacityKg}
             value={Math.round(draft.load.fuelKg)}
-            hint={`Capacity: ${formatKg(model.fuelCapacityKg)}.`}
+            hint={`Aboard now: ${formatKg(aircraft.fuelKg)}. Capacity: ${formatKg(model.fuelCapacityKg)}. What is not aboard is loaded before launch, which takes time.`}
             onChange={(value) => {
               editDraft((current) => setLoad(current, { fuelKg: value }));
             }}
@@ -333,6 +347,33 @@ function DraftEditor({
         </Hint>
       </section>
 
+      {launch && !ready && (
+        <section className="flex flex-col gap-2.5">
+          <SectionLabel>Before it can launch</SectionLabel>
+          <ul className="flex flex-col gap-1 text-sm text-ink-secondary">
+            {launch.issues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+          {launch.prepareFuelKg !== null && (
+            <div>
+              <Button
+                size="sm"
+                icon={Fuel}
+                onClick={() => {
+                  serviceAircraft(aircraft.id, draft.load.fuelKg);
+                }}
+              >
+                {aircraft.status === 'servicing'
+                  ? `Then bring fuel to ${formatKg(draft.load.fuelKg)}`
+                  : `Prepare: bring fuel to ${formatKg(draft.load.fuelKg)}`}
+              </Button>
+            </div>
+          )}
+          <Hint>The plan stays here while the aircraft is prepared. Launch when it is ready.</Hint>
+        </section>
+      )}
+
       <div className="flex gap-2">
         {mission && (
           <Button
@@ -367,8 +408,14 @@ function DraftEditor({
           <Button
             variant="primary"
             icon={Send}
-            disabled={!evaluation.flyable}
-            title={evaluation.flyable ? undefined : 'Resolve the blocking constraints first.'}
+            disabled={!evaluation.flyable || !ready}
+            title={
+              !evaluation.flyable
+                ? 'Resolve the blocking constraints first.'
+                : ready
+                  ? undefined
+                  : (launch?.issues[0] ?? 'The aircraft is not ready to launch.')
+            }
             onClick={() => {
               simClient.send({
                 type: 'launchFlight',
@@ -449,7 +496,8 @@ export function FlightPlannerPanel({
           performance model exists for it.
         </Notice>
       )}
-      {model && aircraft.status !== 'available' && (
+      {model && aircraft.status === 'servicing' && <GroundServiceProgress aircraft={aircraft} />}
+      {model && aircraft.status !== 'available' && aircraft.status !== 'servicing' && (
         <Notice tone="warn" title="This aircraft cannot launch at the moment">
           A plan can be drafted, but it will be refused until the aircraft is available.
         </Notice>

@@ -12,9 +12,10 @@ import {
   PageHeader,
   Panel,
 } from '@aegis/ui';
-import { Check, MapPin, Pencil, Route, Send, Undo2, X } from 'lucide-react';
+import { Check, Fuel, MapPin, Pencil, Route, Send, Undo2, X } from 'lucide-react';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
+import { serviceAircraft } from '../../fleet/service';
 import { formatDuration, formatInteger, formatKg, formatKm } from '../../format';
 import { focusMission } from '../../map/mission-binding';
 import {
@@ -45,6 +46,7 @@ import {
   relativeTick,
   typeLabel,
 } from '../shared/mission-display';
+import { GroundServiceProgress } from '../shared/GroundService';
 import { useAsync } from '../shared/useAsync';
 import { usePlanContext } from '../shared/usePlanContext';
 import { useLastReady, useStable } from '../shared/useStable';
@@ -66,6 +68,10 @@ const LOG_WORDS: Readonly<Record<string, string>> = {
   resumeFlight: 'Hold ended by order',
   flightHolding: 'Holding: destination closed',
   flightHoldEnded: 'Hold ended',
+  servicingStarted: 'Aircraft preparation began',
+  refuellingStarted: 'Fuel transfer began',
+  refuellingCompleted: 'Fuel transfer ended',
+  servicingCompleted: 'Aircraft ready',
   opportunityGenerated: 'Opportunity generated',
   opportunityExpired: 'Opportunity expired',
   objectiveCompleted: 'Objective completed',
@@ -95,6 +101,34 @@ const HOLD_END: Readonly<Record<string, string>> = {
   fuel_at_reserve: 'Fuel was down to reserve.',
   landing_during_closure: 'Fuel was down to reserve; landing during the closure.',
 };
+
+const kgOf = (value: unknown) =>
+  typeof value === 'number' ? `${Math.round(Math.abs(value)).toLocaleString('en-GB')} kg` : null;
+
+/** What a ground-service entry says happened to the aircraft (ADR 0027). */
+function serviceDetail(entry: LogEntry): string | null {
+  const { payload } = entry;
+  const duration = typeof payload.durationS === 'number' ? minutes(payload.durationS) : null;
+  switch (entry.type) {
+    case 'servicingStarted':
+      return kgOf(payload.targetFuelKg)
+        ? `Fuel to be brought to ${kgOf(payload.targetFuelKg) ?? ''}.`
+        : '';
+    case 'refuellingStarted':
+      return `From ${kgOf(payload.fromKg) ?? '?'} to ${kgOf(payload.toKg) ?? '?'}${duration ? `, ${duration}` : ''}.`;
+    case 'refuellingCompleted': {
+      const moved =
+        typeof payload.loadedKg === 'number' && payload.loadedKg < 0
+          ? `${kgOf(payload.loadedKg) ?? ''} taken off`
+          : `${kgOf(payload.loadedKg) ?? ''} loaded`;
+      return `${moved}${duration ? ` in ${duration}` : ''}${payload.stopped === true ? ', stopped by order' : ''}.`;
+    }
+    case 'servicingCompleted':
+      return `${kgOf(payload.fuelKg) ?? ''} aboard${duration ? `, after ${duration}` : ''}.`;
+    default:
+      return null;
+  }
+}
 
 /** The destination a logged list of route points ends at. */
 function lastPointName(points: unknown): string | null {
@@ -141,6 +175,8 @@ function landing(payload: LogEntry['payload']): string | null {
 
 function logDetail(entry: LogEntry): string {
   const { payload } = entry;
+  const service = serviceDetail(entry);
+  if (service !== null) return service;
   if (entry.type === 'flightCompleted') return landing(payload) ?? entry.flightId ?? '';
   if (entry.type === 'reviseFlight') return revisionDetail(payload);
   if (entry.type === 'abortMission') return abortDetail(payload);
@@ -340,7 +376,8 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
     () => (open && context ? evaluationOf(stableMission, stableAircraft, hourTick, context) : null),
     [open, stableMission, stableAircraft, hourTick, context],
   );
-  const ready = readiness(mission, aircraft);
+  const tick = useSimStore((state) => state.view?.clock.tick ?? 0);
+  const ready = readiness(mission, aircraft, tick);
   const risk = evaluation?.risk ?? mission.assessment?.risk ?? null;
   // Before launch, show what the plan will do to each objective; afterwards, what happened.
   const forecast = open && mission.status !== 'offered' ? (evaluation?.forecast ?? null) : null;
@@ -479,9 +516,33 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
           title={ready.ready ? 'Ready to launch' : 'Not ready to launch'}
         >
           {ready.ready
-            ? 'The aircraft is available at the origin. Launch when you are ready.'
+            ? 'The aircraft is available at the origin with the mission’s fuel aboard. Launch when you are ready.'
             : ready.issues.join(' ')}
+          {!ready.ready && ready.readyTick !== null && (
+            <> It will be ready at {formatTick(epoch, ready.readyTick)} with nothing more done.</>
+          )}
         </Notice>
+      )}
+      {mission.status === 'accepted' && aircraft && !ready.ready && (
+        <div className="flex flex-col gap-3">
+          {ready.prepareFuelKg !== null && (
+            <div>
+              <Button
+                icon={Fuel}
+                onClick={() => {
+                  serviceAircraft(aircraft.id, ready.prepareFuelKg ?? 0);
+                }}
+              >
+                Prepare the aircraft: bring fuel to {formatKg(ready.prepareFuelKg)}
+              </Button>
+            </div>
+          )}
+          {aircraft.status === 'servicing' && (
+            <Panel title={`${aircraft.id} on the ground`}>
+              <GroundServiceProgress aircraft={aircraft} columns={2} />
+            </Panel>
+          )}
+        </div>
       )}
       {mission.status === 'active' && (
         <Panel title="Progress">

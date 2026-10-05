@@ -7,7 +7,7 @@ import {
   type WorldEvent,
 } from '@aegis/domain';
 import { SimulationEngine, defaultConfiguration, type FlightView } from '@aegis/sim';
-import { FIXTURES, fixtureOrder } from '@aegis/sim/testing';
+import { FIXTURES, fixtureOrder, launchMissionWhenReady } from '@aegis/sim/testing';
 import { describe, expect, it } from 'vitest';
 import { insertWaypoint, moveWaypoint, removeWaypoint } from '../fleet/plan-edit';
 import {
@@ -81,7 +81,7 @@ function delivering(seconds: number): SimulationEngine {
     load: { fuelKg: 60_000, payloadKg: 3000 },
   });
   engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-  engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+  launchMissionWhenReady(engine, 'MSN-000001');
   engine.runSteps(seconds);
   return engine;
 }

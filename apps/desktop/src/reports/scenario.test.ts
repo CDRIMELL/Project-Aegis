@@ -129,6 +129,10 @@ describe('reports: end-to-end scenario', () => {
       for (let i = 0; i < 60 && mission(id).status === 'active'; i++) runSim(600);
       if (mission(id).status === 'active') throw new Error(`${id} did not end`);
     };
+    /** Runs until the aircraft is no longer being serviced on the ground (ADR 0027). */
+    const serviced = () => {
+      for (let i = 0; i < 400 && aircraft().status === 'servicing'; i++) runSim(60);
+    };
     /** The reports as the screen reads them: as of the last checkpoint. */
     const reports = async (period?: ReportPeriod): Promise<LoadedReports> => {
       await runner.flush();
@@ -138,7 +142,19 @@ describe('reports: end-to-end scenario', () => {
       if (!loaded) throw new Error('no world to report on');
       return loaded;
     };
-    return { database, runner, execute, runSim, view, aircraft, mission, create, flyOut, reports };
+    return {
+      database,
+      runner,
+      execute,
+      runSim,
+      view,
+      aircraft,
+      mission,
+      create,
+      flyOut,
+      serviced,
+      reports,
+    };
   }
 
   let session: Awaited<ReturnType<typeof openSession>>;
@@ -181,6 +197,7 @@ describe('reports: end-to-end scenario', () => {
     // Completed.
     ids.completed = session.create();
     session.execute({ type: 'acceptMission', missionId: ids.completed });
+    session.serviced();
     session.execute({ type: 'launchMission', missionId: ids.completed });
     session.flyOut(ids.completed);
     expect(session.mission(ids.completed).status).toBe('completed');
@@ -514,6 +531,7 @@ describe('reports: end-to-end scenario', () => {
     session.runSim(60);
     const again = session.create();
     session.execute({ type: 'acceptMission', missionId: again });
+    session.serviced();
     session.execute({ type: 'launchMission', missionId: again });
     session.flyOut(again);
     const pastAfter = (await session.reports(past)).current;

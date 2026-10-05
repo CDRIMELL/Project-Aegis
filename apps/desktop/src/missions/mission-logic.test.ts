@@ -9,12 +9,13 @@ import {
   type RoutePoint,
 } from '@aegis/domain';
 import {
+  CommandRejected,
   SimulationEngine,
   defaultConfiguration,
   type AircraftState,
   type WorldCommand,
 } from '@aegis/sim';
-import { FIXTURES, fixtureOrder } from '@aegis/sim/testing';
+import { FIXTURES, fixtureOrder, fuelled, untilServiced } from '@aegis/sim/testing';
 import { describe, expect, it } from 'vitest';
 import type { AerodromeRow } from '../fleet/catalogue';
 import { insertWaypoint, removeWaypoint, type PlanDraft } from '../fleet/plan-edit';
@@ -207,22 +208,45 @@ describe('describing a mission', () => {
 });
 
 describe('readiness', () => {
+  const readinessOf = (engine: SimulationEngine) =>
+    readiness(missionOf(engine), aircraftOf(engine), engine.clock.tick);
+  const NOT_READY = { ready: false, readyTick: null, prepareFuelKg: null, prepareS: null };
+
   it('is derived from the aircraft, and says why a mission is not ready', () => {
     const engine = world();
     training(engine);
-    expect(readiness(missionOf(engine), aircraftOf(engine))).toEqual({
-      ready: false,
+    expect(readinessOf(engine)).toEqual({
+      ...NOT_READY,
       issues: ['The mission has not been accepted.'],
     });
 
+    // Accepting commits the aircraft and begins loading the mission's fuel (ADR 0027): it is
+    // not ready until that is done, and the readiness says when it will be.
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-    expect(readiness(missionOf(engine), aircraftOf(engine))).toEqual({ ready: true, issues: [] });
+    const preparing = readinessOf(engine);
+    const service = aircraftOf(engine).service;
+    expect(aircraftOf(engine).status).toBe('servicing');
+    expect(preparing.ready).toBe(false);
+    expect(preparing.issues).toHaveLength(1);
+    expect(preparing.issues[0]).toMatch(
+      new RegExp(
+        `^${TRANSPORT} is (being refuelled|having fuel taken off)\\. It will be available in \\d+ min\\.$`,
+      ),
+    );
+    expect(preparing.readyTick).toBe(service?.transfer?.completeTick);
+    // Nothing for the operator to do: the fuel on its way is the fuel the mission departs with.
+    expect(preparing.prepareFuelKg).toBeNull();
+
+    untilServiced(engine, TRANSPORT);
+    expect(engine.clock.tick).toBe(preparing.readyTick);
+    expect(readinessOf(engine)).toEqual({ ...NOT_READY, ready: true, issues: [] });
 
     // The aircraft goes into maintenance: the mission is unchanged, but no longer ready.
     engine.applyCommand({ type: 'startMaintenance', aircraftId: TRANSPORT });
-    const during = readiness(missionOf(engine), aircraftOf(engine));
+    const during = readinessOf(engine);
     expect(during.ready).toBe(false);
     expect(during.issues).toEqual([`${TRANSPORT} is in maintenance.`]);
+    expect(during.readyTick).toBeNull();
     expect(missionOf(engine).status).toBe('accepted');
   });
 
@@ -230,22 +254,62 @@ describe('readiness', () => {
     const engine = world();
     training(engine);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
+    untilServiced(engine, TRANSPORT);
     const mission = missionOf(engine);
+    const tick = engine.clock.tick;
     const elsewhere = { ...aircraftOf(engine), location: places.exeter };
-    expect(readiness(mission, elsewhere).issues).toEqual([
-      `${TRANSPORT} is at Exeter; the mission starts at Newquay.`,
+    expect(readiness(mission, elsewhere, tick).issues).toEqual([
+      `${TRANSPORT} is at Exeter; the flight must start there.`,
     ]);
     const airborne = { ...aircraftOf(engine), location: null, status: 'in_flight' as const };
-    expect(readiness(mission, airborne).issues).toEqual([`${TRANSPORT} is airborne.`]);
-    expect(readiness(mission, undefined).ready).toBe(false);
+    expect(readiness(mission, airborne, tick).issues).toEqual([
+      `${TRANSPORT} is airborne; it cannot launch until it has landed.`,
+    ]);
+    expect(readiness(mission, undefined, tick).ready).toBe(false);
   });
 
-  it('agrees with the simulation: a ready mission launches', () => {
+  it('offers the preparation when fuel is what is missing', () => {
     const engine = world();
     training(engine);
     engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
-    expect(readiness(missionOf(engine), aircraftOf(engine)).ready).toBe(true);
-    expect(engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' })).toBe(true);
+    untilServiced(engine, TRANSPORT);
+    const wanted = missionOf(engine).load?.fuelKg as number;
+    // The operator changes the fuel aboard: the mission's aircraft no longer holds its fuel.
+    fuelled(engine, TRANSPORT, wanted + 2000);
+    const short = readinessOf(engine);
+    expect(short.ready).toBe(false);
+    expect(short.issues).toHaveLength(1);
+    expect(short.issues[0]).toMatch(
+      /holds [\d,]+ kg; the flight departs with [\d,]+ kg\. Taking 2,000 kg off takes \d+ min\./,
+    );
+    expect(short.prepareFuelKg).toBe(wanted);
+    expect(short.prepareS).toBeGreaterThan(0);
+    expect(short.readyTick).toBeNull();
+    // The simulation refuses for the same reason, in the same words.
+    expect(() => engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' })).toThrow(
+      short.issues[0],
+    );
+
+    // Doing what is offered makes it ready, after exactly the time that was quoted.
+    const from = engine.clock.tick;
+    fuelled(engine, TRANSPORT, short.prepareFuelKg as number);
+    expect(engine.clock.tick - from).toBe(short.prepareS);
+    expect(readinessOf(engine).ready).toBe(true);
+  });
+
+  it('agrees with the simulation: a mission launches exactly when it is ready', () => {
+    const engine = world();
+    training(engine);
+    engine.applyCommand({ type: 'acceptMission', missionId: 'MSN-000001' });
+    const launch = () => engine.applyCommand({ type: 'launchMission', missionId: 'MSN-000001' });
+    // Every tick of the preparation: not ready, and refused.
+    while (aircraftOf(engine).status === 'servicing') {
+      expect(readinessOf(engine).ready).toBe(false);
+      expect(launch).toThrow(CommandRejected);
+      engine.runSteps(60);
+    }
+    expect(readinessOf(engine).ready).toBe(true);
+    expect(launch()).toBe(true);
   });
 });
 
