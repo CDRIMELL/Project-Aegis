@@ -942,6 +942,99 @@ describe('ground servicing in a report', () => {
     );
   });
 
+  it('reports waits for a point, payload handled, where it was done, and launches against their schedule', () => {
+    const queued: LogRecord[] = [
+      entry(2000, 'event', 'servicingCompleted', 'G', {
+        reason: 'preparation',
+        durationS: 1500,
+        checksS: 0,
+        refuelS: 900,
+        loadS: 600,
+        waitS: 0,
+        loadedKg: 12_000,
+        payloadLoadedKg: 9000,
+        fuelKg: 30_000,
+        payloadKg: 9000,
+        at: 'LCRA',
+      }),
+      entry(3400, 'event', 'servicingCompleted', 'H', {
+        reason: 'preparation',
+        durationS: 2600,
+        checksS: 0,
+        refuelS: 800,
+        loadS: 500,
+        // Waited for the fuel point and for payload handling: the two waits are added.
+        waitS: 1900,
+        loadedKg: -4000,
+        payloadLoadedKg: 6000,
+        fuelKg: 20_000,
+        payloadKg: 6000,
+        at: 'LCRA',
+      }),
+      entry(9000, 'event', 'servicingCompleted', 'G', {
+        reason: 'turnaround',
+        durationS: 1200,
+        checksS: 1200,
+        payloadLoadedKg: -9000,
+        at: 'EGHQ',
+      }),
+    ];
+    const busy = report(
+      { fromTick: 0, toTick: 20_000 },
+      {
+        ...data,
+        asOfTick: 19_000,
+        aircraft: [aircraft('G'), aircraft('H')],
+        statusLog: queued,
+        missions: [
+          // Scheduled for 3,000 and left at 3,400; scheduled for 9,000 and left early; no schedule.
+          mission('M1', 'completed', 8000, { plannedStartTick: 3000, actualStartTick: 3400 }),
+          mission('M2', 'completed', 12_000, { plannedStartTick: 9000, actualStartTick: 8600 }),
+          mission('M3', 'completed', 15_000, { actualStartTick: 14_000 }),
+        ],
+      },
+    );
+    expect(busy.totals).toMatchObject({
+      services: 3,
+      servicesQueued: 1,
+      resourceWaitSeconds: 1900,
+      payloadSeconds: 1100,
+      payloadLoadedKg: 15_000,
+      payloadRemovedKg: 9000,
+      launchesScheduled: 2,
+      launchesLate: 1,
+      launchDelaySeconds: 400,
+    });
+    expect(busy.aerodromes).toEqual([
+      {
+        at: 'EGHQ',
+        services: 1,
+        serviceSeconds: 1200,
+        servicesQueued: 0,
+        waitSeconds: 0,
+        fuelLoadedKg: 0,
+        payloadLoadedKg: 0,
+      },
+      {
+        at: 'LCRA',
+        services: 2,
+        serviceSeconds: 4100,
+        servicesQueued: 1,
+        waitSeconds: 1900,
+        fuelLoadedKg: 12_000,
+        payloadLoadedKg: 15_000,
+      },
+    ]);
+    // An earlier log says nothing of waits or payload: they read as none, not as unknown figures.
+    expect(report(EARLY, data).totals).toMatchObject({
+      servicesQueued: 0,
+      resourceWaitSeconds: 0,
+      payloadLoadedKg: 0,
+      launchesScheduled: 0,
+    });
+    expect(report(EARLY, data).aerodromes).toEqual([]);
+  });
+
   it('exports what it shows', () => {
     const whole = report(WHOLE, data);
     const summary = reportTable('summary', whole).rows;
