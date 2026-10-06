@@ -114,13 +114,17 @@ describe('describing a ground service', () => {
     );
     expect(waiting?.tasks[0]).toMatchObject({ state: 'Waiting, next in the queue', done: false });
     expect(waiting?.tasks[0]?.detail).toContain(`The fuel point is in use by ${A}.`);
-    // No progress is shown that is not being made: B's fuel has not moved.
+    // No progress is shown that is not being made: B's fuel has not moved, and the measure of
+    // its service stays at nothing however long it waits.
     expect(waiting?.progress.fuelKg).toBe(CAPACITY);
+    expect(waiting?.progress.fraction).toBe(0);
+    engine.runSteps(300);
+    expect(shown(engine, B)?.progress.fraction).toBe(0);
     expect(waiting?.progress.fuel).toMatchObject({ startTick: 120 + turn, position: 1, behind: A });
 
     // What it was told is what happens: it gets the point at that tick, and not before.
     const forecast = groundForecasts(fleetOf(engine), engine.clock.tick).get(B);
-    engine.runSteps(turn - 1);
+    engine.runSteps(turn - 1 - 300);
     expect(aircraftOf(engine, B).service?.fuel?.transfer).toBeNull();
     engine.runSteps(1);
     expect(aircraftOf(engine, B).service?.fuel?.transfer?.startTick).toBe(120 + turn);

@@ -440,7 +440,10 @@ export interface ServiceProgress {
   /** When the aircraft will be available, as things stand. */
   readonly completeTick: number;
   readonly remainingS: number;
-  /** Share of the whole service done, 0 to 1. */
+  /**
+   * Share of the work of the service done, 0 to 1: checks, and fuel and payload moved. Time
+   * spent waiting for a point is not work, and does not advance it.
+   */
   readonly fraction: number;
   readonly checksRemainingS: number;
   readonly fuelKg: number;
@@ -457,14 +460,24 @@ export function serviceProgress(
 ): ServiceProgress | null {
   const { service } = aircraft;
   if (!service || !forecast) return null;
-  const span = Math.max(forecast.completeTick - service.startedTick, 1);
+  // Work is the checks and each transfer. A task that is waiting contributes nothing until its
+  // transfer begins, so a waiting aircraft is not shown making progress it is not making.
+  const spans: (readonly [number, number])[] = [[service.startedTick, service.checksCompleteTick]];
+  for (const task of [forecast.fuel, forecast.payload]) {
+    if (task) spans.push([task.startTick, task.completeTick]);
+  }
+  const total = spans.reduce((sum, [from, to]) => sum + Math.max(to - from, 0), 0);
+  const done = spans.reduce(
+    (sum, [from, to]) => sum + Math.min(Math.max(tick - from, 0), Math.max(to - from, 0)),
+    0,
+  );
   return {
     reason: service.reason,
     stage: service.stage,
     startedTick: service.startedTick,
     completeTick: forecast.completeTick,
     remainingS: Math.max(forecast.completeTick - tick, 0),
-    fraction: Math.min(Math.max((tick - service.startedTick) / span, 0), 1),
+    fraction: total > 0 ? Math.min(Math.max(done / total, 0), 1) : 1,
     checksRemainingS: Math.max(service.checksCompleteTick - tick, 0),
     fuelKg: aircraft.fuelKg,
     payloadKg: aircraft.payloadKg,
