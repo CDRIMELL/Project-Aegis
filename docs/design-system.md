@@ -45,7 +45,10 @@ not from glow, gradients or decoration.
 11. **Reference and simulated are different colours.** On the map and in badges, teal means
     real-world reference data and green means a simulated AEGIS entity. A record's detail panel
     carries a "Reference" badge with its verification level and confidence.
-12. **Canvas renderers use the same tokens.** The map and the charts cannot read CSS variables.
+12. **On the map, green is operations and nothing else.** Simulated aircraft, routes and
+    missions are green; reference data is teal; events are amber; simulated weather is a neutral
+    grey of its own (`--color-map-weather`). A background layer never takes an operational colour.
+13. **Canvas renderers use the same tokens.** The map and the charts cannot read CSS variables.
     They ask `resolveColorTokens` for the resolved values, so no colour is ever written outside
     `aegis.css`. A test asserts the map style contains no colour that is not in its palette.
 

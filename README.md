@@ -8,7 +8,7 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 8B of 10 complete.
+Phase 8C of 10 complete.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -54,8 +54,17 @@ Phase 8B of 10 complete.
   will be available, from one readiness rule. A service part-done when the application closes
   resumes where it was.
 
-There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices. How
-long servicing takes is a stated simulation assumption, the same at every aerodrome.
+- **Aerodromes as facilities:** an aerodrome has a capability, assumed from its sourced size
+  class, and a finite number of points to fuel aircraft and handle payload with. Two aircraft do
+  not use one point at once: the second waits in a real queue, and is told what it waits for,
+  behind which aircraft, and when its turn comes. Payload is loaded over simulated time like
+  fuel, and both must be aboard before a launch. A mission's planned start is its scheduled
+  launch time; nothing launches by itself, and a time that passes on the ground is recorded with
+  the reason.
+
+There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices. What
+an aerodrome can do is a stated simulation assumption about its size class, never a statement
+about a named aerodrome.
 
 ## Requirements
 

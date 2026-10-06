@@ -374,7 +374,51 @@ them: that is the accepted or active mission that names it.
   that has moved on, so the fuel a plan or a mission is offered is what arrives on the reserve
   plus a contingency on the trip fuel (`offeredFuelKg`).
 - **Times are simulation assumptions**, stated in the interface (`GROUND_SERVICE`). They are not
-  reference data, and are the same at every aerodrome.
+  reference data.
+
+### Aerodromes and their resources
+
+The decisions are in [ADR 0028](adr/0028-aerodrome-ground-resources.md).
+
+- **Capability from the size class.** The reference data classes every aerodrome as large, medium
+  or small. That class is copied on to the point the simulation holds (`RoutePoint.size`), and
+  `aerodromeCapability` turns it into fuel points, a factor on the fuel rate, handling points and
+  a payload rate. The class is reference data; every figure derived from it is a stated
+  assumption (`AERODROME_CAPABILITY`). A point with no class is treated as medium; a place that
+  is not an aerodrome services nothing. The engine still reads no reference table.
+- **Two resources, no stored occupancy.** Fuel points and payload handling. A point is held by
+  the aircraft whose transfer is running there, and the queue is the aircraft waiting, in the
+  order they began to wait, then by identifier. Both are functions of the aircraft's own service
+  records, so nothing can be left locked and a saved world cannot hold a queue that disagrees
+  with its aircraft. Each step, after services have advanced, free points go to the head of each
+  queue; a transfer begins at the tick its point is granted.
+- **One pipeline.** After its checks a service has up to two tasks, fuel and payload, each with a
+  target, the tick it began to wait and its transfer. They use different resources and run side
+  by side; the aircraft is available when both are done.
+- **Payload takes time.** It is loaded or taken off like fuel, and a launch needs the planned
+  payload aboard. A delivered payload is still unloaded by its mission when it completes.
+- **One forecast.** `forecastGroundServices` serves each queue in the order the engine will, and
+  says when each task gets its point, when it ends, and which aircraft it is behind. The
+  engine's refusals, the readiness rule and every screen use it. What it says is what happens
+  unless something further is asked of the aerodrome.
+- **Released or cancelled.** Work for a mission that has not begun is withdrawn at once and its
+  queue place freed; a transfer already running finishes.
+- **Scheduled is not automatic.** A mission's planned start is its scheduled launch. Nothing
+  launches by itself. When the time passes on the ground the world records `launchDelayed` once,
+  with the reason the readiness rule gives.
+- **Logged:** `serviceQueued`, `refuellingStarted` and `loadingStarted` (with the time waited),
+  their completions, `serviceWithdrawn`, `servicingCompleted` (with time waited, time on fuel
+  and on payload, and where), and `launchDelayed`. Nothing per step.
+
+| Layer                 | Where                                                 |
+| --------------------- | ----------------------------------------------------- |
+| Capability, resources | `packages/domain/src/ground/aerodrome.ts`             |
+| Tasks, forecast       | `packages/domain/src/ground/service.ts`               |
+| Granting, queues      | `packages/sim/src/fleet.ts` (`grant`, `stepServices`) |
+| Aerodrome panel       | `apps/desktop/src/features/shared/GroundService.tsx`  |
+
+Simulation model 8. A model-7 world loads and upgrades: a service under way keeps its transfer
+and ends at the same tick. Migration 0010 adds one nullable column, `sim_place.size`.
 
 | Layer                     | Where                                                |
 | ------------------------- | ---------------------------------------------------- |
@@ -460,19 +504,19 @@ The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-rep
 
 ### Schema
 
-| Table            | Rows | Contents                                                 |
-| ---------------- | ---- | -------------------------------------------------------- |
-| `sim_world`      | 1    | seed, simulation model version, epoch                    |
-| `sim_clock`      | 1    | simulation time, tick, speed, running                    |
-| `sim_checkpoint` | 1    | sequence number, wall-clock time, integrity digest       |
-| `sim_rng_stream` | n    | one row per named RNG stream                             |
-| `sim_aircraft`   | n    | one row per simulated aircraft, with its ground service  |
-| `sim_flight`     | n    | active and finished flights; finished ones are history   |
-| `sim_counter`    | n    | next sequence number per identifier prefix               |
-| `sim_mission`    | n    | every mission and opportunity; finished ones are history |
-| `sim_place`      | n    | the operating area: aerodromes copied into the world     |
-| `sim_log`        | n    | append-only command and event log                        |
-| `sim_event`      | n    | world events; resolved ones are history                  |
+| Table            | Rows | Contents                                                  |
+| ---------------- | ---- | --------------------------------------------------------- |
+| `sim_world`      | 1    | seed, simulation model version, epoch                     |
+| `sim_clock`      | 1    | simulation time, tick, speed, running                     |
+| `sim_checkpoint` | 1    | sequence number, wall-clock time, integrity digest        |
+| `sim_rng_stream` | n    | one row per named RNG stream                              |
+| `sim_aircraft`   | n    | one row per simulated aircraft, with its ground service   |
+| `sim_flight`     | n    | active and finished flights; finished ones are history    |
+| `sim_counter`    | n    | next sequence number per identifier prefix                |
+| `sim_mission`    | n    | every mission and opportunity; finished ones are history  |
+| `sim_place`      | n    | the operating area: aerodromes copied in, with size class |
+| `sim_log`        | n    | append-only command and event log                         |
+| `sim_event`      | n    | world events; resolved ones are history                   |
 
 Singleton tables enforce `id = 1` with a CHECK constraint. Table prefixes separate families:
 `ref_` (sourced reference data), `sim_` (simulated world), `sys_` (application records).
@@ -531,12 +575,13 @@ every screen (ADR 0015).
 
 ### Map
 
-| Tier        | Content                                             | Fed by                      |
-| ----------- | --------------------------------------------------- | --------------------------- |
-| basemap     | Land, water, borders, graticule, country names      | Bundled Natural Earth files |
-| reference   | Aerodromes, runways, cities (teal)                  | `ref_*` tables, read once   |
-| simulation  | Aircraft, routes, missions (green); weather; events | Simulation state            |
-| interaction | Selection; the draft flight plan and its handles    | UI state                    |
+| Tier        | Content                                            | Fed by                      |
+| ----------- | -------------------------------------------------- | --------------------------- |
+| basemap     | Land, water, borders, graticule, country names     | Bundled Natural Earth files |
+| reference   | Aerodromes, runways, cities (teal)                 | `ref_*` tables, read once   |
+| simulation  | Aircraft, routes, missions (green); events (amber) | Simulation state            |
+| simulation  | Simulated weather, beneath them (neutral grey)     | Computed from the seed      |
+| interaction | Selection; the draft flight plan and its handles   | UI state                    |
 
 Tiers are separated by slot layers and cannot interleave. The map is driven by `MapController`
 methods, not by rendering components, so data updates never re-render React; that is the path
@@ -551,41 +596,50 @@ the visible map: coarse when zoomed out, finer when zoomed in, never more than a
 It is resampled when the view moves and every ten simulated minutes. Events are drawn in amber
 and only redrawn when one is announced, starts or ends.
 
+Precipitation is drawn as one rectangle for each cell of the weather grid where it is falling,
+ten degrees across when zoomed out and half a degree when zoomed in, more opaque where it is
+heavier. It has its own colour token (`--color-map-weather`, a neutral grey). It was once drawn
+in the green of aircraft, routes and missions, which made weather look like operations; green on
+the map now means a simulated aircraft, route or mission and nothing else.
+
 `map/density.ts`, `map/features.ts`, `map/mission-features.ts`, `map/environment-features.ts` and
 `map/style.ts` are pure and unit tested. `map/controller.ts`
 needs a GPU and is verified by running the application.
 
 ## Testing
 
-| Layer            | Tool                   | What it proves                                                                 |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------------ |
-| Domain           | Vitest, fast-check     | RNG reference vector, stream isolation, bounds, time and digest helpers        |
-| Mathematics      | Vitest                 | Exact recorded bits of every function and of geodesy; accuracy against `Math`  |
-| Simulation       | Vitest                 | Determinism, every speed, pause/resume, catch-up cap, checkpoint policy        |
-| Persistence      | Vitest + `node:sqlite` | Round trip, atomic rollback, constraints, restart continuity, crash recovery   |
-| Native core      | `cargo test`           | Batch atomicity, statement guard, value conversion, migrations, backup, gate   |
-| Ingestion        | Vitest + `node:sqlite` | Normalisation, idempotency, reproducibility, atomic failure, data pack         |
-| Map              | Vitest                 | Tier order, density rules, feature building, style uses only palette colours   |
-| Flight           | Vitest                 | Fuel calibration, phases, constraints, determinism, 1x equals 100x             |
-| Scenario         | Vitest + `node:sqlite` | Starter fleet, plan, edit, launch, fly, save, reload, land, end to end         |
-| Missions         | Vitest                 | Lifecycle, objectives, validation, risk, seeded generation, consequences       |
-| Log              | Vitest + `node:sqlite` | Append-only, atomic with state, deterministic order, replay from seed          |
-| Mission scenario | Vitest + `node:sqlite` | Create, route, edit, accept, launch, complete, reopen, generated offer         |
-| Environment      | Vitest                 | Recorded bits of the weather field, continuity, effects, estimate equals flown |
-| Events           | Vitest + `node:sqlite` | Lifecycle, seeded generation, consequences, persistence, replay                |
-| World scenario   | Vitest + `node:sqlite` | Weather on a mission, a closure, a finding, save mid-flight, reopen, replay    |
-| Reports          | Vitest                 | Periods and boundaries, totals, status history, immutability, determinism      |
-| Report reads     | Vitest + `node:sqlite` | Totals equal the engine's counters; reopen, crash, replay; volume              |
-| Export           | Vitest, `cargo test`   | CSV and JSON content and filtering; the file name guard; no overwrite          |
-| Charts           | Vitest                 | Order, tones from tokens only, empty state, no colour literal                  |
-| Report scenario  | Vitest + `node:sqlite` | Missions to different ends, maintenance, reports, export, reopen, replay       |
-| In-flight        | Vitest                 | Revision, hold, closure on arrival, abort, caution; preview equals outcome     |
-| In-flight store  | Vitest + `node:sqlite` | Reopen mid-diversion and mid-hold; migration of a database from before 0008    |
-| Control scenario | Vitest + `node:sqlite` | Divert, reroute, abort after an objective, reopen, reports, replay             |
-| Ground rules     | Vitest, fast-check     | Times, fuel at any tick, exact completion, every state of the readiness rule   |
-| Servicing        | Vitest                 | Turnaround, refuelling, refusals, missions, 1x and 100x, save at any tick      |
-| Servicing store  | Vitest + `node:sqlite` | Reopen mid-refuel, crash recovery; migration of a database from before 0009    |
-| Ground scenario  | Vitest + `node:sqlite` | Land, turn round, refuel, close and reopen, launch when ready, reports, replay |
+| Layer            | Tool                   | What it proves                                                                  |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------- |
+| Domain           | Vitest, fast-check     | RNG reference vector, stream isolation, bounds, time and digest helpers         |
+| Mathematics      | Vitest                 | Exact recorded bits of every function and of geodesy; accuracy against `Math`   |
+| Simulation       | Vitest                 | Determinism, every speed, pause/resume, catch-up cap, checkpoint policy         |
+| Persistence      | Vitest + `node:sqlite` | Round trip, atomic rollback, constraints, restart continuity, crash recovery    |
+| Native core      | `cargo test`           | Batch atomicity, statement guard, value conversion, migrations, backup, gate    |
+| Ingestion        | Vitest + `node:sqlite` | Normalisation, idempotency, reproducibility, atomic failure, data pack          |
+| Map              | Vitest                 | Tier order, density rules, feature building, style uses only palette colours    |
+| Flight           | Vitest                 | Fuel calibration, phases, constraints, determinism, 1x equals 100x              |
+| Scenario         | Vitest + `node:sqlite` | Starter fleet, plan, edit, launch, fly, save, reload, land, end to end          |
+| Missions         | Vitest                 | Lifecycle, objectives, validation, risk, seeded generation, consequences        |
+| Log              | Vitest + `node:sqlite` | Append-only, atomic with state, deterministic order, replay from seed           |
+| Mission scenario | Vitest + `node:sqlite` | Create, route, edit, accept, launch, complete, reopen, generated offer          |
+| Environment      | Vitest                 | Recorded bits of the weather field, continuity, effects, estimate equals flown  |
+| Events           | Vitest + `node:sqlite` | Lifecycle, seeded generation, consequences, persistence, replay                 |
+| World scenario   | Vitest + `node:sqlite` | Weather on a mission, a closure, a finding, save mid-flight, reopen, replay     |
+| Reports          | Vitest                 | Periods and boundaries, totals, status history, immutability, determinism       |
+| Report reads     | Vitest + `node:sqlite` | Totals equal the engine's counters; reopen, crash, replay; volume               |
+| Export           | Vitest, `cargo test`   | CSV and JSON content and filtering; the file name guard; no overwrite           |
+| Charts           | Vitest                 | Order, tones from tokens only, empty state, no colour literal                   |
+| Report scenario  | Vitest + `node:sqlite` | Missions to different ends, maintenance, reports, export, reopen, replay        |
+| In-flight        | Vitest                 | Revision, hold, closure on arrival, abort, caution; preview equals outcome      |
+| In-flight store  | Vitest + `node:sqlite` | Reopen mid-diversion and mid-hold; migration of a database from before 0008     |
+| Control scenario | Vitest + `node:sqlite` | Divert, reroute, abort after an objective, reopen, reports, replay              |
+| Ground rules     | Vitest, fast-check     | Times, fuel at any tick, exact completion, every state of the readiness rule    |
+| Servicing        | Vitest                 | Turnaround, refuelling, refusals, missions, 1x and 100x, save at any tick       |
+| Servicing store  | Vitest + `node:sqlite` | Reopen mid-refuel, crash recovery; migration of a database from before 0009     |
+| Ground scenario  | Vitest + `node:sqlite` | Land, turn round, refuel, close and reopen, launch when ready, reports, replay  |
+| Ground resources | Vitest                 | One point and two, queue order, payload, forecast equals outcome, save anywhere |
+| Resources store  | Vitest + `node:sqlite` | Reopen with a queue; a model-7 service carried over; migration before 0010      |
+| Queue scenario   | Vitest + `node:sqlite` | Two aircraft, one aerodrome: wait, reopen, launch when ready, reports, replay   |
 
 Persistence tests use the same Drizzle driver and SQL as production; only the transport differs.
 

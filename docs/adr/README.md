@@ -32,3 +32,4 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0025](0025-report-export.md)                  | Report export: pure CSV and JSON, one native command, one folder           | Accepted |
 | [0026](0026-in-flight-control.md)              | In-flight control: one revision primitive, holding, closures, abort        | Accepted |
 | [0027](0027-ground-servicing.md)               | Turnaround, timed refuelling, launch fuel and one readiness rule           | Accepted |
+| [0028](0028-aerodrome-ground-resources.md)     | Aerodrome capability, finite ground resources, payload, scheduled launch   | Accepted |
