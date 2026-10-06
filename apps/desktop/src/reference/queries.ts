@@ -321,6 +321,28 @@ export async function loadAerodrome(
   return found && found.kind !== 'city' ? found : null;
 }
 
+/**
+ * The size class the reference data holds for aerodromes, by reference id: the OurAirports type
+ * as it was ingested, and nothing else. An id the reference data does not hold, or holds as
+ * something other than an airport of a size, is simply absent from the result.
+ */
+export async function loadAerodromeSizes(
+  ids: readonly string[],
+): Promise<Record<string, 'large' | 'medium' | 'small'>> {
+  if (ids.length === 0) return {};
+  const rows = await db
+    .select({ id: refLocation.id, kind: refLocation.kind })
+    .from(refLocation)
+    .where(inArray(refLocation.id, [...ids]));
+  const sizes: Record<string, 'large' | 'medium' | 'small'> = {};
+  for (const row of rows) {
+    if (row.kind === 'airport_large') sizes[row.id] = 'large';
+    else if (row.kind === 'airport_medium') sizes[row.id] = 'medium';
+    else if (row.kind === 'airport_small') sizes[row.id] = 'small';
+  }
+  return sizes;
+}
+
 /** Aerodromes matching a search, for choosing a home or a destination. */
 export async function searchAerodromes(query: string, limit = 8): Promise<SearchResult[]> {
   const results = await searchLocations(query, limit * 3);

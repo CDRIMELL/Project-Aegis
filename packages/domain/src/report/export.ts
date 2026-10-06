@@ -17,6 +17,7 @@ export const REPORT_TABLES = [
   'fuel',
   'maintenance',
   'events',
+  'services',
 ] as const;
 export type ReportTableName = (typeof REPORT_TABLES)[number];
 
@@ -26,6 +27,8 @@ export interface ReportFilter {
   readonly missionType: MissionType | null;
   readonly missionStatus: MissionStatus | null;
   readonly eventType: EventType | null;
+  /** An aerodrome's code: narrows the ground services to those done there. */
+  readonly aerodrome: string | null;
 }
 
 export const NO_FILTER: ReportFilter = {
@@ -33,6 +36,7 @@ export const NO_FILTER: ReportFilter = {
   missionType: null,
   missionStatus: null,
   eventType: null,
+  aerodrome: null,
 };
 
 export function filterMissions(report: Report, filter: ReportFilter): MissionRecord[] {
@@ -69,7 +73,9 @@ export function filterOutlook(report: Report, filter: ReportFilter): Maintenance
 /** Ground services finished in the period, for the aircraft the filter names. */
 export function filterServices(report: Report, filter: ReportFilter): ServiceRecord[] {
   return report.services.filter(
-    (service) => filter.aircraftId === null || service.aircraftId === filter.aircraftId,
+    (service) =>
+      (filter.aircraftId === null || service.aircraftId === filter.aircraftId) &&
+      (filter.aerodrome === null || service.at === filter.aerodrome),
   );
 }
 
@@ -107,6 +113,7 @@ const round = (value: number | null): number | null =>
   value === null ? null : Math.round(value * 1000) / 1000;
 const hours = (seconds: number | null) => round(seconds === null ? null : seconds / 3600);
 const km = (metres: number) => round(metres / 1000);
+const minutes = (seconds: number) => round(seconds / 60);
 const percent = (fraction: number | null) => round(fraction === null ? null : fraction * 100);
 
 function table<Row>(
@@ -548,6 +555,71 @@ function fuelTable(report: Report, filter: ReportFilter): ReportTable {
   );
 }
 
+/** The resources a service used, in words. */
+function resourcesOf(service: ServiceRecord): string {
+  const fuel = service.refuelS > 0;
+  const handling = service.loadS > 0;
+  if (fuel && handling) return 'fuel point and payload handling';
+  if (fuel) return 'fuel point';
+  return handling ? 'payload handling' : 'none';
+}
+
+/**
+ * Every ground service finished in the period, one row each, in the order they finished
+ * (ADR 0029). What was asked for is beside what was done, so a service stopped short shows.
+ */
+function servicesTable(report: Report, filter: ReportFilter): ReportTable {
+  return table<ServiceRecord>(
+    'services',
+    'Ground services completed',
+    [
+      ...when<ServiceRecord>('completed', 'Completed', (s) => s.completedTick, report.epochMs),
+      { key: 'aerodrome', header: 'Aerodrome', value: (s) => s.at },
+      { key: 'aircraft', header: 'Aircraft', value: (s) => s.aircraftId },
+      { key: 'mission', header: 'Mission', value: (s) => s.missionId },
+      { key: 'service', header: 'Service', value: (s) => s.reason },
+      { key: 'resources', header: 'Resources used', value: resourcesOf },
+      {
+        key: 'status',
+        header: 'Status',
+        value: (s) => (s.stopped ? 'ended short of what was asked' : 'completed'),
+      },
+      ...when<ServiceRecord>('started', 'Started', (s) => s.startedTick, report.epochMs),
+      { key: 'duration_min', header: 'Duration (min)', value: (s) => minutes(s.durationS) },
+      { key: 'checks_min', header: 'Post-flight checks (min)', value: (s) => minutes(s.checksS) },
+      { key: 'queue_min', header: 'Waiting for a point (min)', value: (s) => minutes(s.waitS) },
+      { key: 'fuel_min', header: 'On fuel (min)', value: (s) => minutes(s.refuelS) },
+      {
+        key: 'fuel_requested_kg',
+        header: 'Fuel asked for aboard (kg)',
+        value: (s) => round(s.fuelTargetKg),
+      },
+      {
+        key: 'fuel_moved_kg',
+        header: 'Fuel loaded (kg, negative when taken off)',
+        value: (s) => round(s.loadedKg),
+      },
+      {
+        key: 'fuel_aboard_kg',
+        header: 'Fuel aboard at the end (kg)',
+        value: (s) => round(s.fuelKg),
+      },
+      { key: 'payload_min', header: 'On payload (min)', value: (s) => minutes(s.loadS) },
+      {
+        key: 'payload_requested_kg',
+        header: 'Payload asked for aboard (kg)',
+        value: (s) => round(s.payloadTargetKg),
+      },
+      {
+        key: 'payload_moved_kg',
+        header: 'Payload loaded (kg, negative when taken off)',
+        value: (s) => round(s.payloadLoadedKg),
+      },
+    ],
+    filterServices(report, filter),
+  );
+}
+
 function maintenanceTable(report: Report, filter: ReportFilter): ReportTable {
   return table<MaintenanceVisit>(
     'maintenance',
@@ -626,6 +698,8 @@ export function reportTable(
       return maintenanceTable(report, filter);
     case 'events':
       return eventsTable(report, filter);
+    case 'services':
+      return servicesTable(report, filter);
   }
 }
 

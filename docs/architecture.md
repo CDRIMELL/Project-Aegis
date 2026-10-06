@@ -396,7 +396,19 @@ The decisions are in [ADR 0028](adr/0028-aerodrome-ground-resources.md).
   target, the tick it began to wait and its transfer. They use different resources and run side
   by side; the aircraft is available when both are done.
 - **Payload takes time.** It is loaded or taken off like fuel, and a launch needs the planned
-  payload aboard. A delivered payload is still unloaded by its mission when it completes.
+  payload aboard.
+- **A delivery is unloaded by its turnaround** ([ADR 0029](adr/0029-aerodrome-data-unloading-and-service-reporting.md)).
+  The mission completes when the aircraft lands; the payload is then still aboard, and the
+  turnaround is given a payload task with a target of nothing. It follows the checks, waits its
+  turn for the handling point and takes the time any payload transfer takes. The aircraft is
+  available when its turnaround is done. An aircraft that lands due maintenance is not turned
+  round, so its payload stays aboard until it is next prepared.
+- **Classes for an existing world.** A world may hold aerodromes copied before the class was
+  kept. The application looks those up in the packaged reference data by identifier and sends
+  the system command `classifyAerodromes`, which fills in a missing class wherever the world
+  holds the aerodrome and never replaces one. An aerodrome the reference data does not class
+  stays without one, and is treated as medium. The command is logged, so a replay needs no
+  reference data; the engine still reads none.
 - **One forecast.** `forecastGroundServices` serves each queue in the order the engine will, and
   says when each task gets its point, when it ends, and which aircraft it is behind. The
   engine's refusals, the readiness rule and every screen use it. What it says is what happens
@@ -408,7 +420,11 @@ The decisions are in [ADR 0028](adr/0028-aerodrome-ground-resources.md).
   with the reason the readiness rule gives.
 - **Logged:** `serviceQueued`, `refuellingStarted` and `loadingStarted` (with the time waited),
   their completions, `serviceWithdrawn`, `servicingCompleted` (with time waited, time on fuel
-  and on payload, and where), and `launchDelayed`. Nothing per step.
+  and on payload, what was asked for, whether it was stopped, and where), `payloadUnloading`
+  and `launchDelayed`. Nothing per step.
+- **One answer to "can it launch".** `launchState` joins the readiness rule with the plan's
+  blocking constraints into one answer, one list of reasons and one checklist. The planner and
+  the mission page use it; a test holds its first reason to the engine's refusal, word for word.
 
 | Layer                 | Where                                                 |
 | --------------------- | ----------------------------------------------------- |
@@ -417,8 +433,10 @@ The decisions are in [ADR 0028](adr/0028-aerodrome-ground-resources.md).
 | Granting, queues      | `packages/sim/src/fleet.ts` (`grant`, `stepServices`) |
 | Aerodrome panel       | `apps/desktop/src/features/shared/GroundService.tsx`  |
 
-Simulation model 8. A model-7 world loads and upgrades: a service under way keeps its transfer
-and ends at the same tick. Migration 0010 adds one nullable column, `sim_place.size`.
+Simulation model 9. A model-8 world loads and upgrades with nothing in it changed; from the
+upgrade a delivery is unloaded over time. No migration. Model 8 brought the resources: a model-7
+world loads and upgrades, a service under way keeps its transfer and ends at the same tick, and
+migration 0010 adds one nullable column, `sim_place.size`.
 
 | Layer                     | Where                                                |
 | ------------------------- | ---------------------------------------------------- |
@@ -468,6 +486,13 @@ The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-rep
   the mission it was for. It belongs to the period in which it finished. Time being serviced is
   part of each aircraft's status history and counts against availability, as time down for
   maintenance does.
+- **Services and aerodromes.** The `services` table has one row for each finished service, in
+  the order the log holds them: where and when, the aircraft and mission, the resources used,
+  the time on checks, in a queue, on fuel and on payload, what was asked for and what was moved.
+  The Aerodromes and services section lists every aerodrome that serviced an aircraft or that a
+  flight left or reached, and for one aerodrome shows its identity, its capability (a simulation
+  assumption, and marked as one), what it is doing now and its history for the period. The
+  aerodrome is a filter like the aircraft, and the export is what the screen shows.
 - **In progress is shown apart.** Flights in the air and missions under way are listed as they
   stand, and are in no total: totals are of what has finished.
 - **Drill-down, not duplication.** Every mission, aircraft and event a report names opens its own
@@ -484,6 +509,7 @@ The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-rep
 | Writing the export file | `apps/desktop/src-tauri/src/export.rs`                     |
 | Period, sorting, series | `apps/desktop/src/reports/`                                |
 | Screens                 | `apps/desktop/src/features/reports/`                       |
+| Aerodrome report        | `apps/desktop/src/features/reports/aerodromes.tsx`         |
 | Charts                  | `packages/ui/src/charts/option.ts`, `components/Chart.tsx` |
 
 ## Persistence model

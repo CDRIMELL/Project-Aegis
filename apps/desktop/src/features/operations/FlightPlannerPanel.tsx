@@ -214,8 +214,12 @@ function DraftEditor({
         },
         tick,
         fleet,
+        evaluation.constraints
+          .filter((constraint) => constraint.severity === 'block')
+          .map((constraint) => constraint.message),
       );
-  const ready = launch?.readiness.ready ?? false;
+  // One answer to "would a launch now be accepted": the aircraft, and the plan.
+  const ready = launch?.launchable ?? false;
   const estimate = evaluation.estimate;
 
   return (
@@ -429,13 +433,9 @@ function DraftEditor({
           <Button
             variant="primary"
             icon={Send}
-            disabled={!evaluation.flyable || !ready}
+            disabled={!ready}
             title={
-              !evaluation.flyable
-                ? 'Resolve the blocking constraints first.'
-                : ready
-                  ? undefined
-                  : (launch?.issues[0] ?? 'The aircraft is not ready to launch.')
+              ready ? undefined : (launch?.issues[0] ?? 'The aircraft is not ready to launch.')
             }
             onClick={() => {
               simClient.send({

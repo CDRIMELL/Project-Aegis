@@ -9,6 +9,7 @@ import {
   exportFileName,
   filterFlights,
   filterMissions,
+  filterServices,
   inPeriod,
   maintenanceOutlook,
   maintenanceVisits,
@@ -871,6 +872,9 @@ describe('ground servicing in a report', () => {
         payloadLoadedKg: 0,
         waitS: 0,
         at: '',
+        fuelTargetKg: null,
+        payloadTargetKg: null,
+        stopped: false,
       },
       {
         aircraftId: 'G',
@@ -887,6 +891,9 @@ describe('ground servicing in a report', () => {
         payloadLoadedKg: 0,
         waitS: 0,
         at: '',
+        fuelTargetKg: null,
+        payloadTargetKg: null,
+        stopped: false,
       },
     ]);
     // Nothing the log does not say is supplied: a damaged entry reads as nothing done.
@@ -1005,7 +1012,7 @@ describe('ground servicing in a report', () => {
       launchesLate: 1,
       launchDelaySeconds: 400,
     });
-    expect(busy.aerodromes).toEqual([
+    expect(busy.aerodromes).toMatchObject([
       {
         at: 'EGHQ',
         services: 1,
@@ -1033,6 +1040,198 @@ describe('ground servicing in a report', () => {
       launchesScheduled: 0,
     });
     expect(report(EARLY, data).aerodromes).toEqual([]);
+  });
+
+  it('exports every service, one row each in the order they finished, asked beside done', () => {
+    const several: LogRecord[] = [
+      entry(2000, 'event', 'servicingCompleted', 'H', {
+        reason: 'preparation',
+        durationS: 1500,
+        checksS: 0,
+        refuelS: 900,
+        loadS: 600,
+        waitS: 300,
+        loadedKg: 12_000,
+        payloadLoadedKg: 9000,
+        fuelKg: 30_000,
+        payloadKg: 9000,
+        fuelTargetKg: 30_000,
+        payloadTargetKg: 9000,
+        at: 'LCRA',
+      }),
+      // The same tick: by the order the log holds them.
+      forMission(
+        entry(2000, 'event', 'servicingCompleted', 'G', {
+          reason: 'turnaround',
+          durationS: 1800,
+          checksS: 1200,
+          loadS: 600,
+          payloadLoadedKg: -9000,
+          payloadTargetKg: 0,
+          fuelKg: 6000,
+          at: 'EGHQ',
+        }),
+      ),
+      entry(5000, 'event', 'servicingCompleted', 'G', {
+        reason: 'preparation',
+        durationS: 400,
+        refuelS: 400,
+        loadedKg: 2000,
+        fuelKg: 8000,
+        fuelTargetKg: 30_000,
+        stopped: true,
+        at: 'EGHQ',
+      }),
+    ];
+    const busy = report(
+      { fromTick: 0, toTick: 20_000 },
+      { ...data, asOfTick: 19_000, statusLog: several },
+    );
+    const all = reportTable('services', busy);
+    expect(all.title).toBe('Ground services completed');
+    expect(all.columns.map((column) => column.key)).toEqual([
+      'completed_utc',
+      'completed_tick',
+      'aerodrome',
+      'aircraft',
+      'mission',
+      'service',
+      'resources',
+      'status',
+      'started_utc',
+      'started_tick',
+      'duration_min',
+      'checks_min',
+      'queue_min',
+      'fuel_min',
+      'fuel_requested_kg',
+      'fuel_moved_kg',
+      'fuel_aboard_kg',
+      'payload_min',
+      'payload_requested_kg',
+      'payload_moved_kg',
+    ]);
+    expect(all.rows.map((row) => [row.completed_tick, row.aircraft, row.aerodrome])).toEqual([
+      [2000, 'H', 'LCRA'],
+      [2000, 'G', 'EGHQ'],
+      [5000, 'G', 'EGHQ'],
+    ]);
+    expect(all.rows[0]).toMatchObject({
+      completed_utc: tickToIso(2000, EPOCH),
+      started_tick: 500,
+      mission: null,
+      service: 'preparation',
+      resources: 'fuel point and payload handling',
+      status: 'completed',
+      duration_min: 25,
+      queue_min: 5,
+      fuel_min: 15,
+      fuel_requested_kg: 30_000,
+      fuel_moved_kg: 12_000,
+      fuel_aboard_kg: 30_000,
+      payload_min: 10,
+      payload_requested_kg: 9000,
+      payload_moved_kg: 9000,
+    });
+    // A delivery taken off by its turnaround: payload asked down to nothing, and no fuel asked.
+    expect(all.rows[1]).toMatchObject({
+      mission: 'MSN-000007',
+      service: 'turnaround',
+      resources: 'payload handling',
+      checks_min: 20,
+      fuel_requested_kg: null,
+      payload_requested_kg: 0,
+      payload_moved_kg: -9000,
+    });
+    // Stopped by the operator: what was asked for and what was done differ, and it says so.
+    expect(all.rows[2]).toMatchObject({
+      resources: 'fuel point',
+      status: 'ended short of what was asked',
+      fuel_requested_kg: 30_000,
+      fuel_moved_kg: 2000,
+      fuel_aboard_kg: 8000,
+    });
+
+    // Narrowed to an aerodrome, to an aircraft, and to both: the screen and the file agree.
+    const at = (aerodrome: string | null, aircraftId: string | null = null) => ({
+      ...NO_FILTER,
+      aerodrome,
+      aircraftId,
+    });
+    expect(reportTable('services', busy, at('EGHQ')).rows.map((row) => row.completed_tick)).toEqual(
+      [2000, 5000],
+    );
+    expect(reportTable('services', busy, at('LCRA', 'G')).rows).toEqual([]);
+    expect(filterServices(busy, at('EGHQ')).map((service) => service.completedTick)).toEqual([
+      2000, 5000,
+    ]);
+    // The same report gives the same bytes.
+    expect(toCsv(reportTable('services', busy))).toBe(toCsv(reportTable('services', busy)));
+    expect(toCsv(all).split('\n')[0]).toContain('"Fuel loaded (kg, negative when taken off)"');
+
+    // Nothing serviced: the columns, and no rows.
+    const none = reportTable('services', report(EARLY, { ...data, statusLog: [] }));
+    expect(none.rows).toEqual([]);
+    expect(none.columns).toHaveLength(20);
+    expect(exportFileName('services', busy, 'csv')).toMatch(/^aegis-services-.*\.csv$/);
+  });
+
+  it('sets out what happened at each aerodrome: services, fuel, payload, and flights in and out', () => {
+    const there: LogRecord[] = [
+      entry(2000, 'event', 'servicingCompleted', 'G', {
+        reason: 'turnaround',
+        durationS: 2400,
+        checksS: 1200,
+        refuelS: 700,
+        loadS: 500,
+        waitS: 400,
+        loadedKg: 5000,
+        payloadLoadedKg: -6000,
+        at: 'LCRA',
+      }),
+      entry(4000, 'event', 'servicingCompleted', 'G', {
+        reason: 'preparation',
+        durationS: 600,
+        refuelS: 600,
+        loadedKg: -3000,
+        at: 'LCRA',
+      }),
+    ];
+    const flown = report(
+      { fromTick: 0, toTick: 20_000 },
+      {
+        ...data,
+        asOfTick: 19_000,
+        statusLog: there,
+        flights: [
+          flight('F1', 'G', 500, 1000, { origin: 'EGHQ', destination: 'LCRA' }),
+          flight('F2', 'G', 8000, 9000, { origin: 'LCRA', destination: 'EGHQ' }),
+          flight('F3', 'G', 11_000, 12_000, { origin: 'LCRA', destination: 'KJFK' }),
+        ],
+      },
+    );
+    expect(flown.aerodromes.map((each) => each.at)).toEqual(['EGHQ', 'KJFK', 'LCRA']);
+    expect(flown.aerodromes.find((each) => each.at === 'LCRA')).toEqual({
+      at: 'LCRA',
+      services: 2,
+      serviceSeconds: 3000,
+      servicesQueued: 1,
+      waitSeconds: 400,
+      fuelLoadedKg: 5000,
+      fuelRemovedKg: 3000,
+      payloadLoadedKg: 0,
+      payloadRemovedKg: 6000,
+      refuellingSeconds: 1300,
+      payloadSeconds: 500,
+      departures: 2,
+      arrivals: 1,
+    });
+    // An aerodrome only flown to and from is listed too, with nothing serviced there.
+    expect(flown.aerodromes.find((each) => each.at === 'KJFK')).toMatchObject({
+      services: 0,
+      departures: 0,
+      arrivals: 1,
+    });
   });
 
   it('exports what it shows', () => {

@@ -556,7 +556,7 @@ describe('mission and flight', () => {
     });
   });
 
-  it('unloads a delivered payload at the destination', () => {
+  it('delivers a payload at the destination, where the turnaround takes it off', () => {
     const engine = world();
     create(
       engine,
@@ -570,7 +570,16 @@ describe('mission and flight', () => {
     expect(aircraftOf(engine, TRANSPORT).payloadKg).toBe(9000);
     runUntilFinished(engine);
     expect(missionOf(engine).status).toBe('completed');
-    expect(aircraftOf(engine, TRANSPORT)).toMatchObject({ payloadKg: 0, location: places.exeter });
+    // Delivered, and the mission is complete; the payload is still aboard until the ground work
+    // is done (ADR 0029). The detail is in delivery.test.ts.
+    expect(aircraftOf(engine, TRANSPORT)).toMatchObject({
+      status: 'servicing',
+      payloadKg: 9000,
+      location: places.exeter,
+      service: { reason: 'turnaround', payload: { targetKg: 0 } },
+    });
+    untilServiced(engine, TRANSPORT);
+    expect(aircraftOf(engine, TRANSPORT)).toMatchObject({ status: 'available', payloadKg: 0 });
     // Home is unchanged: a logistics mission does not rebase the aircraft.
     expect(aircraftOf(engine, TRANSPORT).home).toEqual(places.newquay);
   });

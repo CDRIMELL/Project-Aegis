@@ -900,7 +900,7 @@ describe('determinism, continuity and upgrade', { timeout: 60_000 }, () => {
     const savedAt = engine.clock.tick;
     const upgraded = SimulationEngine.restore(snapshot as never);
     expect(upgraded.snapshot().modelVersion).toBe(SIM_MODEL_VERSION);
-    expect(SIM_MODEL_VERSION).toBe(8);
+    expect(SIM_MODEL_VERSION).toBe(9);
     // What was logged under the old rules is kept; replay starts at the upgrade.
     expect(upgraded.snapshot().log.completeFromTick).toBe(savedAt);
     for (const aircraft of upgraded.snapshot().fleet.aircraft) {

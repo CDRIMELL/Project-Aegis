@@ -6,6 +6,7 @@ import {
   GROUND_SERVICE,
   aerodromeCapability,
   beginTransfer,
+  classifiedPoint,
   forecastGroundServices,
   fuelDiffers,
   fuelDuringTransfer,
@@ -388,6 +389,39 @@ describe('what an aerodrome can do', () => {
     expect(transferDurationS(CAPACITY, 0, 12_000, 1)).toBe(refuel.connectS + 600);
     expect(payloadDurationS(30, 0, 9000)).toBe(GROUND_SERVICE.payload.positionS + 300);
     expect(payloadDurationS(15, 9000, 0)).toBe(GROUND_SERVICE.payload.positionS + 600);
+  });
+});
+
+describe('giving a point its size class', () => {
+  const sizes = { 'fixture:eghq': 'large', 'fixture:other': 'small' } as const;
+
+  it('fills in the class the reference data holds, for an aerodrome that lacks one', () => {
+    expect(classifiedPoint(NEWQUAY, sizes)).toEqual({ ...NEWQUAY, size: 'large' });
+    expect(aerodromeCapability(classifiedPoint(NEWQUAY, sizes)).fuelPoints).toBe(2);
+  });
+
+  it('leaves an aerodrome the reference data does not know as it is: the medium fallback', () => {
+    expect(classifiedPoint(EXETER, sizes)).toBe(EXETER);
+    expect(aerodromeCapability(classifiedPoint(EXETER, sizes))).toMatchObject({
+      size: null,
+      fuelPoints: 1,
+      fuelRateFactor: 1,
+    });
+    // No reference id to look it up by: nothing is guessed from its name or position.
+    const anonymous = Object.fromEntries(
+      Object.entries(NEWQUAY).filter(([key]) => key !== 'refId'),
+    ) as RoutePoint;
+    expect(classifiedPoint(anonymous, sizes)).toBe(anonymous);
+  });
+
+  it('never replaces a class, and never classes what is not an aerodrome', () => {
+    const small = { ...NEWQUAY, size: 'small' as const };
+    expect(classifiedPoint(small, sizes)).toBe(small);
+    const waypoint = { ...NEWQUAY, kind: 'waypoint' as const };
+    expect(classifiedPoint(waypoint, sizes)).toBe(waypoint);
+    // Applying it again changes nothing.
+    const once = classifiedPoint(NEWQUAY, sizes);
+    expect(classifiedPoint(once, sizes)).toBe(once);
   });
 });
 

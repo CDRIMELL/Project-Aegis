@@ -7,6 +7,7 @@ import {
   forecastGroundServices,
   fuelDiffers,
   holdsPoint,
+  isFinished,
   launchReadiness,
   payloadDurationS,
   serviceActivity,
@@ -21,7 +22,7 @@ import {
   type ServiceProgress,
   type TaskForecast,
 } from '@aegis/domain';
-import type { AircraftState } from '@aegis/sim';
+import type { AircraftState, SimView } from '@aegis/sim';
 import { formatDuration, formatInteger, formatKg } from '../format';
 
 /*
@@ -283,8 +284,13 @@ export interface LaunchState {
   readonly prepare: { readonly fuelKg: number; readonly payloadKg: number } | null;
   /** How long that preparation would take once it has its points. */
   readonly prepareS: number | null;
-  /** The aircraft, its fuel, its payload and the aerodrome, each in a line. */
+  /** The aircraft, its fuel, its payload, the aerodrome and the flight plan, each in a line. */
   readonly lines: readonly ReadinessLine[];
+  /**
+   * True when a launch now would be accepted: the aircraft is ready, and nothing about the plan
+   * blocks it. The simulation refuses a launch for exactly these two reasons, in this order.
+   */
+  readonly launchable: boolean;
 }
 
 const STANDING = [
@@ -306,6 +312,11 @@ export function launchState(
   need: LaunchNeed,
   tick: number,
   fleet: readonly AircraftState[] = aircraft ? [aircraft] : [],
+  /**
+   * What blocks the flight plan itself, from the planner's evaluation of it: a closed aerodrome,
+   * fuel that runs out, a mass over the limit. `null` when no plan has been evaluated.
+   */
+  planBlocks: readonly string[] | null = null,
 ): LaunchState | null {
   if (!aircraft) return null;
   const forecast = groundForecasts(fleet, tick).get(aircraft.id) ?? null;
@@ -352,15 +363,66 @@ export function launchState(
       ok: !waiting,
     },
   ];
+  if (planBlocks) {
+    lines.push({
+      label: 'Flight plan',
+      value: planBlocks[0] ?? 'Nothing blocks it',
+      ok: planBlocks.length === 0,
+    });
+  }
   const missing = has('fuel') || has('payload');
   return {
     readiness,
-    issues: readiness.issues.map((issue) => issue.message),
+    launchable: readiness.ready && (planBlocks?.length ?? 0) === 0,
+    // The aircraft's own reasons first, as the simulation gives them; then the plan's.
+    issues: [...readiness.issues.map((issue) => issue.message), ...(planBlocks ?? [])],
     readyTick: readiness.readyTick,
     prepare: missing && serviceable ? { fuelKg: need.fuelKg, payloadKg: need.payloadKg } : null,
     prepareS: missing ? readiness.prepareS : null,
     lines,
   };
+}
+
+/** Every aerodrome point the world holds: where aircraft are and are based, the operating area,
+ * and where open missions and flights in the air begin and end. */
+function aerodromePoints(view: SimView): RoutePoint[] {
+  const points: RoutePoint[] = [];
+  for (const aircraft of view.fleet.aircraft) {
+    points.push(aircraft.home);
+    if (aircraft.location) points.push(aircraft.location);
+  }
+  points.push(...view.missions.places);
+  for (const mission of view.missions.missions) {
+    if (isFinished(mission.status)) continue;
+    if (mission.plan) points.push(...mission.plan.points);
+    if (mission.brief.destination) points.push(mission.brief.destination);
+  }
+  for (const flight of view.fleet.activeFlights) points.push(...flight.points);
+  return points.filter((point) => point.kind === 'aerodrome');
+}
+
+/**
+ * The reference ids of aerodromes the world holds with no size class, in order (ADR 0029). What
+ * the application then looks up in the reference data; an empty list is the usual case.
+ */
+export function unclassifiedAerodromes(view: SimView): string[] {
+  const ids = new Set<string>();
+  for (const point of aerodromePoints(view)) {
+    if (point.size === undefined && point.refId !== undefined) ids.add(point.refId);
+  }
+  return [...ids].sort();
+}
+
+/** The aerodromes the world holds, by the code reports name them with. */
+export function knownAerodromes(view: SimView): Map<string, RoutePoint> {
+  const byCode = new Map<string, RoutePoint>();
+  for (const point of aerodromePoints(view)) {
+    const code = point.code ?? point.name;
+    const held = byCode.get(code);
+    // A point that carries its class is preferred to an older copy of the same place.
+    if (!held || (held.size === undefined && point.size !== undefined)) byCode.set(code, point);
+  }
+  return byCode;
 }
 
 /** One kind of resource at an aerodrome, as it stands. */

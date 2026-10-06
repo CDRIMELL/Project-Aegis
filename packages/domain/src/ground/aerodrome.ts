@@ -58,6 +58,22 @@ export function aerodromeCapability(point: RoutePoint | null): AerodromeCapabili
   return { servicing: true, size, ...AERODROME_CAPABILITY[size ?? 'medium'] };
 }
 
+/**
+ * A point given the size class the reference data holds for it, where it is an aerodrome that
+ * lacks one and the class is known (ADR 0029). Anything else is returned as it is: a class is
+ * never replaced, and never supplied where the reference data has none.
+ */
+export function classifiedPoint(
+  point: RoutePoint,
+  sizes: Readonly<Record<string, AerodromeSize>>,
+): RoutePoint {
+  if (point.kind !== 'aerodrome' || point.size !== undefined || point.refId === undefined) {
+    return point;
+  }
+  const size = sizes[point.refId];
+  return size === undefined ? point : { ...point, size };
+}
+
 /** How many aircraft a kind of resource serves at once at an aerodrome. */
 export function resourcePoints(capability: AerodromeCapability, kind: ResourceKind): number {
   return kind === 'fuel' ? capability.fuelPoints : capability.handlingPoints;

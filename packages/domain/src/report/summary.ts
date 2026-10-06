@@ -138,6 +138,14 @@ export interface AerodromeActivity {
   readonly waitSeconds: number;
   readonly fuelLoadedKg: number;
   readonly payloadLoadedKg: number;
+  readonly fuelRemovedKg: number;
+  readonly payloadRemovedKg: number;
+  /** Time those services spent on fuel and on payload, connecting and positioning included. */
+  readonly refuellingSeconds: number;
+  readonly payloadSeconds: number;
+  /** Flights finished in the period that left from here, and that landed here. */
+  readonly departures: number;
+  readonly arrivals: number;
 }
 
 export interface FleetIndicators {
@@ -220,7 +228,7 @@ export interface Report {
   readonly maintenanceUnderWay: readonly MaintenanceVisit[];
   /** Ground services finished in the period, by completion then aircraft. */
   readonly services: readonly ServiceRecord[];
-  /** Those services by the aerodrome they were done at, by code. */
+  /** What happened at each aerodrome in the period: services, departures and arrivals. */
   readonly aerodromes: readonly AerodromeActivity[];
   /** Open at some moment in the period, by start then identifier. */
   readonly events: readonly EventRecord[];
@@ -462,7 +470,13 @@ export function buildReport(
     inPeriod(service.completedTick, period),
   );
 
-  const aerodromes: AerodromeActivity[] = [...new Set(services.map((service) => service.at))]
+  // Every aerodrome something happened at in the period: a service, a departure or an arrival.
+  const aerodromes: AerodromeActivity[] = [
+    ...new Set([
+      ...services.map((service) => service.at),
+      ...flights.flatMap((flight) => [flight.origin, flight.destination]),
+    ]),
+  ]
     .filter((at) => at !== '')
     .sort()
     .map((at) => {
@@ -476,6 +490,12 @@ export function buildReport(
         waitSeconds: sum(waited, (service) => service.waitS),
         fuelLoadedKg: sum(there, (service) => Math.max(service.loadedKg, 0)),
         payloadLoadedKg: sum(there, (service) => Math.max(service.payloadLoadedKg, 0)),
+        fuelRemovedKg: sum(there, (service) => Math.max(-service.loadedKg, 0)),
+        payloadRemovedKg: sum(there, (service) => Math.max(-service.payloadLoadedKg, 0)),
+        refuellingSeconds: sum(there, (service) => service.refuelS),
+        payloadSeconds: sum(there, (service) => service.loadS),
+        departures: flights.filter((flight) => flight.origin === at).length,
+        arrivals: flights.filter((flight) => flight.destination === at).length,
       };
     });
 

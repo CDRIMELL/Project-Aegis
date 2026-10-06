@@ -129,6 +129,12 @@ export interface ServiceRecord {
   readonly waitS: number;
   /** The aerodrome it was done at, by its code; empty where the log does not say. */
   readonly at: string;
+  /** The fuel it was asked to bring the aircraft to; `null` when it was asked for none. */
+  readonly fuelTargetKg: number | null;
+  /** The payload it was asked to bring the aircraft to; `null` when it was asked for none. */
+  readonly payloadTargetKg: number | null;
+  /** True when it ended short of what was asked: stopped, or given up while still waiting. */
+  readonly stopped: boolean;
 }
 
 const numberOf = (value: unknown): number => (typeof value === 'number' ? value : 0);
@@ -154,6 +160,11 @@ export function serviceRecords(log: readonly LogRecord[]): ServiceRecord[] {
       payloadLoadedKg: numberOf(entry.payload.payloadLoadedKg),
       waitS: numberOf(entry.payload.waitS),
       at: typeof entry.payload.at === 'string' ? entry.payload.at : '',
+      fuelTargetKg:
+        typeof entry.payload.fuelTargetKg === 'number' ? entry.payload.fuelTargetKg : null,
+      payloadTargetKg:
+        typeof entry.payload.payloadTargetKg === 'number' ? entry.payload.payloadTargetKg : null,
+      stopped: entry.payload.stopped === true,
     });
   }
   return records;

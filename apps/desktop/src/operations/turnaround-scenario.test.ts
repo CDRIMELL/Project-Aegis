@@ -399,6 +399,10 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
       // Nothing else was at the aerodrome: it did not have to wait for the fuel point.
       waitS: 0,
       at: 'EGHQ',
+      // What was asked for is recorded beside what was done.
+      fuelTargetKg: expected.fuelKg,
+      payloadTargetKg: null,
+      stopped: false,
     });
     const first = report.services.find((service) => service.reason === 'preparation');
     expect(first).toMatchObject({ missionId: ids.first, aircraftId: ATLAS });

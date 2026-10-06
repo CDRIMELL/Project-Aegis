@@ -20,6 +20,7 @@ import {
   aerodromeCapability,
   aerodromeKey,
   awaitsPoint,
+  classifiedPoint,
   forecastGroundServices,
   forecastService,
   holdsPoint,
@@ -28,6 +29,7 @@ import {
   routeGeometry,
   taskOf,
   transferFor,
+  type AerodromeSize,
   type AircraftStatus,
   type ClosureWindow,
   type FlightLoad,
@@ -683,6 +685,10 @@ export class Fleet {
       }
     }
     const service = aircraft.service as GroundService;
+    // Short of what was asked for: stopped by the operator, or given up while still waiting.
+    const short =
+      (service.fuel !== null && fuelDiffers(aircraft.fuelKg, service.fuel.targetKg)) ||
+      (service.payload !== null && fuelDiffers(aircraft.payloadKg, service.payload.targetKg));
     const spent = (task: ServiceTask | null) =>
       task?.startedTick != null && task.completedTick !== null
         ? task.completedTick - task.startedTick
@@ -706,6 +712,10 @@ export class Fleet {
         payloadLoadedKg: aircraft.payloadKg - service.payloadAtStartKg,
         fuelKg: aircraft.fuelKg,
         payloadKg: aircraft.payloadKg,
+        // What was asked for, to set beside what was done; absent where nothing was.
+        ...(service.fuel && { fuelTargetKg: service.fuel.targetKg }),
+        ...(service.payload && { payloadTargetKg: service.payload.targetKg }),
+        ...(short && { stopped: true }),
         at: aircraft.location?.code ?? aircraft.location?.name ?? '',
       },
     );
@@ -1242,17 +1252,61 @@ export class Fleet {
     return true;
   }
 
-  /** Removes the payload from an aircraft on the ground. */
-  unload(aircraftId: string): void {
+  /**
+   * Has a delivered payload taken off by the turnaround the aircraft has just begun (ADR 0029):
+   * after its checks, at the aerodrome's payload handling, in its turn. Returns false, changing
+   * nothing, when there is no turnaround to do it (maintenance is due instead) or nothing aboard:
+   * the payload then stays aboard until the aircraft is next prepared.
+   */
+  unload(aircraftId: string): boolean {
     const aircraft = this.aircraft.get(aircraftId);
-    if (aircraft && aircraft.location !== null && aircraft.payloadKg !== 0) {
-      this.aircraft.set(aircraftId, {
-        ...aircraft,
-        payloadKg: 0,
-        // Delivered, not handled on the ground: the turnaround begins with nothing aboard.
-        ...(aircraft.service && { service: { ...aircraft.service, payloadAtStartKg: 0 } }),
-      });
+    const service = aircraft?.service;
+    if (!aircraft || !service || service.stage !== 'checks' || service.payload) return false;
+    if (!fuelDiffers(aircraft.payloadKg, 0)) return false;
+    this.aircraft.set(aircraftId, {
+      ...aircraft,
+      service: {
+        ...service,
+        payload: {
+          targetKg: 0,
+          queuedTick: null,
+          transfer: null,
+          startedTick: null,
+          completedTick: null,
+        },
+      },
+    });
+    return true;
+  }
+
+  /**
+   * Gives aerodromes that lack a size class the one the reference data holds (ADR 0029): where
+   * aircraft are based, where they are, and where flights in the air are going. Returns true if
+   * anything changed.
+   */
+  classify(sizes: Readonly<Record<string, AerodromeSize>>): boolean {
+    // Counts the points given a class, so that finding none changes nothing.
+    let classified = 0;
+    const point = (given: RoutePoint): RoutePoint => {
+      const result = classifiedPoint(given, sizes);
+      if (result !== given) classified += 1;
+      return result;
+    };
+    for (const aircraft of [...this.aircraft.values()]) {
+      const home = point(aircraft.home);
+      const location = aircraft.location ? point(aircraft.location) : null;
+      if (home !== aircraft.home || location !== aircraft.location) {
+        this.aircraft.set(aircraft.id, { ...aircraft, home, location });
+      }
     }
+    for (const flight of [...this.flights.values()]) {
+      if (flight.status !== 'active') continue;
+      const before = classified;
+      const plan = { ...flight.plan, points: flight.plan.points.map(point) };
+      const plannedPlan = { ...flight.plannedPlan, points: flight.plannedPlan.points.map(point) };
+      if (classified > before) this.flights.set(flight.id, { ...flight, plan, plannedPlan });
+    }
+    return classified > 0;
   }
 
   rebase(aircraftId: string, home: RoutePoint): void {

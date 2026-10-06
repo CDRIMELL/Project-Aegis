@@ -2,6 +2,7 @@ import {
   PERIOD_LABEL,
   REPORT_TABLES,
   filterEvents,
+  filterServices,
   filterFlights,
   filterMissions,
   type Report,
@@ -47,6 +48,7 @@ import {
   MissionsSection,
   SummarySection,
 } from './sections';
+import { AerodromesSection } from './aerodromes';
 
 const SECTIONS: Readonly<Record<ReportTableName, ComponentType<SectionProps>>> = {
   summary: SummarySection,
@@ -55,6 +57,7 @@ const SECTIONS: Readonly<Record<ReportTableName, ComponentType<SectionProps>>> =
   fuel: FuelSection,
   maintenance: MaintenanceSection,
   events: EventsSection,
+  services: AerodromesSection,
 };
 
 const SHORT_PERIOD: Readonly<Record<PeriodKind, string>> = {
@@ -106,6 +109,8 @@ function headline(section: ReportTableName, report: Report): string {
       return `${formatInteger(report.outlook.filter((row) => row.group === 'due' || row.group === 'unavailable').length)} due or unavailable`;
     case 'events':
       return `${formatInteger(report.events.length)} open in the period`;
+    case 'services':
+      return `${formatInteger(report.services.length)} services · ${formatInteger(report.aerodromes.length)} aerodromes`;
   }
 }
 
@@ -168,6 +173,8 @@ function rowsShown(section: ReportTableName, report: Report): number | null {
       return filterFlights(report, filter).length;
     case 'events':
       return filterEvents(report, filter).length;
+    case 'services':
+      return filterServices(report, filter).length;
     default:
       return null;
   }

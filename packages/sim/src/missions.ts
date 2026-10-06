@@ -11,6 +11,8 @@ import {
   greatCircleDistance,
   isFinished,
   isValidLatLon,
+  AERODROME_SIZES,
+  classifiedPoint,
   missionAssessment,
   missionRoute,
   newObjectives,
@@ -19,6 +21,7 @@ import {
   resetObjectives,
   routeProblems,
   offeredFuelKg,
+  type AerodromeSize,
   type FlightLoad,
   type FlightPlan,
   type Hazards,
@@ -203,6 +206,15 @@ export type MissionCommand =
       readonly type: 'abortMission';
       readonly missionId: string;
       readonly landing: AbortLanding;
+    }
+  /**
+   * Gives aerodromes the world holds without a size class the class the reference data has for
+   * them, by reference id (ADR 0029). The application looks the classes up; the world keeps
+   * what it is told and never guesses. Has no effect when nothing lacks a class it names.
+   */
+  | {
+      readonly type: 'classifyAerodromes';
+      readonly sizes: Readonly<Record<string, AerodromeSize>>;
     };
 
 /** Where an aborted mission's flight is to land. */
@@ -226,6 +238,7 @@ export const MISSION_COMMAND_TYPES: ReadonlySet<string> = new Set<MissionCommand
   'cancelMission',
   'launchMission',
   'abortMission',
+  'classifyAerodromes',
 ]);
 
 /** What missions need from the fleet. The fleet implements it; missions never reach past it. */
@@ -276,8 +289,13 @@ export interface FleetPort {
     origin: RoutePoint | null,
     tick: number,
   ): string | null;
-  /** Removes the payload from an aircraft on the ground. */
-  unload(aircraftId: string): void;
+  /**
+   * Has a delivered payload taken off by the aircraft's turnaround (ADR 0029). Returns false
+   * when there is no turnaround to do it.
+   */
+  unload(aircraftId: string): boolean;
+  /** Gives aerodromes that lack a size class the one the reference data holds (ADR 0029). */
+  classify(sizes: Readonly<Record<string, AerodromeSize>>): boolean;
   rebase(aircraftId: string, home: RoutePoint): void;
 }
 
@@ -289,6 +307,8 @@ export interface MissionsView {
   readonly operatingAreaSize: number;
   /** The point the operating area was chosen around. */
   readonly areaCentre: LatLon | null;
+  /** The operating area: the aerodromes copied into the world, in order. */
+  readonly places: readonly RoutePoint[];
 }
 
 /** The world a mission is planned and flown in: its weather and its open events. */
@@ -491,6 +511,38 @@ export class Missions {
         this.places = [...command.places];
         this.areaCentre = centre;
         return {};
+      }
+
+      case 'classifyAerodromes': {
+        for (const size of Object.values(command.sizes)) {
+          if (!AERODROME_SIZES.includes(size)) {
+            throw new CommandRejected('A size class is large, medium or small.');
+          }
+        }
+        // Counts the points given a class, so that a command that finds none changes nothing.
+        let classified = 0;
+        const point = (given: RoutePoint): RoutePoint => {
+          const result = classifiedPoint(given, command.sizes);
+          if (result !== given) classified += 1;
+          return result;
+        };
+        const inFleet = fleet.classify(command.sizes);
+        this.places = this.places.map(point);
+        // Missions that are over keep the record of what they were.
+        for (const mission of [...this.missions.values()]) {
+          if (isFinished(mission.status)) continue;
+          const before = classified;
+          const plan = mission.plan && { ...mission.plan, points: mission.plan.points.map(point) };
+          const destination = mission.brief.destination && point(mission.brief.destination);
+          if (classified > before) {
+            this.missions.set(mission.id, {
+              ...mission,
+              plan,
+              brief: { ...mission.brief, destination },
+            });
+          }
+        }
+        return inFleet || classified > 0 ? {} : null;
       }
 
       case 'createMission': {
@@ -847,11 +899,18 @@ export class Missions {
       fuelUsedKg: flight.fuelAtDepartureKg - flight.progress.fuelKg,
     };
 
-    // Consequences. A payload that reached its destination is unloaded there.
+    // Consequences. A payload that reached its destination is delivered, and the mission is
+    // judged on that. Taking it off the aircraft is ground work like any other (ADR 0029): the
+    // turnaround does it, in its turn at the aerodrome's payload handling.
     const delivered = objectives.some(
       (objective) => objective.spec.kind === 'deliver_payload' && objective.status === 'complete',
     );
-    if (delivered) fleet.unload(aircraft.id);
+    if (delivered && fleet.unload(aircraft.id)) {
+      emit('payloadUnloading', subject, {
+        payloadKg: flight.payloadKg,
+        at: ctx.landedAt?.code ?? ctx.landedAt?.name ?? '',
+      });
+    }
     if (succeeded && MISSION_TEMPLATES[mission.type].rebases) {
       fleet.rebase(aircraft.id, ctx.destination);
     }
@@ -1029,6 +1088,7 @@ export class Missions {
       missions: [...this.snapshot().missions].reverse(),
       operatingAreaSize: this.places.length,
       areaCentre: this.areaCentre,
+      places: this.places,
     };
   }
 }

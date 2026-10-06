@@ -8,7 +8,7 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 8C of 10 complete.
+Phase 8D of 10 complete.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -60,7 +60,9 @@ Phase 8C of 10 complete.
   behind which aircraft, and when its turn comes. Payload is loaded over simulated time like
   fuel, and both must be aboard before a launch. A mission's planned start is its scheduled
   launch time; nothing launches by itself, and a time that passes on the ground is recorded with
-  the reason.
+  the reason. A delivered payload is taken off over simulated time by the turnaround, and the
+  aircraft is available when that is done. Every ground service can be exported, and each
+  aerodrome has a report of its capability, what it is doing and what it has done.
 
 There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices. What
 an aerodrome can do is a stated simulation assumption about its size class, never a statement

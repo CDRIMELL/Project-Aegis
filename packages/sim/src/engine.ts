@@ -41,6 +41,7 @@ const SYSTEM_COMMANDS: ReadonlySet<string> = new Set([
   'seedStarterFleet',
   'updatePerformance',
   'setOperatingArea',
+  'classifyAerodromes',
 ]);
 
 /** The first simulation model that kept a log. */

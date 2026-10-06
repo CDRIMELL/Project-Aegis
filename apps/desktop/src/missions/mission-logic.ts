@@ -190,6 +190,8 @@ export function readiness(
   tick: number,
   /** Every aircraft, so that the queue at the aerodrome is counted. */
   fleet: readonly AircraftState[] = aircraft ? [aircraft] : [],
+  /** What blocks the mission's flight plan, from its evaluation; `null` when not evaluated. */
+  planBlocks: readonly string[] | null = null,
 ): Readiness {
   if (mission.status !== 'accepted') {
     return { ...NOT_READY, issues: ['The mission has not been accepted.'] };
@@ -202,13 +204,15 @@ export function readiness(
           { fuelKg: mission.load.fuelKg, payloadKg: mission.load.payloadKg, origin },
           tick,
           fleet,
+          planBlocks,
         )
       : null;
   if (!state) {
     return { ...NOT_READY, issues: ['The mission has no aircraft or no route.'] };
   }
   return {
-    ready: state.readiness.ready,
+    // Ready means a launch now would be accepted: the aircraft, and the plan.
+    ready: state.launchable,
     issues: state.issues,
     readyTick: state.readyTick,
     prepare: state.prepare,

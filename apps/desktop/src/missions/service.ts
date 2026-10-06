@@ -1,6 +1,7 @@
 import type { Mission, MissionType } from '@aegis/domain';
 import type { MissionConfiguration } from '@aegis/sim';
-import { loadLargeAerodromes } from '../reference/queries';
+import { unclassifiedAerodromes } from '../fleet/ground-logic';
+import { loadAerodromeSizes, loadLargeAerodromes } from '../reference/queries';
 import { simClient } from '../sim/client';
 import { useReferenceStore } from '../state/reference-store';
 import { useSimStore } from '../state/sim-store';
@@ -55,8 +56,46 @@ async function setOperatingAreaIfNeeded(): Promise<void> {
   }
 }
 
+/** Reference ids already looked up, so that an aerodrome the data lacks is not asked for again. */
+const sizeLookedUp = new Set<string>();
+let classifying = false;
+
+/**
+ * Gives aerodromes the world holds without a size class the class the packaged reference data
+ * has for them (ADR 0029). A world from before the class was kept has none on its home bases,
+ * its operating area or its open routes. Only what the reference data holds is sent; an
+ * aerodrome it does not know keeps no class, and the simulation's medium fallback.
+ */
+async function classifyAerodromesIfNeeded(): Promise<void> {
+  const view = useSimStore.getState().view;
+  if (!view || classifying || useReferenceStore.getState().phase !== 'ready') return;
+  const pending = unclassifiedAerodromes(view).filter((id) => !sizeLookedUp.has(id));
+  if (pending.length === 0) return;
+  classifying = true;
+  try {
+    const sizes = await loadAerodromeSizes(pending);
+    for (const id of pending) sizeLookedUp.add(id);
+    if (Object.keys(sizes).length > 0) simClient.send({ type: 'classifyAerodromes', sizes });
+  } catch {
+    // Looked up again on the next change; until then the world keeps what it has.
+  } finally {
+    classifying = false;
+  }
+}
+
 /** Starts the services. Call once at start-up. */
 export function startMissionServices(): void {
+  let unclassified = '';
+  const classify = () => {
+    const view = useSimStore.getState().view;
+    const now = view ? unclassifiedAerodromes(view).join() : '';
+    if (now !== unclassified || now !== '') {
+      unclassified = now;
+      void classifyAerodromesIfNeeded();
+    }
+  };
+  useSimStore.subscribe(classify);
+  useReferenceStore.subscribe(classify);
   useSimStore.subscribe(() => {
     void setOperatingAreaIfNeeded();
   });

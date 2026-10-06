@@ -8,7 +8,7 @@ import type { MissionsSnapshot } from './missions';
  * Version of the simulation rules. A saved world records the version that produced it;
  * bump this whenever a change would make an existing world behave differently.
  */
-export const SIM_MODEL_VERSION = 8;
+export const SIM_MODEL_VERSION = 9;
 
 /**
  * Oldest model version this build can load. Older worlds are upgraded on load: a model-1 world
@@ -22,7 +22,9 @@ export const SIM_MODEL_VERSION = 8;
  * world's aircraft are not being serviced, and from the upgrade a landing begins a turnaround and
  * a launch needs its fuel aboard (ADR 0027); a model-7 world's services have no payload task
  * and no queue, and from the upgrade payload is loaded before launch and fuel and payload wait
- * for a point at the aerodrome (ADR 0028).
+ * for a point at the aerodrome (ADR 0028); in a model-8 world a delivered payload left the
+ * aircraft at the instant its mission completed, and from the upgrade it is taken off by the
+ * turnaround, in its turn at the aerodrome's payload handling (ADR 0029).
  */
 export const OLDEST_LOADABLE_MODEL_VERSION = 1;
 

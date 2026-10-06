@@ -26,6 +26,7 @@ export const SECTION_LABEL: Readonly<Record<ReportTableName, string>> = {
   fuel: 'Fuel',
   maintenance: 'Maintenance',
   events: 'Events and environment',
+  services: 'Aerodromes and services',
 };
 
 export const SECTION_QUESTION: Readonly<Record<ReportTableName, string>> = {
@@ -35,6 +36,7 @@ export const SECTION_QUESTION: Readonly<Record<ReportTableName, string>> = {
   fuel: 'What was burned, by whom and on what',
   maintenance: 'What needs attention, and what has been done',
   events: 'What the world did, and what it affected',
+  services: 'What each aerodrome can do, is doing, and has done',
 };
 
 export type PeriodKind = PeriodPreset | 'custom';

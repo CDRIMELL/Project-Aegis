@@ -1,4 +1,11 @@
-import { GROUND_SERVICE, payloadDurationS, transferDurationS } from '@aegis/domain';
+import {
+  GROUND_SERVICE,
+  evaluatePlan,
+  generatePlan,
+  payloadDurationS,
+  transferDurationS,
+  type RoutePoint,
+} from '@aegis/domain';
 import { SimulationEngine, type AircraftState } from '@aegis/sim';
 import {
   FIXTURES,
@@ -13,8 +20,10 @@ import {
   groundActivity,
   groundForecasts,
   groundServiceView,
+  knownAerodromes,
   launchState,
   serviceRequest,
+  unclassifiedAerodromes,
 } from './ground-logic';
 
 /*
@@ -281,5 +290,155 @@ describe('an aerodrome as a place where aircraft are serviced', () => {
     expect(
       aerodromeView({ ...places.exeter, kind: 'waypoint' }, fleetOf(engine), 0).resources,
     ).toEqual([]);
+  });
+});
+
+describe('one source of truth for launch blockers', () => {
+  /** Far above any ceiling: a plan the planner blocks whatever the aircraft's state. */
+  const TOO_HIGH = 30_000;
+  const FULL = { fuelKg: CAPACITY, payloadKg: 0 };
+
+  /** What the screens say blocks a launch, and what the simulation says when it is tried. */
+  function both(
+    engine: SimulationEngine,
+    id: string,
+    load: { fuelKg: number; payloadKg: number },
+    to: RoutePoint = places.exeter,
+    from?: RoutePoint,
+    cruiseAltitudeM?: number,
+  ) {
+    const aircraft = aircraftOf(engine, id);
+    const origin = from ?? aircraft.location ?? aircraft.home;
+    const direct = generatePlan(models.transport, origin, to);
+    const plan = cruiseAltitudeM === undefined ? direct : { ...direct, cruiseAltitudeM };
+    const blocks = evaluatePlan(models.transport, plan, load, engine.planContext())
+      .constraints.filter((constraint) => constraint.severity === 'block')
+      .map((constraint) => constraint.message);
+    const state = launchState(
+      aircraft,
+      { ...load, origin },
+      engine.clock.tick,
+      fleetOf(engine),
+      blocks,
+    );
+    let refusal: string | null = null;
+    const before = engine.snapshot();
+    try {
+      engine.applyCommand({ type: 'launchFlight', aircraftId: id, plan, load });
+    } catch (error) {
+      refusal = (error as Error).message;
+      // A refused launch changes nothing.
+      expect(engine.snapshot()).toEqual(before);
+    }
+    return { state, refusal };
+  }
+  const edited = (engine: SimulationEngine, change: Partial<AircraftState>) => {
+    const snapshot = engine.snapshot();
+    return SimulationEngine.restore({
+      ...snapshot,
+      fleet: {
+        ...snapshot.fleet,
+        aircraft: snapshot.fleet.aircraft.map((aircraft) =>
+          aircraft.id === A ? { ...aircraft, ...change } : aircraft,
+        ),
+      },
+    });
+  };
+
+  const cases: Record<string, () => ReturnType<typeof both>> = {
+    'fuel not aboard': () => both(world(), A, { fuelKg: 30_000, payloadKg: 0 }),
+    'payload not aboard': () => both(world(), A, { fuelKg: CAPACITY, payloadKg: 5000 }),
+    'being refuelled': () => {
+      const engine = world();
+      service(engine, 30_000);
+      return both(engine, A, { fuelKg: 30_000, payloadKg: 0 });
+    },
+    'waiting for a point': () => {
+      const engine = world();
+      service(engine, 30_000, A);
+      service(engine, 40_000, B);
+      return both(engine, B, { fuelKg: 40_000, payloadKg: 0 });
+    },
+    'payload being loaded': () => {
+      const engine = world();
+      service(engine, CAPACITY, A, 6000);
+      return both(engine, A, { fuelKg: CAPACITY, payloadKg: 6000 });
+    },
+    'payload being taken off': () => {
+      const engine = world();
+      fuelled(engine, A, CAPACITY, 6000);
+      service(engine, CAPACITY, A, 0);
+      return both(engine, A, FULL);
+    },
+    'post-flight checks': () => {
+      const engine = world();
+      engine.applyCommand(fixtureLaunchFull(A, models.transport, places.newquay, places.exeter));
+      while (aircraftOf(engine).activeFlightId !== null) engine.runSteps(1);
+      return both(engine, A, { fuelKg: aircraftOf(engine).fuelKg, payloadKg: 0 }, places.newquay);
+    },
+    airborne: () => {
+      const engine = world();
+      engine.applyCommand(fixtureLaunchFull(A, models.transport, places.newquay, places.exeter));
+      return both(engine, A, FULL, places.exeter, places.newquay);
+    },
+    'maintenance due': () => both(edited(world(), { status: 'maintenance_due' }), A, FULL),
+    'in maintenance': () => {
+      const engine = world();
+      engine.applyCommand({ type: 'startMaintenance', aircraftId: A });
+      return both(engine, A, FULL);
+    },
+    unserviceable: () => both(edited(world(), { status: 'unserviceable' }), A, FULL),
+    'somewhere else': () => both(world(), A, FULL, places.newquay, places.exeter),
+    // Ready in every respect, and the plan itself cannot be flown.
+    'the plan is blocked': () => both(world(), A, FULL, places.exeter, undefined, TOO_HIGH),
+  };
+
+  it.each(Object.keys(cases))('says what the engine says: %s', (name) => {
+    const { state, refusal } = (cases[name] as () => ReturnType<typeof both>)();
+    expect(refusal).not.toBeNull();
+    expect(state?.launchable).toBe(false);
+    // The first reason on the screen is the reason the simulation gives, word for word.
+    expect(state?.issues[0]).toBe(refusal);
+    expect(state?.lines.some((line) => !line.ok)).toBe(true);
+  });
+
+  it('keeps the aircraft and the plan apart: ready, and still not launchable', () => {
+    const { state } = both(world(), A, FULL, places.exeter, undefined, TOO_HIGH);
+    expect(state?.readiness.ready).toBe(true);
+    expect(state?.lines.at(-1)).toMatchObject({ label: 'Flight plan', ok: false });
+  });
+
+  it('agrees when nothing blocks: launchable, every line satisfied, and the launch is accepted', () => {
+    const { state, refusal } = both(world(), A, FULL);
+    expect(refusal).toBeNull();
+    expect(state).toMatchObject({ launchable: true, issues: [] });
+    expect(state?.lines.map((line) => [line.label, line.ok])).toEqual([
+      ['Aircraft', true],
+      ['Fuel', true],
+      ['Payload', true],
+      ['Ground resource', true],
+      ['Flight plan', true],
+    ]);
+  });
+});
+
+describe('aerodromes the world holds', () => {
+  it('lists those without a size class by reference id, and finds each by its code', () => {
+    const engine = world();
+    engine.applyCommand({
+      type: 'setOperatingArea',
+      places: [places.newquay, { ...places.exeter, size: 'large' }],
+    });
+    const view = () => ({ fleet: engine.fleetView(), missions: engine.missionsView() }) as never;
+    // Newquay, where both aircraft are based, has none; Exeter came with one.
+    expect(unclassifiedAerodromes(view())).toEqual([places.newquay.refId]);
+    expect(knownAerodromes(view()).get('EGTE')).toEqual({ ...places.exeter, size: 'large' });
+    expect(knownAerodromes(view()).get('EGHQ')).toEqual(places.newquay);
+    engine.applyCommand({
+      type: 'classifyAerodromes',
+      sizes: { [places.newquay.refId as string]: 'medium' },
+    });
+    expect(unclassifiedAerodromes(view())).toEqual([]);
+    expect(knownAerodromes(view()).get('EGHQ')?.size).toBe('medium');
   });
 });

@@ -76,6 +76,7 @@ const LOG_WORDS: Readonly<Record<string, string>> = {
   loadingStarted: 'Payload handling began',
   loadingCompleted: 'Payload handling ended',
   servicingCompleted: 'Aircraft ready',
+  payloadUnloading: 'Payload delivered; unloading to follow',
   launchDelayed: 'Scheduled launch time passed',
   opportunityGenerated: 'Opportunity generated',
   opportunityExpired: 'Opportunity expired',
@@ -121,6 +122,8 @@ function serviceDetail(entry: LogEntry): string | null {
         : '';
     case 'serviceQueued':
       return `${payload.kind === 'fuel' ? 'Fuel point' : 'Payload handling'} in use${typeof payload.behind === 'string' ? ` by ${payload.behind}` : ''}${typeof payload.position === 'number' ? `; place ${payload.position} in the queue` : ''}.`;
+    case 'payloadUnloading':
+      return `${kgOf(payload.payloadKg) ?? ''} to be taken off by the turnaround${typeof payload.at === 'string' && payload.at ? ` at ${payload.at}` : ''}. The aircraft is available when that is done.`;
     case 'serviceWithdrawn':
       return 'What had not begun was given up; anything under way goes on.';
     case 'launchDelayed':
@@ -391,7 +394,18 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
   );
   const tick = useSimStore((state) => state.view?.clock.tick ?? 0);
   const fleet = useSimStore((state) => state.view?.fleet.aircraft);
-  const ready = readiness(mission, aircraft, tick, fleet);
+  // What blocks the flight plan itself, from the same evaluation the planner makes and the
+  // launch is checked against: a closed aerodrome, fuel that runs out, a mass over the limit.
+  const planBlocks = useMemo(
+    () =>
+      evaluation?.plan
+        ? evaluation.plan.constraints
+            .filter((constraint) => constraint.severity === 'block')
+            .map((constraint) => constraint.message)
+        : null,
+    [evaluation],
+  );
+  const ready = readiness(mission, aircraft, tick, fleet, planBlocks);
   // A scheduled launch is an intention: it is shown against what will actually be possible.
   const scheduled = mission.plannedStartTick;
   const earliestTick = ready.ready ? tick : ready.readyTick;

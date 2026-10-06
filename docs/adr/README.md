@@ -3,33 +3,34 @@
 Each ADR records one decision: the context that forced it, what was decided, and what follows from it.
 ADRs are immutable once accepted. To change a decision, add a new ADR that supersedes the old one.
 
-| #                                              | Decision                                                                   | Status   |
-| ---------------------------------------------- | -------------------------------------------------------------------------- | -------- |
-| [0001](0001-repository-and-workspace.md)       | Repository outside OneDrive; npm workspaces with hard boundaries           | Accepted |
-| [0002](0002-simulation-runtime.md)             | TypeScript simulation core in a Web Worker                                 | Accepted |
-| [0003](0003-persistence-layer.md)              | Rust-owned SQLite connection; Drizzle over `sqlite-proxy`                  | Accepted |
-| [0004](0004-checkpoint-model.md)               | Whole-state checkpoints in a single transaction                            | Accepted |
-| [0005](0005-simulation-time.md)                | Fixed timestep; resume from last persisted instant                         | Accepted |
-| [0006](0006-deterministic-rng.md)              | Seeded, named, persisted RNG streams                                       | Accepted |
-| [0007](0007-ingestion-language.md)             | Reference-data ingestion in TypeScript                                     | Accepted |
-| [0008](0008-basemap.md)                        | Offline public-domain basemap, separate from dynamic layers                | Accepted |
-| [0009](0009-ui-libraries-and-design-system.md) | Token-driven design system; UI library set                                 | Accepted |
-| [0010](0010-security-hooks.md)                 | Security hooks from day one; encryption deferred                           | Accepted |
-| [0011](0011-scenario-framing.md)               | Fictional operator and fleet over real reference data                      | Accepted |
-| [0012](0012-reference-data-and-ingestion.md)   | Reference data model and ingestion pipeline                                | Accepted |
-| [0013](0013-reference-data-pack.md)            | Reference data ships as a release-time data pack                           | Accepted |
-| [0014](0014-map-architecture.md)               | Map architecture: four tiers, driven outside React                         | Accepted |
-| [0015](0015-application-shell-and-routing.md)  | Application shell and routing                                              | Accepted |
-| [0016](0016-fleet-and-flight-model.md)         | Fleet state and the flight model                                           | Accepted |
-| [0017](0017-missions.md)                       | Missions: one framework, templates, objectives, explained risk             | Accepted |
-| [0018](0018-command-log.md)                    | Append-only command and event log, atomic with state                       | Accepted |
-| [0019](0019-sourced-fuel-capacity.md)          | Sourced fuel capacity; flight model 2; grounded-only migration             | Accepted |
-| [0020](0020-deterministic-mathematics.md)      | Deterministic mathematics: no engine-dependent functions in the simulation | Accepted |
-| [0021](0021-environment.md)                    | Simulated environment: weather computed from seed, time and place          | Accepted |
-| [0022](0022-world-events.md)                   | World events: one generic event, lifecycle, consequences                   | Accepted |
-| [0023](0023-range-conditions.md)               | Range conditions as reference data; flight model 3                         | Accepted |
-| [0024](0024-reports.md)                        | Reports derived from history; risk kept at acceptance and at launch        | Accepted |
-| [0025](0025-report-export.md)                  | Report export: pure CSV and JSON, one native command, one folder           | Accepted |
-| [0026](0026-in-flight-control.md)              | In-flight control: one revision primitive, holding, closures, abort        | Accepted |
-| [0027](0027-ground-servicing.md)               | Turnaround, timed refuelling, launch fuel and one readiness rule           | Accepted |
-| [0028](0028-aerodrome-ground-resources.md)     | Aerodrome capability, finite ground resources, payload, scheduled launch   | Accepted |
+| #                                                              | Decision                                                                   | Status   |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------- | -------- |
+| [0001](0001-repository-and-workspace.md)                       | Repository outside OneDrive; npm workspaces with hard boundaries           | Accepted |
+| [0002](0002-simulation-runtime.md)                             | TypeScript simulation core in a Web Worker                                 | Accepted |
+| [0003](0003-persistence-layer.md)                              | Rust-owned SQLite connection; Drizzle over `sqlite-proxy`                  | Accepted |
+| [0004](0004-checkpoint-model.md)                               | Whole-state checkpoints in a single transaction                            | Accepted |
+| [0005](0005-simulation-time.md)                                | Fixed timestep; resume from last persisted instant                         | Accepted |
+| [0006](0006-deterministic-rng.md)                              | Seeded, named, persisted RNG streams                                       | Accepted |
+| [0007](0007-ingestion-language.md)                             | Reference-data ingestion in TypeScript                                     | Accepted |
+| [0008](0008-basemap.md)                                        | Offline public-domain basemap, separate from dynamic layers                | Accepted |
+| [0009](0009-ui-libraries-and-design-system.md)                 | Token-driven design system; UI library set                                 | Accepted |
+| [0010](0010-security-hooks.md)                                 | Security hooks from day one; encryption deferred                           | Accepted |
+| [0011](0011-scenario-framing.md)                               | Fictional operator and fleet over real reference data                      | Accepted |
+| [0012](0012-reference-data-and-ingestion.md)                   | Reference data model and ingestion pipeline                                | Accepted |
+| [0013](0013-reference-data-pack.md)                            | Reference data ships as a release-time data pack                           | Accepted |
+| [0014](0014-map-architecture.md)                               | Map architecture: four tiers, driven outside React                         | Accepted |
+| [0015](0015-application-shell-and-routing.md)                  | Application shell and routing                                              | Accepted |
+| [0016](0016-fleet-and-flight-model.md)                         | Fleet state and the flight model                                           | Accepted |
+| [0017](0017-missions.md)                                       | Missions: one framework, templates, objectives, explained risk             | Accepted |
+| [0018](0018-command-log.md)                                    | Append-only command and event log, atomic with state                       | Accepted |
+| [0019](0019-sourced-fuel-capacity.md)                          | Sourced fuel capacity; flight model 2; grounded-only migration             | Accepted |
+| [0020](0020-deterministic-mathematics.md)                      | Deterministic mathematics: no engine-dependent functions in the simulation | Accepted |
+| [0021](0021-environment.md)                                    | Simulated environment: weather computed from seed, time and place          | Accepted |
+| [0022](0022-world-events.md)                                   | World events: one generic event, lifecycle, consequences                   | Accepted |
+| [0023](0023-range-conditions.md)                               | Range conditions as reference data; flight model 3                         | Accepted |
+| [0024](0024-reports.md)                                        | Reports derived from history; risk kept at acceptance and at launch        | Accepted |
+| [0025](0025-report-export.md)                                  | Report export: pure CSV and JSON, one native command, one folder           | Accepted |
+| [0026](0026-in-flight-control.md)                              | In-flight control: one revision primitive, holding, closures, abort        | Accepted |
+| [0027](0027-ground-servicing.md)                               | Turnaround, timed refuelling, launch fuel and one readiness rule           | Accepted |
+| [0028](0028-aerodrome-ground-resources.md)                     | Aerodrome capability, finite ground resources, payload, scheduled launch   | Accepted |
+| [0029](0029-aerodrome-data-unloading-and-service-reporting.md) | Size classes for existing worlds, timed unloading, service reporting       | Accepted |
