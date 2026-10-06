@@ -123,6 +123,11 @@
   --color-map-selection: var(--aegis-graphite-100);
   /* World events that affect operations: the caution colour, as in the rest of the interface. */
   --color-map-caution: var(--aegis-amber-400);
+  /*
+   * Simulated weather drawn over the map. Neutral on purpose: it is background to operations, and
+   * must never be taken for the green of an aircraft, a route or a mission.
+   */
+  --color-map-weather: var(--aegis-graphite-300);
 
   /* Typography: sans for interface text, mono for telemetry and identifiers. */
   --font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;

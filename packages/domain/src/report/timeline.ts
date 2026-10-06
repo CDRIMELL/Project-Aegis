@@ -121,6 +121,14 @@ export interface ServiceRecord {
   readonly loadedKg: number;
   /** Fuel aboard when the service ended. */
   readonly fuelKg: number;
+  /** Time handling payload, positioning included. */
+  readonly loadS: number;
+  /** Payload put aboard; negative when it was taken off. */
+  readonly payloadLoadedKg: number;
+  /** Time spent waiting for a fuel point or for payload handling (ADR 0028). */
+  readonly waitS: number;
+  /** The aerodrome it was done at, by its code; empty where the log does not say. */
+  readonly at: string;
 }
 
 const numberOf = (value: unknown): number => (typeof value === 'number' ? value : 0);
@@ -142,6 +150,10 @@ export function serviceRecords(log: readonly LogRecord[]): ServiceRecord[] {
       refuelS: numberOf(entry.payload.refuelS),
       loadedKg: numberOf(entry.payload.loadedKg),
       fuelKg: numberOf(entry.payload.fuelKg),
+      loadS: numberOf(entry.payload.loadS),
+      payloadLoadedKg: numberOf(entry.payload.payloadLoadedKg),
+      waitS: numberOf(entry.payload.waitS),
+      at: typeof entry.payload.at === 'string' ? entry.payload.at : '',
     });
   }
   return records;

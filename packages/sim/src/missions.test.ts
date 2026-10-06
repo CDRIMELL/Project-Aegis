@@ -240,7 +240,7 @@ describe('mission lifecycle', () => {
     });
     expect(aircraftOf(engine, TRANSPORT)).toMatchObject({
       status: 'servicing',
-      service: { reason: 'preparation', stage: 'refuelling', missionId: 'MSN-000001' },
+      service: { reason: 'preparation', stage: 'preparation', missionId: 'MSN-000001' },
     });
   });
 

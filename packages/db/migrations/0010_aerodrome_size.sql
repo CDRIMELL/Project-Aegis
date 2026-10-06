@@ -1,0 +1,1 @@
+ALTER TABLE `sim_place` ADD `size` text;

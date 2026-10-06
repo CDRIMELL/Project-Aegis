@@ -867,6 +867,10 @@ describe('ground servicing in a report', () => {
         refuelS: 900,
         loadedKg: 24_000,
         fuelKg: 30_000,
+        loadS: 0,
+        payloadLoadedKg: 0,
+        waitS: 0,
+        at: '',
       },
       {
         aircraftId: 'G',
@@ -879,6 +883,10 @@ describe('ground servicing in a report', () => {
         refuelS: 800,
         loadedKg: -10_000,
         fuelKg: 20_000,
+        loadS: 0,
+        payloadLoadedKg: 0,
+        waitS: 0,
+        at: '',
       },
     ]);
     // Nothing the log does not say is supplied: a damaged entry reads as nothing done.

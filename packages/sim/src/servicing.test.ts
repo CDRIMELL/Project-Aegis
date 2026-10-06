@@ -132,11 +132,16 @@ describe('refuelling takes simulated time', () => {
       fuelKg: 20_000,
       service: {
         reason: 'preparation',
-        stage: 'refuelling',
+        stage: 'preparation',
         startedTick: start,
         fuelAtStartKg: 20_000,
-        targetFuelKg: 30_000,
-        transfer: { fromKg: 20_000, toKg: 30_000, completeTick: start + duration },
+        fuel: {
+          targetKg: 30_000,
+          queuedTick: start,
+          startedTick: start,
+          transfer: { fromKg: 20_000, toKg: 30_000, completeTick: start + duration },
+        },
+        payload: null,
         missionId: null,
       },
     });
@@ -289,12 +294,12 @@ describe('refuelling takes simulated time', () => {
     engine.runSteps(GROUND_SERVICE.refuel.connectS + 100);
     const held = aircraftOf(engine).fuelKg;
     expect(held).toBeGreaterThan(20_000);
-    const rate = aircraftOf(engine).service?.transfer?.rateKgS as number;
+    const rate = aircraftOf(engine).service?.fuel?.transfer?.rateKgS as number;
 
     // More is wanted: it goes on from what it holds, at once.
     const at = engine.clock.tick;
     expect(service(engine, 44_000)).toBe(true);
-    expect(aircraftOf(engine).service?.transfer).toMatchObject({
+    expect(aircraftOf(engine).service?.fuel?.transfer).toMatchObject({
       startTick: at,
       flowStartTick: at,
       fromKg: held,
@@ -358,8 +363,8 @@ describe('turnaround after landing', () => {
         stage: 'checks',
         startedTick: arrived,
         checksCompleteTick: arrived + checksS,
-        targetFuelKg: null,
-        transfer: null,
+        fuel: null,
+        payload: null,
       },
     });
     expect(types(engine).slice(-2)).toEqual(['flightCompleted', 'servicingStarted']);
@@ -411,19 +416,26 @@ describe('turnaround after landing', () => {
     expect(aircraftOf(engine)).toMatchObject({
       status: 'servicing',
       fuelKg: landedWith,
-      service: { reason: 'turnaround', stage: 'checks', targetFuelKg: 50_000, transfer: null },
+      service: {
+        reason: 'turnaround',
+        stage: 'checks',
+        fuel: { targetKg: 50_000, queuedTick: null, transfer: null },
+      },
     });
     // The request can be withdrawn; the checks go on.
     expect(stop(engine)).toBe(true);
-    expect(aircraftOf(engine).service).toMatchObject({ stage: 'checks', targetFuelKg: null });
+    expect(aircraftOf(engine).service).toMatchObject({ stage: 'checks', fuel: null });
     service(engine, 50_000);
 
     engine.runSteps(checksEnd - engine.clock.tick);
     const duration = transferDurationS(CAPACITY, landedWith, 50_000);
     expect(aircraftOf(engine).service).toMatchObject({
-      stage: 'refuelling',
-      refuellingSinceTick: checksEnd,
-      transfer: { startTick: checksEnd, fromKg: landedWith, completeTick: checksEnd + duration },
+      stage: 'preparation',
+      fuel: {
+        queuedTick: checksEnd,
+        startedTick: checksEnd,
+        transfer: { startTick: checksEnd, fromKg: landedWith, completeTick: checksEnd + duration },
+      },
     });
     expect(events(engine, 'refuellingStarted')[0]).toMatchObject({
       tick: checksEnd,
@@ -521,7 +533,12 @@ describe('launch fuel', () => {
     // A refused launch changes nothing: in particular, not the fuel.
     expect(engine.snapshot()).toEqual(before);
 
-    service(engine, 60_000);
+    engine.applyCommand({
+      type: 'serviceAircraft',
+      aircraftId: TRANSPORT,
+      fuelKg: 60_000,
+      payloadKg: 8000,
+    });
     engine.runSteps(1);
     expect(() => engine.applyCommand(launch)).toThrow(/having fuel taken off/);
     untilServiced(engine, TRANSPORT);
@@ -555,8 +572,7 @@ describe('missions and readiness', () => {
       service: {
         reason: 'preparation',
         missionId: id,
-        targetFuelKg: fuelKg,
-        transfer: { completeTick: readyTick },
+        fuel: { targetKg: fuelKg, transfer: { completeTick: readyTick } },
       },
     });
 
@@ -595,7 +611,7 @@ describe('missions and readiness', () => {
     expect(aircraftOf(engine).service).toMatchObject({
       reason: 'turnaround',
       stage: 'checks',
-      targetFuelKg: fuelKg,
+      fuel: { targetKg: fuelKg },
       missionId: id,
     });
     // Accepting during the checks starts nothing new: there is one service, and it goes on.
@@ -733,7 +749,7 @@ describe('determinism, continuity and upgrade', { timeout: 60_000 }, () => {
       if (live.clock.tick % 97 === 0) {
         const saved = aircraftOf(live);
         if (saved.status === 'servicing') servicingSaves += 1;
-        if (saved.service?.stage === 'refuelling') refuellingSaves += 1;
+        if (saved.service?.fuel?.transfer) refuellingSaves += 1;
         const resumed = SimulationEngine.restore(copyOf(live.snapshot()));
         // The fuel aboard, and when it will be ready, are as saved: nothing starts again.
         expect(aircraftOf(resumed)).toEqual(saved);
@@ -804,7 +820,28 @@ describe('determinism, continuity and upgrade', { timeout: 60_000 }, () => {
       WorldRestoreError,
     );
     expect(() =>
-      SimulationEngine.restore(broken({ service: { ...turnaround, stage: 'refuelling' } })),
+      SimulationEngine.restore(
+        broken({
+          service: {
+            ...turnaround,
+            // A transfer under way while the checks are: the two cannot both be so.
+            fuel: {
+              targetKg: 1,
+              queuedTick: null,
+              startedTick: 1,
+              completedTick: null,
+              transfer: {
+                startTick: 1,
+                flowStartTick: 1,
+                fromKg: 0,
+                toKg: 1,
+                rateKgS: 1,
+                completeTick: 2,
+              },
+            },
+          },
+        }),
+      ),
     ).toThrow(WorldRestoreError);
     expect(() => SimulationEngine.restore(snapshot)).not.toThrow();
   });
@@ -863,7 +900,7 @@ describe('determinism, continuity and upgrade', { timeout: 60_000 }, () => {
     const savedAt = engine.clock.tick;
     const upgraded = SimulationEngine.restore(snapshot as never);
     expect(upgraded.snapshot().modelVersion).toBe(SIM_MODEL_VERSION);
-    expect(SIM_MODEL_VERSION).toBe(7);
+    expect(SIM_MODEL_VERSION).toBe(8);
     // What was logged under the old rules is kept; replay starts at the upgrade.
     expect(upgraded.snapshot().log.completeFromTick).toBe(savedAt);
     for (const aircraft of upgraded.snapshot().fleet.aircraft) {

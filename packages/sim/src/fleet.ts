@@ -2,7 +2,6 @@ import {
   NO_HAZARDS,
   REVISION_INTENTS,
   advanceInWeather,
-  beginTransfer,
   closedForArrival,
   closuresOf,
   conditionsForFlight,
@@ -17,9 +16,18 @@ import {
   positionAlong,
   postFlightChecksS,
   projectFlight,
+  RESOURCE_KINDS,
+  aerodromeCapability,
+  aerodromeKey,
+  awaitsPoint,
+  forecastGroundServices,
+  forecastService,
+  holdsPoint,
+  resourcePoints,
   retargetTransfer,
   routeGeometry,
-  serviceCompleteTick,
+  taskOf,
+  transferFor,
   type AircraftStatus,
   type ClosureWindow,
   type FlightLoad,
@@ -29,6 +37,10 @@ import {
   type FlightRevision,
   type GroundService,
   type Hazards,
+  type ResourceKind,
+  type ServiceForecast,
+  type ServiceTask,
+  type Transfer,
   type LatLon,
   type PerformanceModel,
   type PlanContext,
@@ -202,10 +214,16 @@ export type FleetCommand =
   | { readonly type: 'seedStarterFleet'; readonly aircraft: readonly AircraftOrder[] }
   | { readonly type: 'setHome'; readonly aircraftId: string; readonly home: RoutePoint }
   /**
-   * Brings a grounded aircraft's fuel to `fuelKg`, over simulated time (ADR 0027). Given to an
-   * aircraft already being serviced, it sets or changes the fuel that servicing ends with.
+   * Brings a grounded aircraft's fuel to `fuelKg`, and its payload to `payloadKg` if one is
+   * given, over simulated time (ADR 0027, ADR 0028). Given to an aircraft already being
+   * serviced, it sets or changes what that servicing ends with.
    */
-  | { readonly type: 'serviceAircraft'; readonly aircraftId: string; readonly fuelKg: number }
+  | {
+      readonly type: 'serviceAircraft';
+      readonly aircraftId: string;
+      readonly fuelKg: number;
+      readonly payloadKg?: number;
+    }
   /** Ends a fuel transfer where it is, or withdraws one that has not begun. */
   | { readonly type: 'stopServicing'; readonly aircraftId: string }
   | {
@@ -338,11 +356,57 @@ interface ActiveFlight {
 
 const NO_CLOSURES: readonly ClosureWindow[] = [];
 
-/** An aircraft as it is held in memory. One saved before ground servicing existed has none. */
+/** A service record as model 7 kept it: fuel only, and no queue (ADR 0027). */
+interface Model7Service {
+  readonly reason: GroundService['reason'];
+  readonly startedTick: number;
+  readonly stage: 'checks' | 'refuelling';
+  readonly checksCompleteTick: number;
+  readonly fuelAtStartKg: number;
+  readonly targetFuelKg: number | null;
+  readonly transfer: Transfer | null;
+  readonly refuellingSinceTick: number | null;
+  readonly missionId: string | null;
+}
+
+/**
+ * An aircraft as it is held in memory. One saved before ground servicing existed has no service;
+ * one saved by model 7 has a service in the older shape, which is carried over as it stands: the
+ * same transfer, ending at the same tick, and no payload task.
+ */
 function restoredAircraft(saved: AircraftState): AircraftState {
   const partial: Partial<AircraftState> = saved;
-  return { ...saved, service: partial.service ?? null };
+  const service = (partial.service ?? null) as GroundService | Model7Service | null;
+  if (!service || !('targetFuelKg' in service)) return { ...saved, service: service ?? null };
+  const preparing = service.stage === 'refuelling';
+  return {
+    ...saved,
+    service: {
+      reason: service.reason,
+      startedTick: service.startedTick,
+      stage: preparing ? 'preparation' : 'checks',
+      checksCompleteTick: service.checksCompleteTick,
+      fuelAtStartKg: service.fuelAtStartKg,
+      payloadAtStartKg: saved.payloadKg,
+      fuel:
+        service.targetFuelKg === null
+          ? null
+          : {
+              targetKg: service.targetFuelKg,
+              queuedTick: preparing
+                ? (service.refuellingSinceTick ?? service.checksCompleteTick)
+                : null,
+              transfer: service.transfer,
+              startedTick: service.refuellingSinceTick,
+              completedTick: null,
+            },
+      payload: null,
+      missionId: service.missionId,
+    },
+  };
 }
+
+const NO_ONE: ReadonlySet<string> = new Set();
 
 const NO_EVENTS: EmitEvent = () => undefined;
 
@@ -420,8 +484,8 @@ export class Fleet {
       if ((aircraft.status === 'servicing') !== (service !== null)) {
         throw new Error(`Saved aircraft ${aircraft.id} is serviced and not serviced at once`);
       }
-      if (service && (service.stage === 'refuelling') !== (service.transfer !== null)) {
-        throw new Error(`Saved aircraft ${aircraft.id} has a fuel transfer out of its stage`);
+      if (service?.stage === 'checks' && (service.fuel?.transfer || service.payload?.transfer)) {
+        throw new Error(`Saved aircraft ${aircraft.id} has a transfer under way during its checks`);
       }
     }
   }
@@ -508,22 +572,29 @@ export class Fleet {
     const aircraft = this.require(aircraftId);
     const origin = plan.points[0];
     if (!origin) throw new CommandRejected('The flight plan has no origin.');
-    // The one readiness rule (ADR 0027): on the ground, serviceable, serviced, there, and fuelled.
-    const readiness = launchReadiness(aircraft, { fuelKg: load.fuelKg, origin }, tick);
+    // The one readiness rule (ADR 0027): on the ground, serviceable, serviced, there, fuelled
+    // and loaded.
+    const readiness = launchReadiness(
+      aircraft,
+      { fuelKg: load.fuelKg, payloadKg: load.payloadKg, origin },
+      tick,
+      this.forecastOf(aircraft, tick),
+    );
     const model = aircraft.performance;
     if (!readiness.ready || !model) {
       throw new CommandRejected(
         readiness.issues[0]?.message ?? `${aircraft.id} is not ready to launch.`,
       );
     }
-    // The flight departs with the fuel that is aboard, which is the fuel planned.
+    // The flight departs with the fuel and payload that are aboard, which are those planned.
     const fuelKg = aircraft.fuelKg;
-    const evaluation = evaluatePlan(model, plan, { ...load, fuelKg }, context);
+    const payloadKg = aircraft.payloadKg;
+    const evaluation = evaluatePlan(model, plan, { fuelKg, payloadKg }, context);
     const blocked = evaluation.constraints.find((constraint) => constraint.severity === 'block');
     if (blocked || !evaluation.estimate) {
       throw new CommandRejected(blocked?.message ?? 'The flight plan cannot be flown.');
     }
-    const profile = flightProfile(model, plan, load.payloadKg);
+    const profile = flightProfile(model, plan, payloadKg);
     const flight: FlightState = {
       id: this.nextId('FLT', 6),
       aircraftId: aircraft.id,
@@ -533,7 +604,7 @@ export class Fleet {
       plannedPlan: plan,
       revisions: [],
       caution: null,
-      payloadKg: load.payloadKg,
+      payloadKg,
       fuelAtDepartureKg: fuelKg,
       departedTick: tick,
       arrivedTick: null,
@@ -551,44 +622,199 @@ export class Fleet {
       ...aircraft,
       status: 'in_flight',
       location: null,
-      payloadKg: load.payloadKg,
       activeFlightId: flight.id,
     });
     return flight.id;
   }
 
-  /** Ends a service: the aircraft is available, with the fuel it holds. */
-  private completeService(aircraft: AircraftState, tick: number, emit: EmitEvent): void {
-    const service = aircraft.service;
-    if (!service) return;
-    const subject = { aircraftId: aircraft.id, missionId: service.missionId };
-    const loadedKg = aircraft.fuelKg - service.fuelAtStartKg;
-    const refuelS = service.refuellingSinceTick === null ? 0 : tick - service.refuellingSinceTick;
-    if (service.refuellingSinceTick !== null) {
-      emit('refuellingCompleted', subject, {
-        fuelKg: aircraft.fuelKg,
-        loadedKg,
-        durationS: refuelS,
-        // Ended short of what was asked for, by the operator.
-        ...(service.transfer &&
-          fuelDiffers(aircraft.fuelKg, service.transfer.toKg) && { stopped: true }),
-      });
-    }
-    this.aircraft.set(aircraft.id, { ...aircraft, status: 'available', service: null });
-    emit('servicingCompleted', subject, {
-      reason: service.reason,
-      durationS: tick - service.startedTick,
-      checksS: service.checksCompleteTick - service.startedTick,
-      refuelS,
-      loadedKg,
-      fuelKg: aircraft.fuelKg,
-    });
+  /** When an aircraft's service will end, among everything at its aerodrome. */
+  private forecastOf(aircraft: AircraftState, tick: number): ServiceForecast | null {
+    return forecastService(aircraft, [...this.aircraft.values()], tick);
+  }
+
+  /** How long until an aircraft being serviced is available, in words. */
+  private availableIn(aircraft: AircraftState, tick: number): string {
+    return minutesOf((this.forecastOf(aircraft, tick)?.completeTick ?? tick) - tick);
   }
 
   /**
-   * Brings a grounded aircraft's fuel to a target over time, exactly as the `serviceAircraft`
-   * command does. Returns true if anything changed; throws {@link CommandRejected}, changing
-   * nothing, if the aircraft cannot be serviced.
+   * Ends one task of a service where it is: its point is given up, and the log says what was
+   * moved. Returns the aircraft as it then is.
+   */
+  private finishTask(
+    aircraft: AircraftState,
+    kind: ResourceKind,
+    tick: number,
+    emit: EmitEvent,
+  ): AircraftState {
+    const service = aircraft.service;
+    const task = service ? taskOf(service, kind) : null;
+    if (!service || !task || task.completedTick !== null) return aircraft;
+    const done: ServiceTask = { ...task, completedTick: tick };
+    const next: AircraftState = {
+      ...aircraft,
+      service: kind === 'fuel' ? { ...service, fuel: done } : { ...service, payload: done },
+    };
+    this.aircraft.set(aircraft.id, next);
+    const aboardKg = kind === 'fuel' ? aircraft.fuelKg : aircraft.payloadKg;
+    const startKg = kind === 'fuel' ? service.fuelAtStartKg : service.payloadAtStartKg;
+    emit(
+      kind === 'fuel' ? 'refuellingCompleted' : 'loadingCompleted',
+      { aircraftId: aircraft.id, missionId: service.missionId },
+      {
+        ...(kind === 'fuel' ? { fuelKg: aboardKg } : { payloadKg: aboardKg }),
+        loadedKg: aboardKg - startKg,
+        durationS: tick - (task.startedTick ?? tick),
+        // Ended short of what was asked for, by the operator.
+        ...(fuelDiffers(aboardKg, task.targetKg) && { stopped: true }),
+      },
+    );
+    return next;
+  }
+
+  /** Ends a service: the aircraft is available, with the fuel and payload it holds. */
+  private completeService(aircraftId: string, tick: number, emit: EmitEvent): void {
+    let aircraft = this.aircraft.get(aircraftId);
+    if (!aircraft?.service) return;
+    // Anything still running ends where it is; anything still waiting is given up.
+    for (const kind of RESOURCE_KINDS) {
+      if (holdsPoint(taskOf(aircraft.service as GroundService, kind))) {
+        aircraft = this.finishTask(aircraft, kind, tick, emit);
+      }
+    }
+    const service = aircraft.service as GroundService;
+    const spent = (task: ServiceTask | null) =>
+      task?.startedTick != null && task.completedTick !== null
+        ? task.completedTick - task.startedTick
+        : 0;
+    const waited = (task: ServiceTask | null) =>
+      task?.startedTick != null && task.queuedTick !== null
+        ? task.startedTick - task.queuedTick
+        : 0;
+    this.aircraft.set(aircraft.id, { ...aircraft, status: 'available', service: null });
+    emit(
+      'servicingCompleted',
+      { aircraftId: aircraft.id, missionId: service.missionId },
+      {
+        reason: service.reason,
+        durationS: tick - service.startedTick,
+        checksS: service.checksCompleteTick - service.startedTick,
+        refuelS: spent(service.fuel),
+        loadS: spent(service.payload),
+        waitS: waited(service.fuel) + waited(service.payload),
+        loadedKg: aircraft.fuelKg - service.fuelAtStartKg,
+        payloadLoadedKg: aircraft.payloadKg - service.payloadAtStartKg,
+        fuelKg: aircraft.fuelKg,
+        payloadKg: aircraft.payloadKg,
+        at: aircraft.location?.code ?? aircraft.location?.name ?? '',
+      },
+    );
+  }
+
+  /**
+   * Gives free points to the aircraft at the head of each queue (ADR 0028). A point is held by an
+   * aircraft whose transfer is running; the queue is the aircraft waiting, in the order they
+   * began to. Those named in `announce` that still have to wait are recorded as queued.
+   */
+  private grant(tick: number, emit: EmitEvent, announce: ReadonlySet<string> = NO_ONE): void {
+    const groups = new Map<string, AircraftState[]>();
+    for (const aircraft of this.aircraft.values()) {
+      if (!aircraft.service || aircraft.service.stage !== 'preparation' || !aircraft.location) {
+        continue;
+      }
+      const key = aerodromeKey(aircraft.location);
+      groups.set(key, [...(groups.get(key) ?? []), aircraft]);
+    }
+    for (const key of [...groups.keys()].sort()) {
+      const capability = aerodromeCapability(
+        (groups.get(key) as AircraftState[])[0]?.location ?? null,
+      );
+      for (const kind of RESOURCE_KINDS) {
+        const here = (groups.get(key) as AircraftState[]).map(
+          (each) => this.aircraft.get(each.id) as AircraftState,
+        );
+        const task = (each: AircraftState) => taskOf(each.service as GroundService, kind);
+        let held = here.filter((each) => holdsPoint(task(each))).length;
+        const queue = here
+          .filter((each) => awaitsPoint(task(each)))
+          .sort(
+            (a, b) =>
+              (task(a)?.queuedTick ?? 0) - (task(b)?.queuedTick ?? 0) || a.id.localeCompare(b.id),
+          );
+        for (const aircraft of queue) {
+          if (held >= resourcePoints(capability, kind)) break;
+          const service = aircraft.service as GroundService;
+          const waiting = task(aircraft) as ServiceTask;
+          const aboardKg = kind === 'fuel' ? aircraft.fuelKg : aircraft.payloadKg;
+          const transfer = transferFor(
+            kind,
+            capability,
+            aircraft.performance?.fuelCapacityKg ?? 0,
+            tick,
+            aboardKg,
+            waiting.targetKg,
+          );
+          const started: ServiceTask = {
+            ...waiting,
+            transfer,
+            startedTick: waiting.startedTick ?? tick,
+          };
+          this.aircraft.set(aircraft.id, {
+            ...aircraft,
+            service:
+              kind === 'fuel' ? { ...service, fuel: started } : { ...service, payload: started },
+          });
+          held += 1;
+          emit(
+            kind === 'fuel' ? 'refuellingStarted' : 'loadingStarted',
+            { aircraftId: aircraft.id, missionId: service.missionId },
+            {
+              fromKg: aboardKg,
+              toKg: waiting.targetKg,
+              durationS: transfer.completeTick - tick,
+              ...(tick > (waiting.queuedTick ?? tick) && {
+                waitedS: tick - (waiting.queuedTick ?? tick),
+              }),
+            },
+          );
+        }
+      }
+    }
+    if (announce.size === 0) return;
+    const forecasts = forecastGroundServices([...this.aircraft.values()], tick);
+    for (const id of [...announce].sort()) {
+      const aircraft = this.aircraft.get(id);
+      const forecast = forecasts.get(id);
+      if (!aircraft?.service || !forecast) continue;
+      for (const waiting of [forecast.fuel, forecast.payload]) {
+        if (waiting?.state !== 'waiting') continue;
+        emit(
+          'serviceQueued',
+          { aircraftId: id, missionId: aircraft.service.missionId },
+          {
+            kind: waiting.kind,
+            position: waiting.position,
+            behind: waiting.behind,
+            startTick: waiting.startTick,
+            at: aircraft.location?.code ?? aircraft.location?.name ?? '',
+          },
+        );
+      }
+    }
+  }
+
+  /** True when a service in its preparation has nothing left to do. */
+  private static finished(service: GroundService): boolean {
+    return (
+      service.stage === 'preparation' &&
+      [service.fuel, service.payload].every((task) => task === null || task.completedTick !== null)
+    );
+  }
+
+  /**
+   * Brings a grounded aircraft's fuel, and its payload if one is given, to a target over time,
+   * exactly as the `serviceAircraft` command does. Returns true if anything changed; throws
+   * {@link CommandRejected}, changing nothing, if the aircraft cannot be serviced.
    */
   service(
     aircraftId: string,
@@ -596,9 +822,10 @@ export class Fleet {
     tick: number,
     missionId: string | null,
     emit: EmitEvent,
+    payloadKg?: number,
   ): boolean {
     const aircraft = this.require(aircraftId);
-    this.onGround(aircraft, 'be serviced');
+    const location = this.onGround(aircraft, 'be serviced');
     const model = aircraft.performance;
     if (!model) {
       throw new CommandRejected(
@@ -613,6 +840,16 @@ export class Fleet {
         `That is more fuel than ${aircraft.id} can hold (${Math.round(model.fuelCapacityKg)} kg).`,
       );
     }
+    if (payloadKg !== undefined) {
+      if (!Number.isFinite(payloadKg) || payloadKg < 0) {
+        throw new CommandRejected('Payload must be zero or more.');
+      }
+      if (payloadKg > model.maxPayloadKg + 0.5) {
+        throw new CommandRejected(
+          `That is more payload than ${aircraft.id} can carry (${Math.round(model.maxPayloadKg)} kg).`,
+        );
+      }
+    }
     if (aircraft.status === 'maintenance_due' || aircraft.status === 'in_maintenance') {
       throw new CommandRejected(
         `${aircraft.id} is ${aircraft.status === 'in_maintenance' ? 'in maintenance' : 'due maintenance'}; it is fuelled for a flight once that is done.`,
@@ -621,127 +858,246 @@ export class Fleet {
     if (aircraft.status === 'unserviceable') {
       throw new CommandRejected(`${aircraft.id} is unserviceable and cannot be serviced.`);
     }
-    const subject = { aircraftId: aircraft.id, missionId };
-    const service = aircraft.service;
+    if (!aerodromeCapability(location).servicing) {
+      throw new CommandRejected(
+        `${aircraft.id} is at ${location.name}, which is not an aerodrome: nothing can be serviced there.`,
+      );
+    }
 
-    if (!service) {
-      if (!fuelDiffers(aircraft.fuelKg, fuelKg)) return false;
-      const transfer = beginTransfer(model.fuelCapacityKg, tick, aircraft.fuelKg, fuelKg);
+    const existing = aircraft.service;
+    const stage = existing?.stage ?? 'preparation';
+    /** The task a target comes to, given the task there is and what is aboard. */
+    const retask = (
+      task: ServiceTask | null,
+      aboardKg: number,
+      targetKg: number | undefined,
+    ): ServiceTask | null => {
+      if (targetKg === undefined) return task;
+      if (task && holdsPoint(task)) {
+        return task.targetKg === targetKg
+          ? task
+          : {
+              ...task,
+              targetKg,
+              transfer: retargetTransfer(task.transfer as Transfer, tick, aboardKg, targetKg),
+            };
+      }
+      // Done already, waiting, or behind the checks: what matters is what is still to move.
+      if (!fuelDiffers(aboardKg, targetKg)) return task?.completedTick != null ? task : null;
+      if (task && task.completedTick === null) return { ...task, targetKg };
+      return {
+        targetKg,
+        queuedTick: stage === 'preparation' ? tick : null,
+        transfer: null,
+        startedTick: null,
+        completedTick: null,
+      };
+    };
+    const fuel = retask(existing?.fuel ?? null, aircraft.fuelKg, fuelKg);
+    const payload = retask(existing?.payload ?? null, aircraft.payloadKg, payloadKg);
+    const labelled = missionId ?? existing?.missionId ?? null;
+
+    if (!existing) {
+      if (!fuel && !payload) return false;
       this.aircraft.set(aircraft.id, {
         ...aircraft,
         status: 'servicing',
         service: {
           reason: 'preparation',
           startedTick: tick,
-          stage: 'refuelling',
+          stage: 'preparation',
           checksCompleteTick: tick,
           fuelAtStartKg: aircraft.fuelKg,
-          targetFuelKg: fuelKg,
-          transfer,
-          refuellingSinceTick: tick,
+          payloadAtStartKg: aircraft.payloadKg,
+          fuel,
+          payload,
           missionId,
         },
       });
-      emit('servicingStarted', subject, {
-        reason: 'preparation',
-        targetFuelKg: fuelKg,
-        completeTick: transfer.completeTick,
-      });
-      emit('refuellingStarted', subject, {
-        fromKg: aircraft.fuelKg,
-        toKg: fuelKg,
-        durationS: transfer.completeTick - tick,
-      });
+      // What follows from the grant is recorded after the start of the service itself.
+      const caused: Parameters<EmitEvent>[] = [];
+      this.grant(tick, (...event) => caused.push(event), new Set([aircraft.id]));
+      const begun = this.aircraft.get(aircraft.id) as AircraftState;
+      emit(
+        'servicingStarted',
+        { aircraftId: aircraft.id, missionId },
+        {
+          reason: 'preparation',
+          ...(fuel && { targetFuelKg: fuel.targetKg }),
+          ...(payload && { targetPayloadKg: payload.targetKg }),
+          completeTick: this.forecastOf(begun, tick)?.completeTick ?? tick,
+        },
+      );
+      for (const event of caused) emit(...event);
       return true;
     }
 
-    const labelled = missionId ?? service.missionId;
-    if (service.targetFuelKg === fuelKg && labelled === service.missionId) return false;
-    if (service.stage === 'checks' || !service.transfer) {
-      // The fuel follows the checks: the step begins the transfer when they end.
-      this.aircraft.set(aircraft.id, {
-        ...aircraft,
-        service: { ...service, targetFuelKg: fuelKg, missionId: labelled },
-      });
-      return true;
+    const same = (a: ServiceTask | null, b: ServiceTask | null) =>
+      JSON.stringify(a) === JSON.stringify(b);
+    if (same(fuel, existing.fuel) && same(payload, existing.payload)) {
+      if (labelled === existing.missionId) return false;
     }
-    const retargeted: AircraftState = {
+    let next: AircraftState = {
       ...aircraft,
-      service: {
-        ...service,
-        targetFuelKg: fuelKg,
-        missionId: labelled,
-        transfer: retargetTransfer(service.transfer, tick, aircraft.fuelKg, fuelKg),
-      },
+      service: { ...existing, fuel, payload, missionId: labelled },
     };
-    this.aircraft.set(aircraft.id, retargeted);
-    // Asked for what it already holds: there is nothing left to move.
-    if (!fuelDiffers(aircraft.fuelKg, fuelKg)) this.completeService(retargeted, tick, emit);
+    this.aircraft.set(aircraft.id, next);
+    if (stage === 'checks') return true;
+    // A running transfer asked for what is already aboard has nothing left to move.
+    for (const kind of RESOURCE_KINDS) {
+      const task = taskOf(next.service as GroundService, kind);
+      const aboardKg = kind === 'fuel' ? next.fuelKg : next.payloadKg;
+      if (task && holdsPoint(task) && !fuelDiffers(aboardKg, task.targetKg)) {
+        next = this.finishTask(next, kind, tick, emit);
+      }
+    }
+    this.grant(tick, emit, new Set([aircraft.id]));
+    const settled = this.aircraft.get(aircraft.id);
+    if (settled?.service && Fleet.finished(settled.service)) {
+      this.completeService(aircraft.id, tick, emit);
+      this.grant(tick, emit);
+    }
     return true;
   }
 
   /**
-   * Ends a fuel transfer where it is, exactly as the `stopServicing` command does. Returns false
-   * if the aircraft is not being serviced.
+   * Ends running transfers where they are and gives up anything still waiting, exactly as the
+   * `stopServicing` command does. Returns false if the aircraft is not being serviced.
    */
   stopService(aircraftId: string, tick: number, emit: EmitEvent): boolean {
     const aircraft = this.require(aircraftId);
     const service = aircraft.service;
     if (!service) return false;
-    if (service.stage === 'refuelling') {
-      this.completeService(aircraft, tick, emit);
+    if (service.stage === 'preparation') {
+      this.completeService(aircraft.id, tick, emit);
+      // The points it held go to whoever is next.
+      this.grant(tick, emit);
       return true;
     }
-    if (service.targetFuelKg === null) {
+    if (!service.fuel && !service.payload) {
       throw new CommandRejected(
-        `${aircraft.id} is in its post-flight checks, which cannot be skipped. It will be available in ${minutesOf(serviceCompleteTick(aircraft, service) - tick)}.`,
+        `${aircraft.id} is in its post-flight checks, which cannot be skipped. It will be available in ${this.availableIn(aircraft, tick)}.`,
       );
     }
-    // The fuel asked for after the checks is withdrawn; the checks go on.
+    // What was asked for after the checks is withdrawn; the checks go on.
     this.aircraft.set(aircraft.id, {
       ...aircraft,
-      service: { ...service, targetFuelKg: null, missionId: null },
+      service: { ...service, fuel: null, payload: null, missionId: null },
     });
     return true;
   }
 
-  /** Advances the servicing of one aircraft by a step. Returns true if anything changed. */
-  private stepService(aircraft: AircraftState, tick: number, emit: EmitEvent): boolean {
-    const service = aircraft.service;
-    if (!service) return false;
-    if (service.stage === 'checks') {
-      if (tick < service.checksCompleteTick) return false;
-      const target = service.targetFuelKg;
-      const model = aircraft.performance;
-      if (target === null || !model || !fuelDiffers(aircraft.fuelKg, target)) {
-        this.completeService(aircraft, tick, emit);
-        return true;
-      }
-      const transfer = beginTransfer(model.fuelCapacityKg, tick, aircraft.fuelKg, target);
-      this.aircraft.set(aircraft.id, {
-        ...aircraft,
-        service: { ...service, stage: 'refuelling', transfer, refuellingSinceTick: tick },
+  /** Why an aircraft could not launch a load from a place now; `null` when it could. */
+  launchIssue(
+    aircraftId: string,
+    load: FlightLoad,
+    origin: RoutePoint | null,
+    tick: number,
+  ): string | null {
+    const aircraft = this.aircraft.get(aircraftId);
+    if (!aircraft) return `There is no aircraft ${aircraftId}.`;
+    const readiness = launchReadiness(
+      aircraft,
+      { fuelKg: load.fuelKg, payloadKg: load.payloadKg, origin },
+      tick,
+      this.forecastOf(aircraft, tick),
+    );
+    return readiness.issues[0]?.message ?? null;
+  }
+
+  /**
+   * Withdraws the work a mission asked for that has not begun, when the mission is released or
+   * cancelled (ADR 0028). A transfer already running goes on to its end.
+   */
+  withdraw(missionId: string, tick: number, emit: EmitEvent): void {
+    const prepared = [...this.aircraft.values()]
+      .filter((aircraft) => aircraft.service?.missionId === missionId)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    for (const aircraft of prepared) {
+      const service = aircraft.service as GroundService;
+      const kept = (task: ServiceTask | null) => (task && task.startedTick !== null ? task : null);
+      const withdrawn = RESOURCE_KINDS.filter((kind) => {
+        const task = taskOf(service, kind);
+        return task !== null && task.startedTick === null;
       });
-      emit(
-        'refuellingStarted',
-        { aircraftId: aircraft.id, missionId: service.missionId },
-        { fromKg: aircraft.fuelKg, toKg: target, durationS: transfer.completeTick - tick },
-      );
-      return true;
+      const next: GroundService = {
+        ...service,
+        fuel: kept(service.fuel),
+        payload: kept(service.payload),
+        missionId: null,
+      };
+      this.aircraft.set(aircraft.id, { ...aircraft, service: next });
+      if (withdrawn.length > 0) {
+        emit('serviceWithdrawn', { aircraftId: aircraft.id, missionId }, { kinds: withdrawn });
+      }
+      if (Fleet.finished(next)) this.completeService(aircraft.id, tick, emit);
     }
-    const transfer = service.transfer;
-    if (!transfer) return false;
-    // Computed from the transfer and the tick, never added to: the same at any speed, and after
-    // any number of saves (ADR 0027).
-    const fuelKg = fuelDuringTransfer(transfer, tick);
-    const fuelled: AircraftState = fuelKg === aircraft.fuelKg ? aircraft : { ...aircraft, fuelKg };
-    if (tick >= transfer.completeTick) {
-      this.completeService(fuelled, tick, emit);
-      return true;
+    if (prepared.length > 0) this.grant(tick, emit);
+  }
+
+  /** Advances every ground service by a step. Returns true if anything changed. */
+  private stepServices(tick: number, emit: EmitEvent): boolean {
+    // Identifier order, so that the events are logged in the same order every time.
+    const ids = [...this.aircraft.values()]
+      .filter((aircraft) => aircraft.service !== null)
+      .map((aircraft) => aircraft.id)
+      .sort((a, b) => a.localeCompare(b));
+    if (ids.length === 0) return false;
+    let changed = false;
+    const joined = new Set<string>();
+
+    for (const id of ids) {
+      let aircraft = this.aircraft.get(id) as AircraftState;
+      const service = aircraft.service as GroundService;
+      if (service.stage === 'checks') {
+        if (tick < service.checksCompleteTick) continue;
+        // The checks are over: what was asked for joins the queue for its point.
+        const queued = (task: ServiceTask | null, aboardKg: number): ServiceTask | null =>
+          task && fuelDiffers(aboardKg, task.targetKg) ? { ...task, queuedTick: tick } : null;
+        this.aircraft.set(id, {
+          ...aircraft,
+          service: {
+            ...service,
+            stage: 'preparation',
+            fuel: queued(service.fuel, aircraft.fuelKg),
+            payload: queued(service.payload, aircraft.payloadKg),
+          },
+        });
+        joined.add(id);
+        changed = true;
+        continue;
+      }
+      for (const kind of RESOURCE_KINDS) {
+        const task = taskOf(aircraft.service as GroundService, kind);
+        if (!task?.transfer || task.completedTick !== null) continue;
+        // Computed from the transfer and the tick, never added to: the same at any speed, and
+        // after any number of saves (ADR 0027).
+        const aboardKg = fuelDuringTransfer(task.transfer, tick);
+        const before = kind === 'fuel' ? aircraft.fuelKg : aircraft.payloadKg;
+        if (aboardKg !== before) {
+          aircraft =
+            kind === 'fuel'
+              ? { ...aircraft, fuelKg: aboardKg }
+              : { ...aircraft, payloadKg: aboardKg };
+          this.aircraft.set(id, aircraft);
+          changed = true;
+        }
+        if (tick >= task.transfer.completeTick) {
+          aircraft = this.finishTask(aircraft, kind, tick, emit);
+          changed = true;
+        }
+      }
     }
-    if (fuelled === aircraft) return false;
-    this.aircraft.set(aircraft.id, fuelled);
-    return true;
+    // Points given up in this step are taken in it, by the head of each queue.
+    this.grant(tick, emit, joined);
+    for (const id of ids) {
+      const service = this.aircraft.get(id)?.service;
+      if (service && Fleet.finished(service)) {
+        this.completeService(id, tick, emit);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   aircraftById(id: string): AircraftState | undefined {
@@ -890,7 +1246,12 @@ export class Fleet {
   unload(aircraftId: string): void {
     const aircraft = this.aircraft.get(aircraftId);
     if (aircraft && aircraft.location !== null && aircraft.payloadKg !== 0) {
-      this.aircraft.set(aircraftId, { ...aircraft, payloadKg: 0 });
+      this.aircraft.set(aircraftId, {
+        ...aircraft,
+        payloadKg: 0,
+        // Delivered, not handled on the ground: the turnaround begins with nothing aboard.
+        ...(aircraft.service && { service: { ...aircraft.service, payloadAtStartKg: 0 } }),
+      });
     }
   }
 
@@ -936,7 +1297,7 @@ export class Fleet {
       }
 
       case 'serviceAircraft':
-        return this.service(command.aircraftId, command.fuelKg, tick, null, emit)
+        return this.service(command.aircraftId, command.fuelKg, tick, null, emit, command.payloadKg)
           ? { aircraftId: command.aircraftId }
           : null;
 
@@ -1062,7 +1423,7 @@ export class Fleet {
         if (aircraft.status === 'in_maintenance') return null;
         if (aircraft.service) {
           throw new CommandRejected(
-            `${aircraft.id} is being serviced. Maintenance can start when it is available, in ${minutesOf(serviceCompleteTick(aircraft, aircraft.service) - tick)}.`,
+            `${aircraft.id} is being serviced. Maintenance can start when it is available, in ${this.availableIn(aircraft, tick)}.`,
           );
         }
         this.aircraft.set(aircraft.id, {
@@ -1188,9 +1549,9 @@ export class Fleet {
           stage: 'checks',
           checksCompleteTick: tick + checksS / STEP_S,
           fuelAtStartKg: progress.fuelKg,
-          targetFuelKg: null,
-          transfer: null,
-          refuellingSinceTick: null,
+          payloadAtStartKg: landed.payloadKg,
+          fuel: null,
+          payload: null,
           missionId: null,
         };
         this.aircraft.set(
@@ -1277,13 +1638,7 @@ export class Fleet {
       }
     }
 
-    // Identifier order, so that the events are logged in the same order every time.
-    const serviced = [...this.aircraft.values()]
-      .filter((aircraft) => aircraft.service !== null)
-      .sort((x, y) => x.id.localeCompare(y.id));
-    for (const aircraft of serviced) {
-      if (this.stepService(aircraft, tick, emit)) changed = true;
-    }
+    if (this.stepServices(tick, emit)) changed = true;
 
     const finishing: AircraftState[] = [];
     for (const aircraft of this.aircraft.values()) {

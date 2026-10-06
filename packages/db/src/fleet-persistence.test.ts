@@ -104,7 +104,8 @@ function launchC17(
     aircraftId: 'AEGIS-TR-001',
     plan,
     // The fuel it was acquired with: nothing to load first (ADR 0027).
-    load: { fuelKg: C17.fuelCapacityKg, payloadKg: 12000 },
+    // And nothing to load either: payload takes time to put aboard too (ADR 0028).
+    load: { fuelKg: C17.fuelCapacityKg, payloadKg: 0 },
   });
 }
 

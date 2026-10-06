@@ -4,20 +4,24 @@ import type { RoutePoint } from '../flight/route';
 import {
   AIRCRAFT_STATUSES,
   GROUND_SERVICE,
+  aerodromeCapability,
   beginTransfer,
+  forecastGroundServices,
   fuelDiffers,
   fuelDuringTransfer,
   launchReadiness,
   postFlightChecksS,
   refuelRateKgS,
   retargetTransfer,
+  payloadDurationS,
   serviceCompleteTick,
   serviceProgress,
   transferDurationS,
   type AircraftStatus,
   type GroundService,
   type ReadinessSubject,
-} from './service';
+  type ServiceTask,
+} from './index';
 
 /*
  * Ground servicing rules (ADR 0027): how long things take, where the fuel stands at any tick,
@@ -172,6 +176,7 @@ const aircraft = (overrides: Partial<ReadinessSubject> = {}): ReadinessSubject =
   status: 'available',
   location: NEWQUAY,
   fuelKg: 10_000,
+  payloadKg: 0,
   service: null,
   performance: { fuelCapacityKg: CAPACITY },
   performanceMissing: [],
@@ -183,10 +188,19 @@ const turnaround = (overrides: Partial<GroundService> = {}): GroundService => ({
   stage: 'checks',
   checksCompleteTick: 6200,
   fuelAtStartKg: 10_000,
-  targetFuelKg: null,
-  transfer: null,
-  refuellingSinceTick: null,
+  payloadAtStartKg: 0,
+  fuel: null,
+  payload: null,
   missionId: null,
+  ...overrides,
+});
+/** A task that has been asked for and has not yet reached the queue. */
+const wanted = (targetKg: number, overrides: Partial<ServiceTask> = {}): ServiceTask => ({
+  targetKg,
+  queuedTick: null,
+  transfer: null,
+  startedTick: null,
+  completedTick: null,
   ...overrides,
 });
 const codes = (subject: ReadinessSubject, fuelKg: number | null, tick = 5600, origin = NEWQUAY) =>
@@ -239,7 +253,7 @@ describe('whether an aircraft can launch', () => {
     // With the fuel to follow the checks, it is ready when that is aboard.
     const fuelling = aircraft({
       status: 'servicing',
-      service: turnaround({ targetFuelKg: 14_000 }),
+      service: turnaround({ fuel: wanted(14_000) }),
     });
     const later = launchReadiness(fuelling, { fuelKg: 14_000, origin: NEWQUAY }, 5600);
     expect(later.readyTick).toBe(6200 + refuel.connectS + 200);
@@ -263,7 +277,7 @@ describe('whether an aircraft can launch', () => {
       'AEGIS-TR-001 holds 10,000 kg; the flight departs with 9,000 kg. Taking 1,000 kg off takes 6 min.',
     );
     // Being serviced toward a different quantity: it will not be ready when that is done.
-    const wrong = aircraft({ status: 'servicing', service: turnaround({ targetFuelKg: 12_000 }) });
+    const wrong = aircraft({ status: 'servicing', service: turnaround({ fuel: wanted(12_000) }) });
     const still = launchReadiness(wrong, { fuelKg: 14_000, origin: NEWQUAY }, 5600);
     expect(still.readyTick).toBeNull();
     expect(still.issues.map((issue) => issue.code)).toEqual(['servicing', 'fuel']);
@@ -297,22 +311,31 @@ describe('a service as it stands', () => {
   it('reports the stage, what remains and when it ends, from the record and the tick', () => {
     const checking = aircraft({
       status: 'servicing',
-      service: turnaround({ targetFuelKg: 14_000 }),
+      service: turnaround({ fuel: wanted(14_000) }),
     });
     const complete = 6200 + refuel.connectS + 200;
-    expect(serviceCompleteTick(checking, checking.service as GroundService)).toBe(complete);
-    expect(serviceProgress(checking, 5600)).toEqual({
+    expect(serviceCompleteTick(checking, 5600)).toBe(complete);
+    expect(serviceProgress(checking, 5600)).toMatchObject({
       reason: 'turnaround',
       stage: 'checks',
-      defuelling: false,
       startedTick: 5000,
       completeTick: complete,
       remainingS: complete - 5600,
       fraction: 600 / (complete - 5000),
+      checksRemainingS: 600,
       fuelKg: 10_000,
-      targetFuelKg: 14_000,
-      fuelRemainingKg: 4000,
-      connecting: false,
+      fuel: {
+        kind: 'fuel',
+        state: 'behind_checks',
+        targetKg: 14_000,
+        remainingKg: 4000,
+        removing: false,
+        startTick: 6200,
+        completeTick: complete,
+        position: null,
+        behind: null,
+      },
+      payload: null,
       missionId: null,
     });
 
@@ -321,22 +344,16 @@ describe('a service as it stands', () => {
       status: 'servicing',
       fuelKg: fuelDuringTransfer(transfer, transfer.flowStartTick + 50),
       service: turnaround({
-        stage: 'refuelling',
-        targetFuelKg: 14_000,
-        transfer,
-        refuellingSinceTick: 6200,
+        stage: 'preparation',
+        fuel: wanted(14_000, { queuedTick: 6200, startedTick: 6200, transfer }),
         missionId: 'MSN-000004',
       }),
     });
-    expect(serviceProgress(fuelling, 6210)).toMatchObject({
-      stage: 'refuelling',
-      connecting: true,
-    });
+    expect(serviceProgress(fuelling, 6210)?.fuel?.state).toBe('connecting');
     expect(serviceProgress(fuelling, transfer.flowStartTick + 50)).toMatchObject({
-      stage: 'refuelling',
-      connecting: false,
+      stage: 'preparation',
       fuelKg: 11_000,
-      fuelRemainingKg: 3000,
+      fuel: { state: 'moving', remainingKg: 3000, completeTick: complete },
       remainingS: 150,
       completeTick: complete,
       missionId: 'MSN-000004',
@@ -344,5 +361,186 @@ describe('a service as it stands', () => {
     // Never outside 0 to 1, whatever tick is asked for.
     expect(serviceProgress(fuelling, 0)?.fraction).toBe(0);
     expect(serviceProgress(fuelling, 1_000_000)).toMatchObject({ fraction: 1, remainingS: 0 });
+  });
+});
+
+describe('what an aerodrome can do', () => {
+  it('is assumed from its size class, and nothing where there is no aerodrome', () => {
+    expect(aerodromeCapability({ ...NEWQUAY, size: 'large' })).toMatchObject({
+      servicing: true,
+      size: 'large',
+      fuelPoints: 2,
+      handlingPoints: 2,
+    });
+    expect(aerodromeCapability({ ...NEWQUAY, size: 'small' })).toMatchObject({
+      fuelPoints: 1,
+      fuelRateFactor: 0.5,
+    });
+    // No class recorded: the assumptions of a medium aerodrome, and it says the class is unknown.
+    expect(aerodromeCapability(NEWQUAY)).toEqual({
+      ...aerodromeCapability({ ...NEWQUAY, size: 'medium' }),
+      size: null,
+    });
+    expect(aerodromeCapability({ ...NEWQUAY, kind: 'waypoint' }).servicing).toBe(false);
+    expect(aerodromeCapability(null)).toMatchObject({ servicing: false, fuelPoints: 0 });
+    // A smaller aerodrome takes longer over the same fuel and the same payload.
+    expect(transferDurationS(CAPACITY, 0, 12_000, 0.5)).toBe(refuel.connectS + 1200);
+    expect(transferDurationS(CAPACITY, 0, 12_000, 1)).toBe(refuel.connectS + 600);
+    expect(payloadDurationS(30, 0, 9000)).toBe(GROUND_SERVICE.payload.positionS + 300);
+    expect(payloadDurationS(15, 9000, 0)).toBe(GROUND_SERVICE.payload.positionS + 600);
+  });
+});
+
+describe('the queue for a point', () => {
+  const waiting = (id: string, queuedTick: number, toKg: number, fuelKg = 10_000) =>
+    aircraft({
+      id,
+      status: 'servicing',
+      fuelKg,
+      service: turnaround({
+        reason: 'preparation',
+        stage: 'preparation',
+        startedTick: queuedTick,
+        checksCompleteTick: queuedTick,
+        fuel: wanted(toKg, { queuedTick }),
+      }),
+    });
+  const transfer = beginTransfer(CAPACITY, 1000, 10_000, 20_000);
+  const fuelling = (id: string) =>
+    aircraft({
+      id,
+      status: 'servicing',
+      service: turnaround({
+        reason: 'preparation',
+        stage: 'preparation',
+        startedTick: 1000,
+        checksCompleteTick: 1000,
+        fuel: wanted(20_000, { queuedTick: 1000, startedTick: 1000, transfer }),
+      }),
+    });
+
+  it('serves one aircraft at a time where there is one point, in the order they began to wait', () => {
+    const forecasts = forecastGroundServices(
+      [fuelling('A'), waiting('C', 1200, 12_000), waiting('B', 1100, 14_000)],
+      1300,
+    );
+    expect(forecasts.get('A')?.fuel).toMatchObject({ state: 'moving', position: null });
+    // B began to wait first: it takes the point when A gives it up, and C follows B.
+    const b = forecasts.get('B')?.fuel;
+    expect(b).toMatchObject({
+      state: 'waiting',
+      position: 1,
+      behind: 'A',
+      startTick: transfer.completeTick,
+      completeTick: transfer.completeTick + refuel.connectS + 200,
+    });
+    expect(forecasts.get('C')?.fuel).toMatchObject({
+      state: 'waiting',
+      position: 2,
+      behind: 'B',
+      startTick: b?.completeTick,
+      completeTick: (b?.completeTick ?? 0) + refuel.connectS + 100,
+    });
+    expect(forecasts.get('C')?.completeTick).toBe(forecasts.get('C')?.fuel?.completeTick);
+  });
+
+  it('serves two at once where there are two points, and breaks a tie by identifier', () => {
+    const large = (subject: ReadinessSubject): ReadinessSubject => ({
+      ...subject,
+      location: { ...NEWQUAY, size: 'large' },
+    });
+    const forecasts = forecastGroundServices(
+      [large(fuelling('A')), large(waiting('C', 1100, 12_000)), large(waiting('B', 1100, 14_000))],
+      1100,
+    );
+    // The second point is free: B, first by identifier, starts now. C waits for whichever
+    // point is free soonest, which is B's.
+    expect(forecasts.get('B')?.fuel).toMatchObject({
+      startTick: 1100,
+      position: null,
+      behind: null,
+    });
+    const bDone = 1100 + refuel.connectS + 200;
+    expect(forecasts.get('C')?.fuel).toMatchObject({
+      state: 'waiting',
+      position: 1,
+      behind: 'B',
+      startTick: bDone,
+    });
+    expect(bDone).toBeLessThan(transfer.completeTick);
+  });
+
+  it('keeps aerodromes, and the two kinds of resource, apart', () => {
+    const elsewhere = { ...waiting('B', 1100, 14_000), location: EXETER };
+    const loading = aircraft({
+      id: 'D',
+      status: 'servicing',
+      service: turnaround({
+        reason: 'preparation',
+        stage: 'preparation',
+        startedTick: 1100,
+        checksCompleteTick: 1100,
+        payload: wanted(9000, { queuedTick: 1100 }),
+      }),
+    });
+    const forecasts = forecastGroundServices([fuelling('A'), elsewhere, loading], 1100);
+    // Another aerodrome's point, and the handling point here: neither waits for A's fuel.
+    expect(forecasts.get('B')?.fuel).toMatchObject({ startTick: 1100, position: null });
+    expect(forecasts.get('D')).toMatchObject({
+      fuel: null,
+      payload: { kind: 'handling', startTick: 1100, position: null },
+      completeTick: 1100 + payloadDurationS(30, 0, 9000),
+    });
+  });
+
+  it('tells a waiting aircraft whom it is behind, in the readiness rule', () => {
+    const b = waiting('B', 1100, 14_000);
+    const forecast = forecastGroundServices([fuelling('A'), b], 1300).get('B') ?? null;
+    const readiness = launchReadiness(b, { fuelKg: 14_000, origin: NEWQUAY }, 1300, forecast);
+    expect(readiness.issues).toHaveLength(1);
+    expect(readiness.issues[0]?.message).toMatch(
+      /^B is waiting for a fuel point, behind A\. It will be available in \d+ min\.$/,
+    );
+    expect(readiness.readyTick).toBe(forecast?.completeTick);
+    // Alone at its aerodrome it would not have had to wait.
+    expect(launchReadiness(b, { fuelKg: 14_000, origin: NEWQUAY }, 1300).readyTick).toBeLessThan(
+      forecast?.completeTick ?? 0,
+    );
+  });
+});
+
+describe('payload and readiness', () => {
+  it('needs the planned payload aboard, as it needs the planned fuel', () => {
+    const ready = launchReadiness(aircraft(), { fuelKg: 10_000, payloadKg: 0, origin: NEWQUAY }, 0);
+    expect(ready.ready).toBe(true);
+    const short = launchReadiness(
+      aircraft(),
+      { fuelKg: 10_000, payloadKg: 9000, origin: NEWQUAY },
+      0,
+    );
+    expect(short.issues).toEqual([
+      {
+        code: 'payload',
+        message:
+          'AEGIS-TR-001 holds 0 kg of payload; the flight carries 9,000 kg. Loading 9,000 kg takes 10 min.',
+      },
+    ]);
+    expect(short.prepareS).toBe(payloadDurationS(30, 0, 9000));
+    // Fuel and payload are handled side by side: the longer of the two is how long it takes.
+    const both = launchReadiness(
+      aircraft(),
+      { fuelKg: 22_000, payloadKg: 9000, origin: NEWQUAY },
+      0,
+    );
+    expect(both.issues.map((issue) => issue.code)).toEqual(['fuel', 'payload']);
+    expect(both.prepareS).toBe(
+      Math.max(transferDurationS(CAPACITY, 10_000, 22_000), payloadDurationS(30, 0, 9000)),
+    );
+    const over = launchReadiness(
+      aircraft({ payloadKg: 4000 }),
+      { fuelKg: 10_000, payloadKg: 0, origin: NEWQUAY },
+      0,
+    );
+    expect(over.issues[0]?.message).toMatch(/Taking 4,000 kg off takes \d+ min\./);
   });
 });

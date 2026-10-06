@@ -265,7 +265,17 @@ export interface FleetPort {
     tick: number,
     missionId: string | null,
     emit: EmitEvent,
+    payloadKg?: number,
   ): boolean;
+  /** Withdraws the work a mission asked for that has not begun (ADR 0028). */
+  withdraw(missionId: string, tick: number, emit: EmitEvent): void;
+  /** Why an aircraft could not launch a load from a place now; `null` when it could. */
+  launchIssue(
+    aircraftId: string,
+    load: FlightLoad,
+    origin: RoutePoint | null,
+    tick: number,
+  ): string | null;
   /** Removes the payload from an aircraft on the ground. */
   unload(aircraftId: string): void;
   rebase(aircraftId: string, home: RoutePoint): void;
@@ -599,7 +609,14 @@ export class Missions {
         // cannot be fuelled yet, because maintenance comes first, is prepared by the operator
         // when it can be.
         if (mission.load && (aircraft.status === 'available' || aircraft.status === 'servicing')) {
-          fleet.service(aircraft.id, mission.load.fuelKg, tick, mission.id, emit);
+          fleet.service(
+            aircraft.id,
+            mission.load.fuelKg,
+            tick,
+            mission.id,
+            emit,
+            mission.load.payloadKg,
+          );
         }
         return { missionId: mission.id, aircraftId: aircraft.id };
       }
@@ -616,6 +633,8 @@ export class Missions {
           acceptance: null,
           assessment: null,
         });
+        // What was asked of the aerodrome for it and has not begun is given up (ADR 0028).
+        fleet.withdraw(mission.id, tick, emit);
         return { missionId: mission.id, aircraftId: mission.aircraftId };
       }
 
@@ -623,6 +642,7 @@ export class Missions {
         const mission = this.require(command.missionId);
         this.move(mission, 'cancelled', 'cancelled');
         this.finish({ ...mission, status: 'cancelled', completedTick: tick });
+        fleet.withdraw(mission.id, tick, emit);
         return { missionId: mission.id, aircraftId: mission.aircraftId };
       }
 
@@ -701,6 +721,29 @@ export class Missions {
     // the map is deterministic. A map may be changed while it is iterated: replacing a mission
     // keeps its place, and a removed one is simply not visited.
     for (const mission of this.missions.values()) {
+      // A scheduled launch is an intention, not an order (ADR 0028). When its time passes with
+      // the mission still on the ground, the world records that once, with the reason.
+      if (
+        mission.plannedStartTick === tick &&
+        (mission.status === 'accepted' || mission.status === 'planned')
+      ) {
+        const issue =
+          mission.status === 'planned'
+            ? 'The mission had not been accepted.'
+            : mission.aircraftId && mission.load
+              ? fleet.launchIssue(
+                  mission.aircraftId,
+                  mission.load,
+                  mission.plan?.points[0] ?? null,
+                  tick,
+                )
+              : null;
+        emit(
+          'launchDelayed',
+          { missionId: mission.id, aircraftId: mission.aircraftId },
+          { scheduledTick: tick, reason: issue ?? 'Ready, and not yet launched.' },
+        );
+      }
       if (mission.status === 'active') {
         this.stepActive(mission, tick, fleet, emit);
       } else if (mission.status === 'offered') {

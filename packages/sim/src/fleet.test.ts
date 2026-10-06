@@ -105,7 +105,7 @@ function launch(
   if (fuelKg === null) throw new Error('route not flyable');
   const load = { fuelKg, payloadKg };
   // The fuel is loaded first, which takes time (ADR 0027).
-  fuelled(engine, aircraftId, fuelKg);
+  fuelled(engine, aircraftId, fuelKg, payloadKg);
   // Estimated in the world it will be flown in: the same weather, departing at the same tick.
   const context = engine.planContext();
   const estimate = evaluatePlan(model, plan, load, context).estimate;

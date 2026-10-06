@@ -262,6 +262,48 @@ function summaryTable(report: Report): ReportTable {
       unit: 'kg',
     },
     {
+      key: 'payload_hours',
+      label: 'Time handling payload on the ground, positioning included',
+      value: hours(totals.payloadSeconds),
+      unit: 'h',
+    },
+    {
+      key: 'payload_loaded',
+      label: 'Payload loaded on the ground',
+      value: round(totals.payloadLoadedKg),
+      unit: 'kg',
+    },
+    {
+      key: 'services_queued',
+      label: 'Ground services that waited for a fuel point or payload handling',
+      value: totals.servicesQueued,
+      unit: 'services',
+    },
+    {
+      key: 'resource_wait_hours',
+      label: 'Time those services waited',
+      value: hours(totals.resourceWaitSeconds),
+      unit: 'h',
+    },
+    {
+      key: 'launches_scheduled',
+      label: 'Missions launched that had a scheduled launch time',
+      value: totals.launchesScheduled,
+      unit: 'missions',
+    },
+    {
+      key: 'launches_late',
+      label: 'Of those, launched after the scheduled time',
+      value: totals.launchesLate,
+      unit: 'missions',
+    },
+    {
+      key: 'launch_delay_hours',
+      label: 'Time by which they were late, in all',
+      value: hours(totals.launchDelaySeconds),
+      unit: 'h',
+    },
+    {
       key: 'mission_preparations',
       label: 'Missions whose aircraft had to be prepared before launch',
       value: totals.missionPreparations,

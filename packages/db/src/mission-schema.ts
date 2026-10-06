@@ -115,6 +115,8 @@ export const simPlace = sqliteTable(
     lat: real('lat').notNull(),
     lon: real('lon').notNull(),
     elevationM: real('elevation_m').notNull(),
+    /** The aerodrome's sourced size class (ADR 0028); NULL on a place copied before it was kept. */
+    size: text('size'),
   },
   (t) => [
     check('sim_place_lat_range', sql`${t.lat} between -90 and 90`),

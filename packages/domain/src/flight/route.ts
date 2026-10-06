@@ -12,6 +12,11 @@ export interface RoutePoint {
   readonly elevationM: number;
   /** Reference location id for an aerodrome. A soft link: the coordinates above are what is flown. */
   readonly refId?: string;
+  /**
+   * The size class the reference data gives an aerodrome (ADR 0028). Absent on a waypoint, and on
+   * a point copied before the class was kept.
+   */
+  readonly size?: 'large' | 'medium' | 'small';
 }
 
 export interface RouteLeg {

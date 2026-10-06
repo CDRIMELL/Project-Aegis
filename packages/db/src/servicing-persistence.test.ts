@@ -109,15 +109,15 @@ describe('ground servicing on disk', () => {
     const service = JSON.parse(String(stored[1]?.service)) as AircraftState['service'];
     expect(service).toMatchObject({
       reason: 'turnaround',
-      stage: 'refuelling',
-      targetFuelKg: 50_000,
-      transfer: { toKg: 50_000 },
+      stage: 'preparation',
+      fuel: { targetKg: 50_000, transfer: { toKg: 50_000 } },
+      payload: null,
     });
     // Part-way: the exact fuel aboard is on disk, between where it began and where it is going.
     // It landed with more than was asked for, so fuel is coming off.
     const fuelKg = Number(stored[1]?.fuel_kg);
-    expect(service?.transfer?.fromKg).toBeGreaterThan(50_000);
-    expect(fuelKg).toBeLessThan(service?.transfer?.fromKg as number);
+    expect(service?.fuel?.transfer?.fromKg).toBeGreaterThan(50_000);
+    expect(fuelKg).toBeLessThan(service?.fuel?.transfer?.fromKg as number);
     expect(fuelKg).toBeGreaterThan(50_000);
   });
 
@@ -252,9 +252,12 @@ describe('servicing across application restarts', () => {
     expect(resumed.fuelKg).toBe(closed.fuelKg);
     expect(resumed.service).toEqual(closed.service);
     // Not started again: it began at tick 0 and still ends when it always would have.
-    expect(resumed.service).toMatchObject({ startedTick: 0, transfer: { completeTick: duration } });
+    expect(resumed.service).toMatchObject({
+      startedTick: 0,
+      fuel: { queuedTick: 0, startedTick: 0, transfer: { completeTick: duration } },
+    });
     expect(resumed.fuelKg).toBe(
-      fuelDuringTransfer(resumed.service?.transfer as never, reopened.clock.tick),
+      fuelDuringTransfer(resumed.service?.fuel?.transfer as never, reopened.clock.tick),
     );
 
     // It goes on, and is ready at exactly the tick an uninterrupted world is.
@@ -290,7 +293,7 @@ describe('servicing across application restarts', () => {
     // Whatever tick was last saved, the fuel on disk is the fuel for that tick.
     expect(aircraft.status).toBe('servicing');
     expect(aircraft.fuelKg).toBe(
-      fuelDuringTransfer(aircraft.service?.transfer as never, recovered.clock.tick),
+      fuelDuringTransfer(aircraft.service?.fuel?.transfer as never, recovered.clock.tick),
     );
     const reference = SimulationEngine.create(newWorld());
     reference.applyCommand(SEED_FLEET);
@@ -420,9 +423,9 @@ describe('migration 0009 on an existing world', () => {
     expect(hasServiceColumn(connection)).toBe(true);
     expect(connection.prepare(`PRAGMA foreign_key_check`).all()).toEqual([]);
     expect(connection.prepare(`PRAGMA integrity_check`).all()).toEqual([{ integrity_check: 'ok' }]);
-    expect(connection.prepare(`SELECT max(idx) AS idx FROM __aegis_migrations`).get()).toEqual({
-      idx: 9,
-    });
+    expect(
+      connection.prepare(`SELECT count(*) AS n FROM __aegis_migrations WHERE idx = 9`).get(),
+    ).toEqual({ n: 1 });
     // Every row as it was, with the new column empty.
     expect(connection.prepare(`SELECT * FROM sim_aircraft ORDER BY id`).all()).toEqual(
       aircraftBefore.map((row) => ({ ...row, service: null })),

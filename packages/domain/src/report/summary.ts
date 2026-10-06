@@ -89,6 +89,20 @@ export interface ActivityTotals {
    */
   readonly missionPreparations: number;
   readonly missionPreparationSeconds: number;
+  /** Time services spent handling payload, and what they put aboard and took off. */
+  readonly payloadSeconds: number;
+  readonly payloadLoadedKg: number;
+  readonly payloadRemovedKg: number;
+  /** Services that had to wait for a point at their aerodrome, and for how long in all. */
+  readonly servicesQueued: number;
+  readonly resourceWaitSeconds: number;
+  /**
+   * Missions that had a scheduled launch time and launched: how many left after it, and by how
+   * much in all. A scheduled time is an intention; nothing launches by itself.
+   */
+  readonly launchesScheduled: number;
+  readonly launchesLate: number;
+  readonly launchDelaySeconds: number;
   /** Events that began in the period. */
   readonly eventsStarted: number;
 }
@@ -111,6 +125,19 @@ export interface AircraftUtilisation {
   /** 0 to 1; `null` when the period holds no recorded time for the aircraft. */
   readonly availability: number | null;
   readonly utilisation: number | null;
+}
+
+/** Ground services finished in the period at one aerodrome. */
+export interface AerodromeActivity {
+  /** The aerodrome's code as the log recorded it. */
+  readonly at: string;
+  readonly services: number;
+  readonly serviceSeconds: number;
+  /** Services that waited for a point there, and the time they waited. */
+  readonly servicesQueued: number;
+  readonly waitSeconds: number;
+  readonly fuelLoadedKg: number;
+  readonly payloadLoadedKg: number;
 }
 
 export interface FleetIndicators {
@@ -193,6 +220,8 @@ export interface Report {
   readonly maintenanceUnderWay: readonly MaintenanceVisit[];
   /** Ground services finished in the period, by completion then aircraft. */
   readonly services: readonly ServiceRecord[];
+  /** Those services by the aerodrome they were done at, by code. */
+  readonly aerodromes: readonly AerodromeActivity[];
   /** Open at some moment in the period, by start then identifier. */
   readonly events: readonly EventRecord[];
   /**
@@ -247,6 +276,12 @@ export function activityTotals(
   // A mission's fuel is loaded by a preparation, or follows the checks of a turnaround already
   // under way. Either way the service names the mission.
   const forMissions = services.filter((service) => service.missionId !== null);
+  const queued = services.filter((service) => service.waitS > 0);
+  const scheduled = missions.filter(
+    (mission) => mission.plannedStartTick !== null && mission.actualStartTick !== null,
+  );
+  const lateness = (mission: MissionRecord) =>
+    Math.max((mission.actualStartTick ?? 0) - (mission.plannedStartTick ?? 0), 0);
   const withWeather = flights.filter(
     (flight) => flight.stillAirFuelUsedKg !== null && flight.stillAirDurationS !== null,
   );
@@ -289,10 +324,19 @@ export function activityTotals(
     fuelLoadedKg: sum(services, (service) => Math.max(service.loadedKg, 0)),
     fuelRemovedKg: sum(services, (service) => Math.max(-service.loadedKg, 0)),
     missionPreparations: forMissions.length,
-    // The time the mission's fuel took: all of a preparation, the fuelling part of a turnaround.
+    // The time the mission's fuel and payload took: all of a preparation; of a turnaround, what
+    // followed its checks.
     missionPreparationSeconds: sum(forMissions, (service) =>
-      service.reason === 'preparation' ? service.durationS : service.refuelS,
+      service.reason === 'preparation' ? service.durationS : service.durationS - service.checksS,
     ),
+    payloadSeconds: sum(services, (service) => service.loadS),
+    payloadLoadedKg: sum(services, (service) => Math.max(service.payloadLoadedKg, 0)),
+    payloadRemovedKg: sum(services, (service) => Math.max(-service.payloadLoadedKg, 0)),
+    servicesQueued: queued.length,
+    resourceWaitSeconds: sum(queued, (service) => service.waitS),
+    launchesScheduled: scheduled.length,
+    launchesLate: scheduled.filter((mission) => lateness(mission) > 0).length,
+    launchDelaySeconds: sum(scheduled, lateness),
     eventsStarted,
   };
 }
@@ -417,6 +461,23 @@ export function buildReport(
   const services = serviceRecords(data.statusLog).filter((service) =>
     inPeriod(service.completedTick, period),
   );
+
+  const aerodromes: AerodromeActivity[] = [...new Set(services.map((service) => service.at))]
+    .filter((at) => at !== '')
+    .sort()
+    .map((at) => {
+      const there = services.filter((service) => service.at === at);
+      const waited = there.filter((service) => service.waitS > 0);
+      return {
+        at,
+        services: there.length,
+        serviceSeconds: sum(there, (service) => service.durationS),
+        servicesQueued: waited.length,
+        waitSeconds: sum(waited, (service) => service.waitS),
+        fuelLoadedKg: sum(there, (service) => Math.max(service.loadedKg, 0)),
+        payloadLoadedKg: sum(there, (service) => Math.max(service.payloadLoadedKg, 0)),
+      };
+    });
 
   const changes = new Map<string, StatusChange[]>();
   for (const change of statusChanges(data.statusLog)) {
@@ -546,6 +607,7 @@ export function buildReport(
     maintenance,
     maintenanceUnderWay,
     services,
+    aerodromes,
     events,
     // A period that ended before the report's moment has nothing in progress: it is over.
     inProgress:

@@ -2,6 +2,7 @@ import {
   decodeRngState,
   encodeRngState,
   isSpeedMultiplier,
+  AERODROME_SIZES,
   SERVICE_REASONS,
   SERVICE_STAGES,
   simInstant,
@@ -99,6 +100,7 @@ const routePoint = z.object({
   lon: z.number().min(-180).max(180),
   elevationM: z.number(),
   refId: z.string().optional(),
+  size: z.enum(AERODROME_SIZES).optional(),
 });
 const planJson = z.object({
   points: z.array(routePoint).min(2),
@@ -164,17 +166,38 @@ const transferJson = z.object({
   rateKgS: z.number().positive(),
   completeTick: count,
 });
-const serviceJson = z.object({
-  reason: z.enum(SERVICE_REASONS),
-  startedTick: count,
-  stage: z.enum(SERVICE_STAGES),
-  checksCompleteTick: count,
-  fuelAtStartKg: quantity,
-  targetFuelKg: quantity.nullable(),
+const taskJson = z.object({
+  targetKg: quantity,
+  queuedTick: count.nullable(),
   transfer: transferJson.nullable(),
-  refuellingSinceTick: count.nullable(),
-  missionId: z.string().min(1).nullable(),
+  startedTick: count.nullable(),
+  completedTick: count.nullable(),
 });
+const serviceJson = z.union([
+  z.object({
+    reason: z.enum(SERVICE_REASONS),
+    startedTick: count,
+    stage: z.enum(SERVICE_STAGES),
+    checksCompleteTick: count,
+    fuelAtStartKg: quantity,
+    payloadAtStartKg: quantity,
+    fuel: taskJson.nullable(),
+    payload: taskJson.nullable(),
+    missionId: z.string().min(1).nullable(),
+  }),
+  // As simulation model 7 wrote it (ADR 0027). The engine carries it over when it loads it.
+  z.object({
+    reason: z.enum(SERVICE_REASONS),
+    startedTick: count,
+    stage: z.enum(['checks', 'refuelling']),
+    checksCompleteTick: count,
+    fuelAtStartKg: quantity,
+    targetFuelKg: quantity.nullable(),
+    transfer: transferJson.nullable(),
+    refuellingSinceTick: count.nullable(),
+    missionId: z.string().min(1).nullable(),
+  }),
+]);
 const performanceJson = z.object({
   modelVersion: z.int().positive(),
   emptyMassKg: z.number().positive(),
@@ -368,6 +391,7 @@ const placeRow = z.object({
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
   elevationM: z.number(),
+  size: z.enum(AERODROME_SIZES).nullable(),
 });
 
 const eventRow = z.object({
@@ -440,7 +464,11 @@ function toAircraft(row: unknown): AircraftState {
     flights: a.flights,
     flightSecondsSinceMaintenance: a.flightSecondsSinceMaintenance,
     maintenanceCompleteTick: a.maintenanceCompleteTick,
-    service: a.service === null ? null : json(serviceJson, a.service, `${what} service`),
+    // A record in model 7's shape is carried over by the engine when it loads the world.
+    service:
+      a.service === null
+        ? null
+        : (json(serviceJson, a.service, `${what} service`) as AircraftState['service']),
     activeFlightId: a.activeFlightId,
     acquiredTick: a.acquiredTick,
     performance:
@@ -539,6 +567,7 @@ function toPlace(row: unknown): RoutePoint {
     lon: place.lon,
     elevationM: place.elevationM,
     ...(place.refId === null ? {} : { refId: place.refId }),
+    ...(place.size === null ? {} : { size: place.size }),
   };
 }
 
@@ -769,6 +798,7 @@ export class SqliteWorldStore implements WorldStore {
       lat: place.lat,
       lon: place.lon,
       elevationM: place.elevationM,
+      size: place.size ?? null,
     }));
 
     const eventRows = events.events.map((event) => {

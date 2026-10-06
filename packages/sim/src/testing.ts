@@ -193,15 +193,26 @@ export function untilServiced(engine: Steppable, aircraftId: string, limitS = 4 
 }
 
 /**
- * Brings an aircraft's fuel to a quantity and runs the world until that is done: what an operator
- * does before a launch, now that fuel takes time to load.
+ * Brings an aircraft's fuel, and its payload if one is given, to a quantity and runs the world
+ * until that is done: what an operator does before a launch, now that both take time to load.
  */
-export function fuelled(engine: Steppable, aircraftId: string, fuelKg: number): void {
+export function fuelled(
+  engine: Steppable,
+  aircraftId: string,
+  fuelKg: number,
+  /** The payload to have aboard as well; left as it is when not given. */
+  payloadKg?: number,
+): void {
   untilServiced(engine, aircraftId);
   const status = engine.snapshot().fleet.aircraft.find((each) => each.id === aircraftId)?.status;
   // Anything else cannot be fuelled, and the launch that follows says why it cannot go.
   if (status !== 'available') return;
-  engine.applyCommand({ type: 'serviceAircraft', aircraftId, fuelKg });
+  engine.applyCommand({
+    type: 'serviceAircraft',
+    aircraftId,
+    fuelKg,
+    ...(payloadKg !== undefined && { payloadKg }),
+  });
   untilServiced(engine, aircraftId);
 }
 
@@ -221,7 +232,7 @@ export function launchFuelled(
   engine: Steppable,
   command: Extract<FleetCommand, { type: 'launchFlight' }>,
 ): boolean {
-  fuelled(engine, command.aircraftId, command.load.fuelKg);
+  fuelled(engine, command.aircraftId, command.load.fuelKg, command.load.payloadKg);
   return engine.applyCommand(command);
 }
 
