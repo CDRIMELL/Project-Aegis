@@ -782,7 +782,46 @@ function GroundOperationsPanel({ report }: { readonly report: SectionProps['repo
             label="Missions prepared"
             value={formatInteger(totals.missionPreparations)}
             detail={mean(totals.missionPreparationSeconds, totals.missionPreparations)}
-            hint="Missions whose aircraft had to be prepared before it could launch, and how long each waited."
+            hint="Missions whose aircraft had to be prepared before it could launch, and how long each took."
+          />
+          <StatTile
+            label="Waited for a point"
+            value={formatInteger(totals.servicesQueued)}
+            detail={mean(totals.resourceWaitSeconds, totals.servicesQueued)}
+            hint="Services that had to wait for a fuel point or for payload handling at their aerodrome, and how long each waited."
+          />
+          <StatTile
+            label="Payload loaded"
+            value={formatInteger(totals.payloadLoadedKg)}
+            unit="kg"
+            detail={`${hours(totals.payloadSeconds)} h handling; ${formatInteger(totals.payloadRemovedKg)} kg taken off`}
+            hint="Payload put aboard and taken off on the ground by the services completed in the period. A delivered payload is unloaded by its mission, not by a service."
+          />
+          <StatTile
+            label="Launched late"
+            value={
+              totals.launchesScheduled === 0
+                ? null
+                : `${formatInteger(totals.launchesLate)} of ${formatInteger(totals.launchesScheduled)}`
+            }
+            detail={
+              totals.launchesScheduled === 0
+                ? 'no mission had a scheduled time'
+                : mean(totals.launchDelaySeconds, totals.launchesLate)
+            }
+            hint="Missions with a scheduled launch time that left after it. A scheduled time is an intention: the operator launches, and nothing launches by itself."
+          />
+          <StatTile
+            label="Aerodromes used"
+            value={formatInteger(report.aerodromes.length)}
+            detail={
+              report.aerodromes.length === 0
+                ? 'none in the period'
+                : report.aerodromes
+                    .map((each) => `${each.at} ${formatInteger(each.services)}`)
+                    .join(' · ')
+            }
+            hint="Where the services completed in the period were done, with the number at each."
           />
         </DataList>
         {services.length === 0 ? (
@@ -799,7 +838,7 @@ function GroundOperationsPanel({ report }: { readonly report: SectionProps['repo
                   header: 'Service',
                   cell: (service) => (
                     <TwoLine
-                      top={SERVICE_KIND[service.reason]}
+                      top={`${SERVICE_KIND[service.reason]}${service.at ? ` · ${service.at}` : ''}`}
                       bottom={
                         service.missionId ? <MissionLink id={service.missionId} /> : 'no mission'
                       }
@@ -824,9 +863,11 @@ function GroundOperationsPanel({ report }: { readonly report: SectionProps['repo
                     <TwoLine
                       top={formatDuration(service.durationS)}
                       bottom={
-                        service.refuelS > 0
-                          ? `${formatDuration(service.refuelS)} on fuel`
-                          : 'no fuel moved'
+                        service.waitS > 0
+                          ? `${formatDuration(service.waitS)} waiting for a point`
+                          : service.refuelS > 0
+                            ? `${formatDuration(service.refuelS)} on fuel`
+                            : 'no fuel moved'
                       }
                     />
                   ),
@@ -842,7 +883,11 @@ function GroundOperationsPanel({ report }: { readonly report: SectionProps['repo
                           ? '—'
                           : `${service.loadedKg > 0 ? '+' : '−'}${formatInteger(Math.abs(service.loadedKg))} kg`
                       }
-                      bottom={`${formatInteger(service.fuelKg)} kg aboard`}
+                      bottom={
+                        service.payloadLoadedKg === 0
+                          ? `${formatInteger(service.fuelKg)} kg aboard`
+                          : `payload ${service.payloadLoadedKg > 0 ? '+' : '−'}${formatInteger(Math.abs(service.payloadLoadedKg))} kg`
+                      }
                     />
                   ),
                 },

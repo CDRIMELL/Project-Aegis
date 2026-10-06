@@ -142,9 +142,17 @@ export function setHome(aircraftId: string, home: RoutePoint): void {
   simClient.send({ type: 'setHome', aircraftId, home });
 }
 
-/** Brings a grounded aircraft's fuel to a quantity, over simulated time (ADR 0027). */
-export function serviceAircraft(aircraftId: string, fuelKg: number): void {
-  simClient.send({ type: 'serviceAircraft', aircraftId, fuelKg });
+/**
+ * Brings a grounded aircraft's fuel, and its payload if one is given, to a quantity over
+ * simulated time (ADR 0027, ADR 0028).
+ */
+export function serviceAircraft(aircraftId: string, fuelKg: number, payloadKg?: number): void {
+  simClient.send({
+    type: 'serviceAircraft',
+    aircraftId,
+    fuelKg,
+    ...(payloadKg !== undefined && { payloadKg }),
+  });
 }
 
 export function stopServicing(aircraftId: string): void {

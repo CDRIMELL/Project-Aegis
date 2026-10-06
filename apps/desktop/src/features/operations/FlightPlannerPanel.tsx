@@ -46,7 +46,7 @@ import {
   SimulatedBadge,
   placeName,
 } from '../shared/fleet-display';
-import { GroundServiceProgress } from '../shared/GroundService';
+import { GroundServiceProgress, ReadinessChecklist } from '../shared/GroundService';
 import { ObjectiveList } from '../shared/mission-display';
 import { usePlanContext } from '../shared/usePlanContext';
 import { useStable } from '../shared/useStable';
@@ -194,6 +194,7 @@ function DraftEditor({
   const navigate = useNavigate();
   const simTime = useSimStore((state) => state.view?.clock.simTime ?? null);
   const tick = useSimStore((state) => state.view?.clock.tick ?? 0);
+  const fleet = useSimStore((state) => state.view?.fleet.aircraft);
   const context = usePlanContext();
   const evaluation = useMemo(
     () => (model ? evaluateDraft(draft, model, context) : null),
@@ -206,8 +207,13 @@ function DraftEditor({
     ? null
     : launchState(
         aircraft,
-        { fuelKg: draft.load.fuelKg, origin: draft.plan.points[0] ?? null },
+        {
+          fuelKg: draft.load.fuelKg,
+          payloadKg: draft.load.payloadKg,
+          origin: draft.plan.points[0] ?? null,
+        },
         tick,
+        fleet,
       );
   const ready = launch?.readiness.ready ?? false;
   const estimate = evaluation.estimate;
@@ -319,7 +325,7 @@ function DraftEditor({
             min={0}
             max={model.maxPayloadKg}
             value={Math.round(draft.load.payloadKg)}
-            hint="Total mass carried. No particular cargo is modelled."
+            hint={`Aboard now: ${formatKg(aircraft.payloadKg)}. Total mass carried; no particular cargo is modelled. What is not aboard is loaded before launch, which takes time.`}
             onChange={(value) => {
               editDraft((current) => setLoad(current, { payloadKg: value }));
             }}
@@ -362,23 +368,26 @@ function DraftEditor({
       {launch && !ready && (
         <section className="flex flex-col gap-2.5">
           <SectionLabel>Before it can launch</SectionLabel>
-          <ul className="flex flex-col gap-1 text-sm text-ink-secondary">
-            {launch.issues.map((issue) => (
-              <li key={issue}>{issue}</li>
-            ))}
-          </ul>
-          {launch.prepareFuelKg !== null && (
+          <ReadinessChecklist
+            lines={launch.lines}
+            earliest={
+              launch.readyTick !== null && simTime !== null
+                ? formatUtc(addMs(simTime, (launch.readyTick - tick) * 1000)).slice(11, 16)
+                : null
+            }
+          />
+          {launch.prepare !== null && (
             <div>
               <Button
                 size="sm"
                 icon={Fuel}
+                title={launch.issues.join(' ')}
                 onClick={() => {
-                  serviceAircraft(aircraft.id, draft.load.fuelKg);
+                  serviceAircraft(aircraft.id, draft.load.fuelKg, draft.load.payloadKg);
                 }}
               >
-                {aircraft.status === 'servicing'
-                  ? `Then bring fuel to ${formatKg(draft.load.fuelKg)}`
-                  : `Prepare: bring fuel to ${formatKg(draft.load.fuelKg)}`}
+                {aircraft.status === 'servicing' ? 'Then prepare' : 'Prepare'}:{' '}
+                {formatKg(draft.load.fuelKg)} of fuel, {formatKg(draft.load.payloadKg)} of payload
               </Button>
             </div>
           )}

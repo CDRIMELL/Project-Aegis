@@ -22,6 +22,8 @@ import {
   type RunwayRecord,
 } from '../../reference/queries';
 import { select, type Selection } from '../../state/map-store';
+import { aerodromePoint } from '../../fleet/catalogue';
+import { AerodromeGroundOperations } from '../shared/GroundService';
 import { ProvenanceSection, ReferenceBadges } from '../shared/ProvenanceSection';
 import { useAsync } from '../shared/useAsync';
 
@@ -153,6 +155,8 @@ function LocationPanel({ detail }: { readonly detail: LocationDetail }) {
           <Runways runways={runways} />
         </section>
       )}
+      {/* Simulated, and marked so: what AEGIS assumes this aerodrome can do for its aircraft. */}
+      {!isCity && <AerodromeGroundOperations point={aerodromePoint(location)} />}
 
       <ProvenanceSection provenance={provenance} />
     </DetailPanel>

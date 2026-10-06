@@ -40,8 +40,9 @@ export function startEnvironmentBinding(): void {
         type: 'fill',
         source: '',
         paint: {
-          'fill-color': palette.simulated,
-          'fill-opacity': ['interpolate', ['linear'], ['get', 'intensity'], 0, 0.04, 1, 0.34],
+          // Its own colour, not the green of aircraft and routes: weather is background to them.
+          'fill-color': palette.weather,
+          'fill-opacity': ['interpolate', ['linear'], ['get', 'intensity'], 0, 0.03, 1, 0.22],
         },
       },
     ]);

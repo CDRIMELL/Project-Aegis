@@ -17,7 +17,7 @@ import {
   type RoutePoint,
   type SimInstant,
 } from '@aegis/domain';
-import { launchState } from '../fleet/ground-logic';
+import { launchState, type ReadinessLine } from '../fleet/ground-logic';
 import {
   MAINTENANCE_POLICY,
   defaultConfiguration,
@@ -162,13 +162,21 @@ export interface Readiness {
   readonly issues: readonly string[];
   /** When the servicing under way will leave it ready, as a tick; `null` if it will not. */
   readonly readyTick: number | null;
-  /** The fuel to ask for so that it becomes ready, when fuel is what is missing. */
-  readonly prepareFuelKg: number | null;
-  /** How long loading that fuel would take from when it can begin. */
+  /** What to ask for so that it becomes ready, when fuel or payload is what is missing. */
+  readonly prepare: { readonly fuelKg: number; readonly payloadKg: number } | null;
+  /** How long that would take once the aerodrome has a point free. */
   readonly prepareS: number | null;
+  /** The aircraft, its fuel, its payload and the aerodrome, each in a line. */
+  readonly lines: readonly ReadinessLine[];
 }
 
-const NOT_READY = { ready: false, readyTick: null, prepareFuelKg: null, prepareS: null } as const;
+const NOT_READY = {
+  ready: false,
+  readyTick: null,
+  prepare: null,
+  prepareS: null,
+  lines: [],
+} as const;
 
 /**
  * Whether an accepted mission can be launched now. Derived, never stored: it depends on the
@@ -180,6 +188,8 @@ export function readiness(
   mission: Mission,
   aircraft: AircraftState | undefined,
   tick: number,
+  /** Every aircraft, so that the queue at the aerodrome is counted. */
+  fleet: readonly AircraftState[] = aircraft ? [aircraft] : [],
 ): Readiness {
   if (mission.status !== 'accepted') {
     return { ...NOT_READY, issues: ['The mission has not been accepted.'] };
@@ -187,7 +197,12 @@ export function readiness(
   const origin = mission.plan?.points[0];
   const state =
     origin && mission.load
-      ? launchState(aircraft, { fuelKg: mission.load.fuelKg, origin }, tick)
+      ? launchState(
+          aircraft,
+          { fuelKg: mission.load.fuelKg, payloadKg: mission.load.payloadKg, origin },
+          tick,
+          fleet,
+        )
       : null;
   if (!state) {
     return { ...NOT_READY, issues: ['The mission has no aircraft or no route.'] };
@@ -196,8 +211,9 @@ export function readiness(
     ready: state.readiness.ready,
     issues: state.issues,
     readyTick: state.readyTick,
-    prepareFuelKg: state.prepareFuelKg,
+    prepare: state.prepare,
     prepareS: state.prepareS,
+    lines: state.lines,
   };
 }
 

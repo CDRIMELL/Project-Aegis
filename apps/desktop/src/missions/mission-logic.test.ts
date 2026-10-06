@@ -210,7 +210,7 @@ describe('describing a mission', () => {
 describe('readiness', () => {
   const readinessOf = (engine: SimulationEngine) =>
     readiness(missionOf(engine), aircraftOf(engine), engine.clock.tick);
-  const NOT_READY = { ready: false, readyTick: null, prepareFuelKg: null, prepareS: null };
+  const NOT_READY = { ready: false, readyTick: null, prepare: null, prepareS: null, lines: [] };
 
   it('is derived from the aircraft, and says why a mission is not ready', () => {
     const engine = world();
@@ -233,13 +233,23 @@ describe('readiness', () => {
         `^${TRANSPORT} is (being refuelled|having fuel taken off)\\. It will be available in \\d+ min\\.$`,
       ),
     );
-    expect(preparing.readyTick).toBe(service?.transfer?.completeTick);
+    expect(preparing.readyTick).toBe(service?.fuel?.transfer?.completeTick);
     // Nothing for the operator to do: the fuel on its way is the fuel the mission departs with.
-    expect(preparing.prepareFuelKg).toBeNull();
+    expect(preparing.prepare).toBeNull();
 
     untilServiced(engine, TRANSPORT);
     expect(engine.clock.tick).toBe(preparing.readyTick);
-    expect(readinessOf(engine)).toEqual({ ...NOT_READY, ready: true, issues: [] });
+    expect(readinessOf(engine)).toMatchObject({
+      ...NOT_READY,
+      ready: true,
+      issues: [],
+      lines: [
+        { label: 'Aircraft', ok: true },
+        { label: 'Fuel', ok: true },
+        { label: 'Payload', ok: true },
+        { label: 'Ground resource', value: 'Available', ok: true },
+      ],
+    });
 
     // The aircraft goes into maintenance: the mission is unchanged, but no longer ready.
     engine.applyCommand({ type: 'startMaintenance', aircraftId: TRANSPORT });
@@ -282,7 +292,7 @@ describe('readiness', () => {
     expect(short.issues[0]).toMatch(
       /holds [\d,]+ kg; the flight departs with [\d,]+ kg\. Taking 2,000 kg off takes \d+ min\./,
     );
-    expect(short.prepareFuelKg).toBe(wanted);
+    expect(short.prepare).toEqual({ fuelKg: wanted, payloadKg: missionOf(engine).load?.payloadKg });
     expect(short.prepareS).toBeGreaterThan(0);
     expect(short.readyTick).toBeNull();
     // The simulation refuses for the same reason, in the same words.
@@ -292,7 +302,7 @@ describe('readiness', () => {
 
     // Doing what is offered makes it ready, after exactly the time that was quoted.
     const from = engine.clock.tick;
-    fuelled(engine, TRANSPORT, short.prepareFuelKg as number);
+    fuelled(engine, TRANSPORT, short.prepare?.fuelKg as number);
     expect(engine.clock.tick - from).toBe(short.prepareS);
     expect(readinessOf(engine).ready).toBe(true);
   });

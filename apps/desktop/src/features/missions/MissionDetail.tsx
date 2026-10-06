@@ -46,7 +46,7 @@ import {
   relativeTick,
   typeLabel,
 } from '../shared/mission-display';
-import { GroundServiceProgress } from '../shared/GroundService';
+import { GroundServiceProgress, ReadinessChecklist } from '../shared/GroundService';
 import { useAsync } from '../shared/useAsync';
 import { usePlanContext } from '../shared/usePlanContext';
 import { useLastReady, useStable } from '../shared/useStable';
@@ -69,9 +69,14 @@ const LOG_WORDS: Readonly<Record<string, string>> = {
   flightHolding: 'Holding: destination closed',
   flightHoldEnded: 'Hold ended',
   servicingStarted: 'Aircraft preparation began',
+  serviceQueued: 'Waiting for a ground resource',
+  serviceWithdrawn: 'Preparation withdrawn',
   refuellingStarted: 'Fuel transfer began',
   refuellingCompleted: 'Fuel transfer ended',
+  loadingStarted: 'Payload handling began',
+  loadingCompleted: 'Payload handling ended',
   servicingCompleted: 'Aircraft ready',
+  launchDelayed: 'Scheduled launch time passed',
   opportunityGenerated: 'Opportunity generated',
   opportunityExpired: 'Opportunity expired',
   objectiveCompleted: 'Objective completed',
@@ -114,8 +119,16 @@ function serviceDetail(entry: LogEntry): string | null {
       return kgOf(payload.targetFuelKg)
         ? `Fuel to be brought to ${kgOf(payload.targetFuelKg) ?? ''}.`
         : '';
+    case 'serviceQueued':
+      return `${payload.kind === 'fuel' ? 'Fuel point' : 'Payload handling'} in use${typeof payload.behind === 'string' ? ` by ${payload.behind}` : ''}${typeof payload.position === 'number' ? `; place ${payload.position} in the queue` : ''}.`;
+    case 'serviceWithdrawn':
+      return 'What had not begun was given up; anything under way goes on.';
+    case 'launchDelayed':
+      return typeof payload.reason === 'string' ? payload.reason : '';
     case 'refuellingStarted':
-      return `From ${kgOf(payload.fromKg) ?? '?'} to ${kgOf(payload.toKg) ?? '?'}${duration ? `, ${duration}` : ''}.`;
+    case 'loadingStarted':
+      return `From ${kgOf(payload.fromKg) ?? '?'} to ${kgOf(payload.toKg) ?? '?'}${duration ? `, ${duration}` : ''}${typeof payload.waitedS === 'number' ? `, after waiting ${minutes(payload.waitedS)} for a point` : ''}.`;
+    case 'loadingCompleted':
     case 'refuellingCompleted': {
       const moved =
         typeof payload.loadedKg === 'number' && payload.loadedKg < 0
@@ -124,7 +137,7 @@ function serviceDetail(entry: LogEntry): string | null {
       return `${moved}${duration ? ` in ${duration}` : ''}${payload.stopped === true ? ', stopped by order' : ''}.`;
     }
     case 'servicingCompleted':
-      return `${kgOf(payload.fuelKg) ?? ''} aboard${duration ? `, after ${duration}` : ''}.`;
+      return `${kgOf(payload.fuelKg) ?? ''} of fuel and ${kgOf(payload.payloadKg) ?? '0 kg'} of payload aboard${duration ? `, after ${duration}` : ''}${typeof payload.waitS === 'number' && payload.waitS > 0 ? `, ${minutes(payload.waitS)} of it waiting for a point` : ''}.`;
     default:
       return null;
   }
@@ -377,7 +390,21 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
     [open, stableMission, stableAircraft, hourTick, context],
   );
   const tick = useSimStore((state) => state.view?.clock.tick ?? 0);
-  const ready = readiness(mission, aircraft, tick);
+  const fleet = useSimStore((state) => state.view?.fleet.aircraft);
+  const ready = readiness(mission, aircraft, tick, fleet);
+  // A scheduled launch is an intention: it is shown against what will actually be possible.
+  const scheduled = mission.plannedStartTick;
+  const earliestTick = ready.ready ? tick : ready.readyTick;
+  const earliest =
+    earliestTick === null
+      ? null
+      : `${ready.ready ? 'Now' : (formatTick(epoch, earliestTick) ?? '')}${
+          scheduled === null
+            ? ''
+            : earliestTick > scheduled
+              ? `; scheduled for ${formatTick(epoch, scheduled) ?? ''}, ${formatDuration(earliestTick - scheduled)} late`
+              : `; scheduled for ${formatTick(epoch, scheduled) ?? ''}`
+        }`;
   const risk = evaluation?.risk ?? mission.assessment?.risk ?? null;
   // Before launch, show what the plan will do to each objective; afterwards, what happened.
   const forecast = open && mission.status !== 'offered' ? (evaluation?.forecast ?? null) : null;
@@ -516,24 +543,32 @@ export function MissionDetail({ mission, onEdit }: MissionDetailProps) {
           title={ready.ready ? 'Ready to launch' : 'Not ready to launch'}
         >
           {ready.ready
-            ? 'The aircraft is available at the origin with the mission’s fuel aboard. Launch when you are ready.'
+            ? 'The aircraft is available at the origin with the mission’s fuel and payload aboard. Launch when you are ready.'
             : ready.issues.join(' ')}
           {!ready.ready && ready.readyTick !== null && (
             <> It will be ready at {formatTick(epoch, ready.readyTick)} with nothing more done.</>
           )}
         </Notice>
       )}
+      {mission.status === 'accepted' && ready.lines.length > 0 && (
+        <Panel title="Launch readiness">
+          <ReadinessChecklist lines={ready.lines} earliest={earliest} />
+        </Panel>
+      )}
       {mission.status === 'accepted' && aircraft && !ready.ready && (
         <div className="flex flex-col gap-3">
-          {ready.prepareFuelKg !== null && (
+          {ready.prepare !== null && (
             <div>
               <Button
                 icon={Fuel}
                 onClick={() => {
-                  serviceAircraft(aircraft.id, ready.prepareFuelKg ?? 0);
+                  if (ready.prepare) {
+                    serviceAircraft(aircraft.id, ready.prepare.fuelKg, ready.prepare.payloadKg);
+                  }
                 }}
               >
-                Prepare the aircraft: bring fuel to {formatKg(ready.prepareFuelKg)}
+                Prepare the aircraft: {formatKg(ready.prepare.fuelKg)} of fuel,{' '}
+                {formatKg(ready.prepare.payloadKg)} of payload
               </Button>
             </div>
           )}

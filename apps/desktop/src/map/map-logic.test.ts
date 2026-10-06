@@ -35,6 +35,7 @@ const PALETTE: MapPalette = {
   simulated: '#0b0b0b',
   selection: '#0c0c0c',
   caution: '#0d0d0d',
+  weather: '#0e0e0e',
 };
 const FONTS = {
   sans: [{ url: '/fonts/sans.woff2', unicodeRange: ['U+0000-00FF'] }],

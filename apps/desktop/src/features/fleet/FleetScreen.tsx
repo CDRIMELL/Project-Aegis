@@ -24,7 +24,7 @@ import { formatDuration, formatInteger, formatKg, formatKm } from '../../format'
 import { focusAircraft } from '../../map/flight-binding';
 import { beginPlanning } from '../../state/plan-store';
 import { NO_FLIGHTS, useSimStore } from '../../state/sim-store';
-import { FuelRequestControl, GroundServiceProgress } from '../shared/GroundService';
+import { GroundServiceProgress, ServiceRequestControl } from '../shared/GroundService';
 import {
   AerodromePicker,
   AircraftStatusBadge,
@@ -124,7 +124,7 @@ function FuelPanel({ aircraft }: { readonly aircraft: AircraftState }) {
           <DataField
             label="Payload"
             value={formatKg(aircraft.payloadKg)}
-            hint="Total mass carried. Set when a flight is planned."
+            hint="Total mass carried. Loaded on the ground over simulated time, before a flight."
           />
           <DataField
             label="Reserve (assumed)"
@@ -135,7 +135,7 @@ function FuelPanel({ aircraft }: { readonly aircraft: AircraftState }) {
         {aircraft.status === 'servicing' ? (
           <GroundServiceProgress aircraft={aircraft} columns={2} />
         ) : (
-          <FuelRequestControl aircraft={aircraft} />
+          <ServiceRequestControl aircraft={aircraft} />
         )}
         <Hint>
           Fuel quantities are simulated. Capacity is an assumption, not a published figure. Fuel is

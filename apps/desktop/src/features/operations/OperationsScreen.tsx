@@ -102,8 +102,9 @@ function LayerPanel() {
       />
       <div className="px-1.5 pb-1">
         <Hint>
-          Aircraft, routes and missions in green; events in amber. Always shown. The weather is
-          simulated.
+          Aircraft, routes and missions in green; events in amber. Always shown. Precipitation is
+          grey shading over the cells of the weather grid, stronger where it is heavier. The weather
+          is simulated.
         </Hint>
       </div>
     </FloatingPanel>

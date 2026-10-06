@@ -48,6 +48,8 @@ export interface MapPalette {
   readonly selection: string;
   /** World events that affect operations. */
   readonly caution: string;
+  /** Simulated weather: background to operations, and not their colour. */
+  readonly weather: string;
 }
 
 export const FONT_SANS = 'AEGIS Sans';

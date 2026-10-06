@@ -178,12 +178,21 @@ describe('fleet and flight: end-to-end scenario', () => {
     const model = session.aircraft().performance;
     if (!model) throw new Error('setup');
     // The plan's fuel is loaded first, which takes simulated time (ADR 0027).
-    const aboard = session.aircraft().fuelKg === draft.load.fuelKg;
-    session.execute({ type: 'serviceAircraft', aircraftId: AIRCRAFT, fuelKg: draft.load.fuelKg });
-    // Nothing to do only if the aircraft already holds exactly the plan's fuel.
-    expect(session.aircraft().status).toBe(aboard ? 'available' : 'servicing');
+    // So is its payload (ADR 0028). The two are handled side by side.
+    session.execute({
+      type: 'serviceAircraft',
+      aircraftId: AIRCRAFT,
+      fuelKg: draft.load.fuelKg,
+      payloadKg: draft.load.payloadKg,
+    });
+    expect(session.aircraft().status).toBe('servicing');
+    expect(session.aircraft().payloadKg).toBe(0);
     for (let i = 0; i < 4000 && session.aircraft().status === 'servicing'; i++) session.run(1000);
-    expect(session.aircraft()).toMatchObject({ status: 'available', fuelKg: draft.load.fuelKg });
+    expect(session.aircraft()).toMatchObject({
+      status: 'available',
+      fuelKg: draft.load.fuelKg,
+      payloadKg: draft.load.payloadKg,
+    });
     // Estimated in the world as it is at the moment of launch: this is what will be flown.
     const estimate = evaluateDraft(draft, model, session.context()).estimate;
     launchEstimate = estimate;
@@ -215,7 +224,8 @@ describe('fleet and flight: end-to-end scenario', () => {
     expect(later.altitudeM).toBeGreaterThan(early.altitudeM);
     expect(later.speedKmh).toBeGreaterThan(early.speedKmh);
     expect(later.fuelKg).toBeLessThan(early.fuelKg);
-    expect(later.etaTick).toBe(estimate?.durationS);
+    // It left once it had been prepared, not at the start of the world.
+    expect(later.etaTick).toBe(later.departedTick + (estimate?.durationS ?? 0));
     expect(later.totalM).toBeCloseTo(estimate?.distanceM ?? 0, 3);
     expect(session.aircraft().fuelKg).toBe(later.fuelKg);
   });

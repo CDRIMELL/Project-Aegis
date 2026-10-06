@@ -1,3 +1,4 @@
+import { AERODROME_SIZES } from '@aegis/domain';
 import {
   derivePerformance,
   type EngineType,
@@ -200,6 +201,8 @@ export function buildCatalogue(
 /** The parts of a reference location record needed to fly to it. */
 export interface AerodromeRow {
   readonly id: string;
+  /** The reference kind: `airport_large`, `airport_medium` or `airport_small`. */
+  readonly kind?: string;
   readonly name: string;
   readonly lat: number;
   readonly lon: number;
@@ -215,6 +218,7 @@ export interface AerodromeRow {
  */
 export function aerodromePoint(row: AerodromeRow): RoutePoint {
   const code = row.icao ?? row.iata ?? row.ident ?? null;
+  const size = AERODROME_SIZES.find((each) => row.kind === `airport_${each}`);
   return {
     kind: 'aerodrome',
     name: row.name,
@@ -223,6 +227,8 @@ export function aerodromePoint(row: AerodromeRow): RoutePoint {
     lon: row.lon,
     elevationM: row.elevationM ?? 0,
     refId: row.id,
+    // The sourced size class, which is all the simulation knows of what the aerodrome can do.
+    ...(size && { size }),
   };
 }
 

@@ -49,6 +49,7 @@ const PALETTE_TOKENS: Readonly<Record<keyof MapPalette, ColorToken>> = {
   simulated: '--color-map-simulated',
   selection: '--color-map-selection',
   caution: '--color-map-caution',
+  weather: '--color-map-weather',
 };
 
 const WORLD_VIEW = { center: [10, 30] as [number, number], zoom: 1.6 };

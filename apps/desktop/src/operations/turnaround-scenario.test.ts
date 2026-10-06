@@ -31,7 +31,13 @@ import {
 import { ManualHostClock } from '@aegis/sim/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildCatalogue, starterOrders, type AerodromeRow } from '../fleet/catalogue';
-import { fuelRequest, groundActivity, groundServiceView, launchState } from '../fleet/ground-logic';
+import {
+  groundActivity,
+  groundForecasts,
+  groundServiceView,
+  launchState,
+  serviceRequest,
+} from '../fleet/ground-logic';
 import { readiness } from '../missions/mission-logic';
 import { bindReferenceDb, loadAerodrome, loadAircraftTypes } from '../reference/queries';
 import { currentPicture } from '../reports/report-logic';
@@ -161,8 +167,13 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
     session.execute({ type: 'acceptMission', missionId: ids.first });
     // A new aircraft has full tanks; the mission wants less. That takes time too.
     expect(session.aircraft().status).toBe('servicing');
-    expect(groundActivity(session.aircraft())).toBe('Taking fuel off');
-    const readyTick = session.aircraft().service?.transfer?.completeTick as number;
+    expect(
+      groundActivity(
+        session.aircraft(),
+        groundForecasts(session.view().fleet.aircraft, session.tick()).get(ATLAS) ?? null,
+      ),
+    ).toBe('Taking fuel off');
+    const readyTick = session.aircraft().service?.fuel?.transfer?.completeTick as number;
     session.runTo(readyTick);
     session.execute({ type: 'launchMission', missionId: ids.first });
     for (let i = 0; i < 400 && session.mission(ids.first).status === 'active'; i++) {
@@ -190,13 +201,14 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
         stage: 'checks',
         startedTick: expected.landedTick,
         checksCompleteTick: expected.checksEnd,
-        targetFuelKg: null,
+        fuel: null,
+        payload: null,
       },
     });
     expect(session.tick()).toBeLessThan(expected.checksEnd);
     // What the screens say, from the same record.
     expect(currentPicture(session.view())).toMatchObject({ available: 3, servicing: 1 });
-    const shown = groundServiceView(aircraft, session.tick());
+    const shown = groundServiceView(aircraft, session.view().fleet.aircraft, session.tick());
     expect(shown?.activity).toBe('Post-flight checks');
     expect(shown?.progress.completeTick).toBe(expected.checksEnd);
     expect(shown?.stop).toBeNull();
@@ -204,8 +216,9 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
     // The planner would be told the same thing the simulation says.
     const state = launchState(
       aircraft,
-      { fuelKg: aircraft.fuelKg, origin: aircraft.location },
+      { fuelKg: aircraft.fuelKg, payloadKg: aircraft.payloadKg, origin: aircraft.location },
       session.tick(),
+      session.view().fleet.aircraft,
     );
     expect(state?.readiness.ready).toBe(false);
     expect(state?.readyTick).toBe(expected.checksEnd);
@@ -225,7 +238,7 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
     expect(session.aircraft().service).toMatchObject({
       reason: 'turnaround',
       stage: 'checks',
-      targetFuelKg: expected.fuelKg,
+      fuel: { targetKg: expected.fuelKg, queuedTick: null },
       missionId: ids.second,
     });
     // The mission page: not ready, nothing for the operator to do, and when it will be.
@@ -233,8 +246,14 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
     expect(waiting).toMatchObject({
       ready: false,
       readyTick: expected.readyTick,
-      prepareFuelKg: null,
+      prepare: null,
     });
+    expect(waiting.lines.map((line) => [line.label, line.ok])).toEqual([
+      ['Aircraft', false],
+      ['Fuel', false],
+      ['Payload', true],
+      ['Ground resource', true],
+    ]);
     expect(() => {
       session.execute({ type: 'launchMission', missionId: ids.second });
     }).toThrow(/post-flight checks/);
@@ -242,8 +261,8 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
     // Into the refuelling. Fuel rises toward what the mission departs with, and is exactly what
     // the transfer says it is at every tick looked at.
     session.runTo(expected.checksEnd + 400);
-    const transfer = session.aircraft().service?.transfer as FuelTransfer;
-    expect(session.aircraft().service?.stage).toBe('refuelling');
+    const transfer = session.aircraft().service?.fuel?.transfer as FuelTransfer;
+    expect(session.aircraft().service?.stage).toBe('preparation');
     expect(transfer).toMatchObject({
       startTick: expected.checksEnd,
       fromKg: expected.landedWithKg,
@@ -260,22 +279,27 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
       expect(now.fuelKg).toBe(fuelDuringTransfer(transfer, session.tick()));
       last = now.fuelKg;
     }
-    const shown = groundServiceView(session.aircraft(), session.tick());
+    const shown = groundServiceView(
+      session.aircraft(),
+      session.view().fleet.aircraft,
+      session.tick(),
+    );
     expect(shown?.activity).toBe('Refuelling');
     expect(shown?.progress).toMatchObject({
-      targetFuelKg: expected.fuelKg,
-      fuelRemainingKg: expected.fuelKg - last,
+      fuel: { targetKg: expected.fuelKg, remainingKg: expected.fuelKg - last, state: 'moving' },
+      payload: null,
       remainingS: expected.readyTick - session.tick(),
       missionId: ids.second,
     });
-    expect(shown?.stop?.label).toBe('Stop refuelling');
-    // Asking for the fuel it is already being brought to is not offered.
-    expect(fuelRequest(session.aircraft(), expected.fuelKg).allowed).toBe(false);
+    expect(shown?.tasks).toMatchObject([{ label: 'Fuel', state: 'Loading', done: false }]);
+    expect(shown?.stop?.label).toBe('Stop servicing');
+    // Asking for what it is already being brought to is not offered.
+    expect(serviceRequest(session.aircraft(), expected.fuelKg, 0).allowed).toBe(false);
   });
 
   it('8. progress is the same at 1x: a second of real time is a tick, and a tick of fuel', () => {
     session.execute({ type: 'setSpeed', speed: 1 });
-    const transfer = session.aircraft().service?.transfer as FuelTransfer;
+    const transfer = session.aircraft().service?.fuel?.transfer as FuelTransfer;
     const from = session.tick();
     const fuelFrom = session.aircraft().fuelKg;
     for (let second = 1; second <= 5; second++) {
@@ -309,9 +333,10 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
     const resumed = session.aircraft();
     expect(resumed.fuelKg).toBe(closed.fuelKg);
     expect(resumed.service).toEqual(closed.service);
-    expect(groundServiceView(resumed, session.tick())?.progress.remainingS).toBe(
-      expected.readyTick - atClose.clock.tick,
-    );
+    expect(
+      groundServiceView(resumed, session.view().fleet.aircraft, session.tick())?.progress
+        .remainingS,
+    ).toBe(expected.readyTick - atClose.clock.tick);
     expect(readiness(session.mission(ids.second), resumed, session.tick()).readyTick).toBe(
       expected.readyTick,
     );
@@ -369,6 +394,11 @@ describe('turnaround and refuelling: end-to-end scenario', { timeout: 120_000 },
       refuelS: expected.readyTick - expected.checksEnd,
       loadedKg: expected.fuelKg - expected.landedWithKg,
       fuelKg: expected.fuelKg,
+      loadS: 0,
+      payloadLoadedKg: 0,
+      // Nothing else was at the aerodrome: it did not have to wait for the fuel point.
+      waitS: 0,
+      at: 'EGHQ',
     });
     const first = report.services.find((service) => service.reason === 'preparation');
     expect(first).toMatchObject({ missionId: ids.first, aircraftId: ATLAS });

@@ -262,7 +262,11 @@ describe('missions: end-to-end scenario', () => {
     // not ready, the launch is refused, and the readiness says when it will be.
     expect(session.aircraft()).toMatchObject({
       status: 'servicing',
-      service: { reason: 'preparation', missionId: TRAINING, targetFuelKg: accepted.load?.fuelKg },
+      service: {
+        reason: 'preparation',
+        missionId: TRAINING,
+        fuel: { targetKg: accepted.load?.fuelKg },
+      },
     });
     const preparing = ready();
     expect(preparing.ready).toBe(false);
