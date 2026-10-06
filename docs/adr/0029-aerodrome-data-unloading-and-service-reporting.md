@@ -104,6 +104,10 @@ blocked.
 - From the upgrade, a delivery is unloaded over time. A service under way is untouched.
 - Its log is complete for replay only from the upgrade, as with every earlier model change.
 
+`verify-world` now applies the same rule the engine does: a world saved by an earlier model and not
+yet opened by this build is reported as not replayable, where it used to be replayed under the
+new rules and reported, wrongly, as a mismatch.
+
 No table changes: the size class already has its column and its JSON, and the unloading is a
 task in the service record that already exists.
 

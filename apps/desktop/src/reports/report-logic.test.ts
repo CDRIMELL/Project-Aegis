@@ -2,6 +2,7 @@ import { TICKS_PER_DAY, type Report } from '@aegis/domain';
 import { describe, expect, it } from 'vitest';
 import {
   againstEstimate,
+  askedLabel,
   bucketLabel,
   changeText,
   defaultCustom,
@@ -203,5 +204,17 @@ describe('sorting a table', () => {
       key: 'type',
       descending: true,
     });
+  });
+});
+
+describe('what a ground service was asked for', () => {
+  it('gives the request where one was recorded, down to nothing aboard', () => {
+    expect(askedLabel(30_000, 12_000)).toBe('asked 30,000 kg');
+    expect(askedLabel(0, -8000)).toBe('asked 0 kg');
+  });
+
+  it('tells nothing asked from a request an earlier model did not record', () => {
+    expect(askedLabel(null, 0)).toBe('none asked for');
+    expect(askedLabel(null, -94_885)).toBe('request not recorded');
   });
 });

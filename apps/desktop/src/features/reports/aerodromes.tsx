@@ -21,6 +21,7 @@ import { Building2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { aerodromeView, knownAerodromes } from '../../fleet/ground-logic';
 import { formatDuration, formatInteger } from '../../format';
+import { askedLabel } from '../../reports/report-logic';
 import { formatCoordinates } from '../../map/features';
 import { setReportFilter, useReportStore } from '../../state/report-store';
 import { useSimStore } from '../../state/sim-store';
@@ -111,11 +112,7 @@ function ServicesTable({
             cell: (service) => (
               <TwoLine
                 top={signed(service.loadedKg)}
-                bottom={
-                  service.fuelTargetKg === null
-                    ? 'none asked for'
-                    : `asked ${formatInteger(service.fuelTargetKg)} kg`
-                }
+                bottom={askedLabel(service.fuelTargetKg, service.loadedKg)}
               />
             ),
           },
@@ -126,11 +123,7 @@ function ServicesTable({
             cell: (service) => (
               <TwoLine
                 top={signed(service.payloadLoadedKg)}
-                bottom={
-                  service.payloadTargetKg === null
-                    ? 'none asked for'
-                    : `asked ${formatInteger(service.payloadTargetKg)} kg`
-                }
+                bottom={askedLabel(service.payloadTargetKg, service.payloadLoadedKg)}
               />
             ),
           },
@@ -167,7 +160,7 @@ function AerodromeDetail({
   return (
     <>
       <Panel title={`${point?.name ?? code} · identity`}>
-        <DataList columns={4}>
+        <DataList columns={2}>
           <DataField label="Code" value={code} />
           <DataField
             label="Position"

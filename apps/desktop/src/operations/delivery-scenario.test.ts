@@ -278,6 +278,8 @@ describe('aerodrome classes and timed unloading: end-to-end scenario', { timeout
     const shown = groundServiceView(aircraft, session.view().fleet.aircraft, session.tick());
     expect(shown?.tasks).toMatchObject([{ label: 'Payload', state: 'After the checks' }]);
     expect(shown?.tasks[0]?.detail).toMatch(/8,000 kg to take off/);
+    expect(shown?.detail).toMatch(/^Checked after its flight, then its payload is taken off\./);
+    expect(shown?.stop?.label).toBe('Leave the payload aboard');
   });
 
   it('the application closes during the unloading and reopens to the same payload and time', async () => {

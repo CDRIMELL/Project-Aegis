@@ -395,7 +395,11 @@ function DraftEditor({
               </Button>
             </div>
           )}
-          <Hint>The plan stays here while the aircraft is prepared. Launch when it is ready.</Hint>
+          {!launch.readiness.ready && (
+            <Hint>
+              The plan stays here while the aircraft is prepared. Launch when it is ready.
+            </Hint>
+          )}
         </section>
       )}
 

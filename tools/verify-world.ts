@@ -11,7 +11,9 @@
  * 2. Replay (ADR 0018). Re-derives the whole world, fleet and flights included, from the seed and
  *    the logged commands, and compares it with what is saved. This is possible only when the log
  *    is complete from tick 0. A world created before the log existed is reported as not
- *    replayable, which is not a failure.
+ *    replayable, which is not a failure. Nor is a world saved by an earlier simulation model and
+ *    not yet opened by this build: its log records what the earlier rules did, and this build's
+ *    rules would not re-derive it. The engine marks such a log complete only from the upgrade.
  *
  * Usage:  npx tsx tools/verify-world.ts [path-to-aegis.db]
  */
@@ -35,8 +37,10 @@ try {
   }
   const { snapshot } = checkpoint;
 
-  // Throws if the saved world, including its fleet and log, is internally inconsistent.
-  SimulationEngine.restore(snapshot);
+  // Throws if the saved world, including its fleet and log, is internally inconsistent. A world
+  // saved by an earlier model is carried over here exactly as the application carries it over.
+  const restored = SimulationEngine.restore(snapshot).snapshot();
+  const replayableFromTick = restored.log.completeFromTick;
 
   const world = { seed: snapshot.seed, epoch: snapshot.epoch };
   const continuity = SimulationEngine.create(world);
@@ -65,9 +69,15 @@ try {
     }));
   const logGapless = log.every((entry, index) => entry.seq === index + 1);
 
-  let replay: 'match' | 'mismatch' | 'not replayable: log starts after tick 0';
+  let replay:
+    | 'match'
+    | 'mismatch'
+    | 'not replayable: log starts after tick 0'
+    | 'not replayable: saved by an earlier simulation model';
   if (snapshot.log.completeFromTick > 0) {
     replay = 'not replayable: log starts after tick 0';
+  } else if (replayableFromTick > 0) {
+    replay = 'not replayable: saved by an earlier simulation model';
   } else {
     // JSON round trip: the saved snapshot came through JSON columns, so compare like with like.
     const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
@@ -85,6 +95,7 @@ try {
         database: path,
         seed: snapshot.seed,
         modelVersion: snapshot.modelVersion,
+        buildModelVersion: restored.modelVersion,
         checkpointSeq: checkpoint.seq,
         checkpointWallUtc: new Date(checkpoint.wallTimeMs).toISOString(),
         tick: snapshot.clock.tick,

@@ -149,6 +149,22 @@ export function groundServiceView(
   const available = `Available in ${formatDuration(progress.remainingS)}`;
 
   if (progress.stage === 'checks') {
+    const service = aircraft.service;
+    // A delivery just landed: nothing was asked for, and what follows the checks is unloading.
+    const unloading =
+      service?.missionId === null && service.fuel === null && service.payload?.targetKg === 0;
+    if (unloading) {
+      return {
+        progress,
+        activity,
+        tasks,
+        detail: `Checked after its flight, then its payload is taken off. ${available}.`,
+        stop: {
+          label: 'Leave the payload aboard',
+          hint: 'The checks go on; the aircraft is then available with its payload still aboard.',
+        },
+      };
+    }
     return {
       progress,
       activity,

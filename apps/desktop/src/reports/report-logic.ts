@@ -298,3 +298,13 @@ export function nextSort(current: TableSort | null, key: string): TableSort {
     ? { key, descending: !current.descending }
     : { key, descending: true };
 }
+
+/**
+ * What a ground service was asked to bring a quantity to, beside what it moved. A service logged
+ * before the request was recorded (simulation model 8 or earlier) moved something and names no
+ * request: that is said, and is not shown as nothing having been asked for.
+ */
+export function askedLabel(targetKg: number | null, movedKg: number): string {
+  if (targetKg !== null) return `asked ${Math.round(targetKg).toLocaleString('en-GB')} kg`;
+  return movedKg === 0 ? 'none asked for' : 'request not recorded';
+}
