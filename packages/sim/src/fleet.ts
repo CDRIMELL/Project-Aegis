@@ -1114,6 +1114,20 @@ export class Fleet {
     return this.aircraft.get(id);
   }
 
+  /** Every aircraft, in identifier order. */
+  allAircraft(): AircraftState[] {
+    return [...this.aircraft.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /** How many aircraft there are, and how many of them are available or flying (ADR 0031). */
+  readiness(): { ready: number; total: number } {
+    let ready = 0;
+    for (const aircraft of this.aircraft.values()) {
+      if (aircraft.status === 'available' || aircraft.status === 'in_flight') ready += 1;
+    }
+    return { ready, total: this.aircraft.size };
+  }
+
   /** Aircraft on the ground, in identifier order. */
   groundedAircraft(): AircraftState[] {
     return [...this.aircraft.values()]

@@ -3,13 +3,23 @@ import {
   RngStreams,
   addMs,
   foldUint32,
+  MISSION_TYPES,
   isSpeedMultiplier,
   weatherModel,
+  type CareerMission,
+  type MissionType,
   type PlanContext,
   type SimInstant,
   type SpeedMultiplier,
   type WeatherModel,
 } from '@aegis/domain';
+import {
+  CAREER_COMMAND_TYPES,
+  Career,
+  EMPTY_CAREER,
+  type CareerCommand,
+  type CareerView,
+} from './career';
 import { EMPTY_EVENTS, Events, type EventsView, type EventsWorld } from './events';
 import { CommandRejected, EMPTY_FLEET, Fleet, type FleetCommand, type FleetView } from './fleet';
 import {
@@ -23,6 +33,8 @@ import {
   EMPTY_LOG,
   SimLog,
   type EmitEvent,
+  type LogActor,
+  type LogKind,
   type LogPayload,
   type LogSnapshot,
   type LogSubject,
@@ -42,17 +54,24 @@ const SYSTEM_COMMANDS: ReadonlySet<string> = new Set([
   'updatePerformance',
   'setOperatingArea',
   'classifyAerodromes',
+  'beginCareer',
 ]);
 
 /** The first simulation model that kept a log. */
 const FIRST_LOGGED_MODEL_VERSION = 3;
 
 /** Every command that changes the world. Each effective one is logged (ADR 0018). */
-export type WorldCommand = FleetCommand | MissionCommand;
+export type WorldCommand = FleetCommand | MissionCommand | CareerCommand;
 
 function isMissionCommand(command: WorldCommand): command is MissionCommand {
   return MISSION_COMMAND_TYPES.has(command.type);
 }
+
+function isCareerCommand(command: WorldCommand): command is CareerCommand {
+  return CAREER_COMMAND_TYPES.has(command.type);
+}
+
+const MISSION_TYPE_SET: ReadonlySet<string> = new Set(MISSION_TYPES);
 
 /** RNG stream consumed by the integrity probe. Persisted name: do not rename (ADR 0006). */
 const INTEGRITY_STREAM = 'core.integrity';
@@ -85,6 +104,7 @@ export class SimulationEngine {
     private readonly missions: Missions,
     private readonly events: Events,
     private readonly log: SimLog,
+    private readonly career: Career,
   ) {
     this.weather = weatherModel(seed, epoch);
     this.eventsWorld = {
@@ -128,6 +148,7 @@ export class SimulationEngine {
       new Missions(),
       new Events(),
       new SimLog(),
+      new Career(),
     );
   }
 
@@ -196,6 +217,13 @@ export class SimulationEngine {
     } catch (cause) {
       throw new WorldRestoreError('Saved log is invalid', { cause });
     }
+    let career: Career;
+    try {
+      // A world saved before careers existed is not one.
+      career = new Career((snapshot as Partial<WorldSnapshot>).career ?? EMPTY_CAREER);
+    } catch (cause) {
+      throw new WorldRestoreError('Saved career is invalid', { cause });
+    }
     return new SimulationEngine(
       snapshot.seed,
       snapshot.epoch,
@@ -206,6 +234,7 @@ export class SimulationEngine {
       missions,
       events,
       log,
+      career,
     );
   }
 
@@ -250,6 +279,7 @@ export class SimulationEngine {
       fleet: this.fleet.snapshot(),
       missions: this.missions.snapshot(),
       events: this.events.snapshot(),
+      career: this.career.snapshot(),
       log: this.log.snapshot(),
     };
   }
@@ -274,7 +304,12 @@ export class SimulationEngine {
     const report: EmitEvent = (type, subject, payload) => {
       caused.push({ type, subject, ...(payload && { payload }) });
     };
-    if (isMissionCommand(command)) {
+    if (isCareerCommand(command)) {
+      if (!this.career.apply(command, this.tick)) return false;
+      // A career world operates by itself from the moment it is one (ADR 0030).
+      if (command.type === 'beginCareer') this.missions.enableRoutine();
+      effect = {};
+    } else if (isMissionCommand(command)) {
       effect = this.missions.apply(
         command,
         this.tick,
@@ -295,8 +330,7 @@ export class SimulationEngine {
       effect = this.fleet.apply(command, this.tick, context, report);
     }
     if (effect === null) return false;
-    this.log.append(
-      this.tick,
+    this.record(
       'command',
       command.type,
       SYSTEM_COMMANDS.has(command.type) ? 'system' : 'player',
@@ -331,6 +365,10 @@ export class SimulationEngine {
     return this.events.view();
   }
 
+  careerView(): CareerView {
+    return this.career.view(this.tick);
+  }
+
   /**
    * One fixed step. Subsystems are called here in a fixed, documented order as they are added
    * (flight, environment, events, ...).
@@ -339,15 +377,40 @@ export class SimulationEngine {
     this.tick += 1;
     // Fixed order: aircraft move, then missions read where they are, then events.
     this.fleet.step(this.tick, this.stream, this.emit, this.events.hazards());
-    this.missions.step(this.tick, this.fleet, this.stream, this.emit);
+    const hazards = this.events.hazards();
+    this.missions.step(this.tick, this.fleet, this.stream, this.emit, {
+      weather: this.weather,
+      hazards,
+      context: { weather: this.weather, departureTick: this.tick, hazards },
+    });
     this.events.step(this.tick, this.eventsWorld, this.stream, this.emit);
+    // Last, so that the day's readiness is of the world as the step leaves it.
+    if (this.career.established) {
+      const { ready, total } = this.fleet.readiness();
+      this.career.step(ready, total);
+    }
     this.updateIntegrityDigest();
   }
 
   /** Records something the world did, at the step it happened. */
   private readonly emit: EmitEvent = (type, subject, payload) => {
-    this.log.append(this.tick, 'event', type, 'world', subject, payload);
+    this.record('event', type, 'world', subject, payload);
   };
+
+  /**
+   * Writes an entry to the log and shows it to the career record (ADR 0031). Every entry goes
+   * through here, so the record sees exactly what the log holds.
+   */
+  private record(
+    kind: LogKind,
+    type: string,
+    actor: LogActor,
+    subject: LogSubject,
+    payload: LogPayload = {},
+  ): void {
+    this.log.append(this.tick, kind, type, actor, subject, payload);
+    this.career.observe({ kind, type, actor, payload, mission: missionOf(payload) });
+  }
 
   private readonly stream = (name: string) => this.rng.stream(name);
 
@@ -365,6 +428,17 @@ export class SimulationEngine {
     const draw = this.rng.stream(INTEGRITY_STREAM).nextUint32();
     this.integrityDigest = foldUint32(foldUint32(this.integrityDigest, this.tick >>> 0), draw);
   }
+}
+
+/** The mission an entry describes in its own payload, as a mission's ending does. */
+function missionOf(payload: LogPayload): CareerMission | null {
+  const type = payload.missionType;
+  if (typeof type !== 'string' || !MISSION_TYPE_SET.has(type)) return null;
+  return {
+    type: type as MissionType,
+    routine: payload.routine === true,
+    destinationCode: typeof payload.to === 'string' ? payload.to : null,
+  };
 }
 
 /**

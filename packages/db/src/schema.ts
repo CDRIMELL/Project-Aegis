@@ -10,6 +10,7 @@ import { check, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core
  * Changing this file requires `npm run db:generate` and committing the generated migration.
  */
 
+export * from './career-schema';
 export * from './event-schema';
 export * from './fleet-schema';
 export * from './log-schema';
@@ -45,6 +46,12 @@ export const simWorld = sqliteTable(
     /** The point the operating area was chosen around; NULL until the world has one. */
     areaCentreLat: real('area_centre_lat'),
     areaCentreLon: real('area_centre_lon'),
+    /** The tick the world became a career (ADR 0031); NULL for a world that is not one. */
+    careerEstablishedTick: integer('career_established_tick'),
+    /** Whether the world tasks and flies routine missions itself (ADR 0030). */
+    routineEnabled: integer('routine_enabled', { mode: 'boolean' }).notNull().default(false),
+    /** How many routine missions the world has tasked. */
+    routineTasked: integer('routine_tasked').notNull().default(0),
   },
   (t) => [check('sim_world_singleton', sql`${t.id} = 1`)],
 );

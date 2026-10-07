@@ -1,4 +1,5 @@
 import type { RngState, SimInstant, SpeedMultiplier } from '@aegis/domain';
+import type { CareerSnapshot } from './career';
 import type { EventsSnapshot } from './events';
 import type { FleetSnapshot } from './fleet';
 import type { LogSnapshot } from './log';
@@ -8,7 +9,7 @@ import type { MissionsSnapshot } from './missions';
  * Version of the simulation rules. A saved world records the version that produced it;
  * bump this whenever a change would make an existing world behave differently.
  */
-export const SIM_MODEL_VERSION = 9;
+export const SIM_MODEL_VERSION = 10;
 
 /**
  * Oldest model version this build can load. Older worlds are upgraded on load: a model-1 world
@@ -24,7 +25,9 @@ export const SIM_MODEL_VERSION = 9;
  * and no queue, and from the upgrade payload is loaded before launch and fuel and payload wait
  * for a point at the aerodrome (ADR 0028); in a model-8 world a delivered payload left the
  * aircraft at the instant its mission completed, and from the upgrade it is taken off by the
- * turnaround, in its turn at the aerodrome's payload handling (ADR 0029).
+ * turnaround, in its turn at the aerodrome's payload handling (ADR 0029); a model-9 world is
+ * not a career: it has no command days, and nothing in it is tasked or launched by the world
+ * unless a career is begun in it (ADR 0030, ADR 0031).
  */
 export const OLDEST_LOADABLE_MODEL_VERSION = 1;
 
@@ -56,6 +59,8 @@ export interface WorldSnapshot {
   readonly missions: MissionsSnapshot;
   /** World events (ADR 0022). */
   readonly events: EventsSnapshot;
+  /** The career played in this world, if it is one (ADR 0031). */
+  readonly career: CareerSnapshot;
   /** Recent entries of the command and event log (ADR 0018). */
   readonly log: LogSnapshot;
 }
@@ -81,4 +86,9 @@ export interface Checkpoint {
 export interface WorldStore {
   load(): Promise<Checkpoint | null>;
   save(checkpoint: Checkpoint): Promise<void>;
+  /**
+   * Removes the saved world, so that the next `load` finds none (ADR 0031). Atomic, like
+   * `save`. Nothing but the simulated world is touched.
+   */
+  clear(): Promise<void>;
 }

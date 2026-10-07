@@ -708,7 +708,7 @@ describe('determinism, continuity and upgrade', { timeout: 60_000 }, () => {
       };
       const upgraded = SimulationEngine.restore(asModel7 as never);
       expect(upgraded.snapshot().modelVersion).toBe(SIM_MODEL_VERSION);
-      expect(SIM_MODEL_VERSION).toBe(9);
+      expect(SIM_MODEL_VERSION).toBe(10);
       expect(upgraded.snapshot().log.completeFromTick).toBe(current.clock.tick);
       // Carried over as it stood: the record this build would have written.
       expect(aircraftOf(upgraded)).toEqual(aircraftOf(current));

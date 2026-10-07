@@ -6,6 +6,7 @@ import {
   type SpeedMultiplier,
   type WeatherModel,
 } from '@aegis/domain';
+import type { CareerView } from './career';
 import type { EventsView } from './events';
 import { SimulationEngine, type WorldCommand } from './engine';
 import type { FleetView } from './fleet';
@@ -42,6 +43,8 @@ export interface SimView {
   readonly fleet: FleetView;
   readonly missions: MissionsView;
   readonly events: EventsView;
+  /** The career played in this world, if it is one (ADR 0031). */
+  readonly career: CareerView;
   /** Identifies the world's weather, so the interface computes the same weather the engine does. */
   readonly weather: WeatherModel;
   /** Number of entries in the command and event log. The entries are read from the database. */
@@ -153,6 +156,52 @@ export class SimulationRunner {
     return runner;
   }
 
+  /**
+   * Restores the saved world, or resolves to `null` when there is none. Nothing is created
+   * (ADR 0031): a world begins only when it is asked for.
+   */
+  static async load(options: Omit<OpenOptions, 'newWorld'>): Promise<SimulationRunner | null> {
+    const loaded = await options.store.load();
+    if (!loaded) return null;
+    return new SimulationRunner(
+      SimulationEngine.restore(loaded.snapshot),
+      options.store,
+      options.host,
+      options.onView,
+      loaded,
+      options,
+    );
+  }
+
+  /**
+   * Creates a new world in place of whatever the store holds, and persists it. The saved world
+   * is removed first; the caller is responsible for having kept a copy if one is wanted.
+   */
+  static async create(options: OpenOptions): Promise<SimulationRunner> {
+    await options.store.clear();
+    return SimulationRunner.open(options);
+  }
+
+  /**
+   * Forgets real time that passed while the world was not being advanced, so that it is not
+   * paid back as simulation steps when advancing begins again.
+   */
+  resync(): void {
+    this.lastMonotonicMs = this.host.monotonicMs();
+    this.owedSimMs = 0;
+  }
+
+  /**
+   * Runs the world forward by exactly `steps`, whatever its run state or speed. These are
+   * ordinary steps: a new career is given its first hours this way (ADR 0031).
+   */
+  fastForward(steps: number): void {
+    if (steps <= 0) return;
+    this.engine.runSteps(steps);
+    this.dirty = true;
+    this.publish();
+  }
+
   /** Converts real time elapsed since the previous call into simulation steps. */
   advance(): void {
     const now = this.host.monotonicMs();
@@ -231,6 +280,7 @@ export class SimulationRunner {
       fleet: this.engine.fleetView(),
       missions: this.engine.missionsView(),
       events: this.engine.eventsView(),
+      career: this.engine.careerView(),
       weather: this.engine.weather,
       logLength: snapshot.log.nextSeq - 1,
       checkpoint: {

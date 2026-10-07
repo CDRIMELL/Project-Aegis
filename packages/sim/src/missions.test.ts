@@ -959,6 +959,7 @@ describe('missions across save and restore', () => {
       nextNumber: 1,
       generated: 0,
       areaCentre: null,
+      routine: { enabled: false, tasked: 0 },
     });
   });
 

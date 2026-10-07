@@ -76,6 +76,11 @@ export class MemoryWorldStore implements WorldStore {
     }
   }
 
+  clear(): Promise<void> {
+    this.current = null;
+    return Promise.resolve();
+  }
+
   get latest(): Checkpoint | null {
     return this.current;
   }

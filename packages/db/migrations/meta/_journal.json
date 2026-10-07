@@ -78,6 +78,13 @@
       "when": 1791271097884,
       "tag": "0010_aerodrome_size",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1791363413128,
+      "tag": "0011_career",
+      "breakpoints": true
     }
   ]
 }

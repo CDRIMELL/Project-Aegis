@@ -15,6 +15,9 @@
  *    not yet opened by this build: its log records what the earlier rules did, and this build's
  *    rules would not re-derive it. The engine marks such a log complete only from the upgrade.
  *
+ * The database is read as this build's schema. One that has not been opened by this build yet
+ * has an older schema: the tool says so and changes nothing. It never migrates what it is given.
+ *
  * Usage:  npx tsx tools/verify-world.ts [path-to-aegis.db]
  */
 import { join } from 'node:path';
@@ -31,7 +34,18 @@ const path = process.argv[2] ?? defaultPath;
 
 const transport = new NodeSqliteTransport(path);
 try {
-  const checkpoint = await new SqliteWorldStore(createDb(transport)).load();
+  let checkpoint;
+  try {
+    checkpoint = await new SqliteWorldStore(createDb(transport)).load();
+  } catch (error) {
+    if (/no such (column|table)/.test(error instanceof Error ? error.message : '')) {
+      console.error(
+        `${path} has an older schema than this build reads. Open it once with this build of AEGIS, which migrates it after writing a backup, or verify a copy that has been opened.`,
+      );
+      process.exit(2);
+    }
+    throw error;
+  }
   if (!checkpoint) {
     throw new Error(`No world found in ${path}`);
   }

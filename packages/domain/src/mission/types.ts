@@ -217,6 +217,11 @@ export interface Mission {
   readonly id: string;
   readonly type: MissionType;
   readonly source: MissionSource;
+  /**
+   * Tasked and flown by the simulated world itself (ADR 0030), not by the commander, who may
+   * still release, cancel or redirect it. Absent on every other mission.
+   */
+  readonly routine?: true;
   readonly status: MissionStatus;
   readonly priority: MissionPriority;
   readonly title: string;

@@ -1,5 +1,7 @@
 import {
   GENERATION,
+  ROUTINE,
+  generateRoutineTask,
   MISSION_PRIORITIES,
   MISSION_TEMPLATES,
   MISSION_TYPES,
@@ -71,6 +73,16 @@ export const RECENT_MISSIONS = 100;
 export const MAX_OPERATING_AREA = 200;
 
 const GENERATION_STREAM = 'missions.generation';
+/** Persisted name: do not rename (ADR 0006). */
+const ROUTINE_STREAM = 'missions.routine';
+
+/** Whether the world tasks and flies routine missions itself, and how many it has (ADR 0030). */
+export interface RoutineState {
+  readonly enabled: boolean;
+  readonly tasked: number;
+}
+
+export const NO_ROUTINE: RoutineState = { enabled: false, tasked: 0 };
 
 /** The fleet's wear and maintenance rules, in the form the mission layer evaluates against. */
 export const MAINTENANCE_POLICY: MaintenancePolicy = {
@@ -91,6 +103,8 @@ export interface MissionsSnapshot {
   readonly generated: number;
   /** The point the operating area was chosen around; `null` until it has one. */
   readonly areaCentre: LatLon | null;
+  /** Routine operations (ADR 0030). Off in a world that is not a career. */
+  readonly routine: RoutineState;
 }
 
 export const EMPTY_MISSIONS: MissionsSnapshot = {
@@ -99,6 +113,7 @@ export const EMPTY_MISSIONS: MissionsSnapshot = {
   nextNumber: 1,
   generated: 0,
   areaCentre: null,
+  routine: NO_ROUTINE,
 };
 
 /** The player's configuration of a mission. The application builds it from a template. */
@@ -244,6 +259,8 @@ export const MISSION_COMMAND_TYPES: ReadonlySet<string> = new Set<MissionCommand
 /** What missions need from the fleet. The fleet implements it; missions never reach past it. */
 export interface FleetPort {
   aircraftById(id: string): AircraftState | undefined;
+  /** Every aircraft, in identifier order. */
+  allAircraft(): readonly AircraftState[];
   groundedAircraft(): readonly AircraftState[];
   flightById(id: string): FlightState | undefined;
   /** Where a flight is now, or where it ended, and the length of its route. */
@@ -309,12 +326,28 @@ export interface MissionsView {
   readonly areaCentre: LatLon | null;
   /** The operating area: the aerodromes copied into the world, in order. */
   readonly places: readonly RoutePoint[];
+  /** Whether the world is flying routine missions itself (ADR 0030). */
+  readonly routineEnabled: boolean;
 }
 
 /** The world a mission is planned and flown in: its weather and its open events. */
 export interface MissionWorld {
   readonly weather: WeatherModel | null;
   readonly hazards: Hazards;
+}
+
+/** What the step needs to plan and launch the world's own missions (ADR 0030). */
+export interface RoutineWorld extends MissionWorld {
+  readonly context: PlanContext;
+}
+
+/** What a mission's ending tells the log beyond its summary, for the career record (ADR 0031). */
+function endingDetail(mission: Mission) {
+  return {
+    missionType: mission.type,
+    ...(mission.routine ? { routine: true } : {}),
+    to: mission.plan?.points.at(-1)?.code ?? null,
+  };
 }
 
 const isTick = (value: number | null) =>
@@ -367,6 +400,7 @@ export class Missions {
   private nextNumber: number;
   private generated: number;
   private areaCentre: LatLon | null;
+  private routine: RoutineState;
 
   constructor(snapshot: MissionsSnapshot = EMPTY_MISSIONS) {
     if (!Number.isSafeInteger(snapshot.nextNumber) || snapshot.nextNumber < 1) {
@@ -386,6 +420,18 @@ export class Missions {
     this.nextNumber = snapshot.nextNumber;
     this.generated = snapshot.generated;
     this.areaCentre = snapshot.areaCentre ?? null;
+    // A world saved before routine operations existed has none.
+    this.routine = (snapshot as Partial<MissionsSnapshot>).routine ?? NO_ROUTINE;
+    if (!Number.isSafeInteger(this.routine.tasked) || this.routine.tasked < 0) {
+      throw new Error('Saved routine counter is invalid');
+    }
+  }
+
+  /** Turns routine operations on (ADR 0030). Returns false if they already were. */
+  enableRoutine(): boolean {
+    if (this.routine.enabled) return false;
+    this.routine = { ...this.routine, enabled: true };
+    return true;
   }
 
   /** The operating area. */
@@ -649,27 +695,7 @@ export class Missions {
             `${aircraft.id} is ${aircraft.location ? `at ${aircraft.location.name}` : 'airborne'}; the mission starts at ${origin?.name ?? 'its origin'}.`,
           );
         }
-        this.missions.set(mission.id, {
-          ...mission,
-          status: 'accepted',
-          acceptedTick: tick,
-          // What the operator accepted. Kept as it is; launch records its own figures beside it.
-          acceptance: assessment,
-          assessment,
-        });
-        // Committing the aircraft begins loading the mission's fuel (ADR 0027). An aircraft that
-        // cannot be fuelled yet, because maintenance comes first, is prepared by the operator
-        // when it can be.
-        if (mission.load && (aircraft.status === 'available' || aircraft.status === 'servicing')) {
-          fleet.service(
-            aircraft.id,
-            mission.load.fuelKg,
-            tick,
-            mission.id,
-            emit,
-            mission.load.payloadKg,
-          );
-        }
+        this.commit(mission, aircraft, assessment, tick, fleet, emit);
         return { missionId: mission.id, aircraftId: aircraft.id };
       }
 
@@ -700,26 +726,7 @@ export class Missions {
 
       case 'launchMission': {
         const mission = this.require(command.missionId);
-        this.move(mission, 'active', 'launched');
-        const { aircraftId, plan, load } = mission;
-        if (!aircraftId || !plan || !load) {
-          throw new CommandRejected(`${mission.id} is not fully planned.`);
-        }
-        // The fleet validates the flight as it would any other, and throws if it cannot be flown.
-        const flightId = fleet.launch(aircraftId, plan, load, tick, mission.id, context);
-        // The estimate depends on when the flight leaves (ADR 0021), so the figures are evaluated
-        // again for the actual departure: they are what the flight will do. What was accepted
-        // stays in `acceptance`, untouched.
-        const assessment =
-          missionAssessment(this.evaluate(mission, fleet, tick, world), tick) ?? mission.assessment;
-        this.missions.set(mission.id, {
-          ...mission,
-          assessment,
-          status: 'active',
-          flightId,
-          actualStartTick: tick,
-          objectives: resetObjectives(mission.objectives),
-        });
+        const { aircraftId, flightId } = this.launch(mission, tick, fleet, context, world);
         return { missionId: mission.id, aircraftId, flightId };
       }
 
@@ -767,8 +774,192 @@ export class Missions {
     }
   }
 
-  /** Judges active missions, expires what has run out of time, and may generate an opportunity. */
-  step(tick: number, fleet: FleetPort, rng: (stream: string) => Rng, emit: EmitEvent): void {
+  /**
+   * Commits a mission to its aircraft with the figures it was accepted on, and begins preparing
+   * the aircraft. The same for a mission the commander accepts and one the world tasks.
+   */
+  private commit(
+    mission: Mission,
+    aircraft: AircraftState,
+    assessment: NonNullable<Mission['acceptance']>,
+    tick: number,
+    fleet: FleetPort,
+    emit: EmitEvent,
+  ): void {
+    this.missions.set(mission.id, {
+      ...mission,
+      status: 'accepted',
+      acceptedTick: tick,
+      // What was accepted. Kept as it is; launch records its own figures beside it.
+      acceptance: assessment,
+      assessment,
+    });
+    // Committing the aircraft begins loading the mission's fuel (ADR 0027). An aircraft that
+    // cannot be fuelled yet, because maintenance comes first, is prepared by the operator
+    // when it can be.
+    if (mission.load && (aircraft.status === 'available' || aircraft.status === 'servicing')) {
+      fleet.service(
+        aircraft.id,
+        mission.load.fuelKg,
+        tick,
+        mission.id,
+        emit,
+        mission.load.payloadKg,
+      );
+    }
+  }
+
+  /**
+   * Launches an accepted mission. The fleet validates the flight as it would any other, and
+   * throws `CommandRejected` if it cannot be flown; the mission is then as it was.
+   */
+  private launch(
+    mission: Mission,
+    tick: number,
+    fleet: FleetPort,
+    context: PlanContext | null,
+    world: MissionWorld,
+  ): { aircraftId: string; flightId: string } {
+    this.move(mission, 'active', 'launched');
+    const { aircraftId, plan, load } = mission;
+    if (!aircraftId || !plan || !load) {
+      throw new CommandRejected(`${mission.id} is not fully planned.`);
+    }
+    const flightId = fleet.launch(aircraftId, plan, load, tick, mission.id, context);
+    // The estimate depends on when the flight leaves (ADR 0021), so the figures are evaluated
+    // again for the actual departure: they are what the flight will do. What was accepted
+    // stays in `acceptance`, untouched.
+    const assessment =
+      missionAssessment(this.evaluate(mission, fleet, tick, world), tick) ?? mission.assessment;
+    this.missions.set(mission.id, {
+      ...mission,
+      assessment,
+      status: 'active',
+      flightId,
+      actualStartTick: tick,
+      objectives: resetObjectives(mission.objectives),
+    });
+    return { aircraftId, flightId };
+  }
+
+  /**
+   * The world's own missions (ADR 0030): one that is accepted is launched at the step its
+   * aircraft is ready, and stood down if it has waited too long.
+   */
+  private stepRoutine(
+    mission: Mission,
+    tick: number,
+    fleet: FleetPort,
+    world: RoutineWorld,
+    emit: EmitEvent,
+  ): void {
+    const acceptedTick = mission.acceptedTick ?? tick;
+    // Looked at once a simulated minute: readiness does not change faster than that matters.
+    if ((tick - acceptedTick) % ROUTINE.launchAttemptTicks !== 0) return;
+    const { aircraftId, load, plan } = mission;
+    const subject = { missionId: mission.id, aircraftId };
+    let reason: string | null = 'It is not fully planned.';
+    if (aircraftId && load && plan) {
+      reason = fleet.launchIssue(aircraftId, load, plan.points[0] ?? null, tick);
+      if (reason === null) {
+        try {
+          const { flightId } = this.launch(mission, tick, fleet, world.context, world);
+          emit('missionLaunched', { ...subject, flightId }, { routine: true });
+          return;
+        } catch (error) {
+          if (!(error instanceof CommandRejected)) throw error;
+          reason = error.message;
+        }
+      }
+    }
+    if (tick - acceptedTick >= ROUTINE.standDownAfterS) {
+      this.finish({ ...mission, status: 'cancelled', completedTick: tick });
+      fleet.withdraw(mission.id, tick, emit);
+      emit('routineStoodDown', subject, { title: mission.title, reason });
+    }
+  }
+
+  /** Considers tasking one aircraft with a routine mission (ADR 0030). */
+  private taskRoutine(
+    tick: number,
+    fleet: FleetPort,
+    rng: Rng,
+    world: RoutineWorld,
+    emit: EmitEvent,
+  ): void {
+    const task = generateRoutineTask({
+      rng,
+      places: this.places,
+      aircraft: fleet.allAircraft().map((aircraft) => ({
+        id: aircraft.id,
+        category: aircraft.category,
+        performance: aircraft.performance,
+        location: aircraft.location,
+        home: aircraft.home,
+        free: aircraft.status === 'available' && this.reservation(aircraft.id) === undefined,
+      })),
+      ordinal: this.routine.tasked + 1,
+    });
+    if (!task) return;
+    const aircraft = fleet.aircraftById(task.aircraftId);
+    if (!aircraft) return;
+    const configuration = defaultConfiguration(task.type, task.brief, aircraft, {
+      title: task.title,
+      description: task.description,
+      priority: 'routine',
+      context: world.context,
+    });
+    if (configuredStatus(configuration) !== 'planned') return;
+    const draft: Mission = {
+      id: '',
+      type: task.type,
+      source: 'generated',
+      routine: true,
+      status: 'planned',
+      priority: configuration.priority,
+      title: configuration.title,
+      description: configuration.description,
+      brief: configuration.brief,
+      aircraftId: aircraft.id,
+      flightId: null,
+      plan: configuration.plan,
+      load: configuration.load,
+      objectives: newObjectives(configuration.objectives),
+      acceptance: null,
+      assessment: null,
+      outcome: null,
+      createdTick: tick,
+      acceptedTick: null,
+      plannedStartTick: null,
+      actualStartTick: null,
+      completedTick: null,
+      expiresTick: null,
+      completeByTick: null,
+    };
+    // Only what the planner would let the commander accept is tasked.
+    const assessment = missionAssessment(this.evaluate(draft, fleet, tick, world), tick);
+    if (!assessment) return;
+    const mission = { ...draft, id: this.nextId() };
+    this.routine = { ...this.routine, tasked: this.routine.tasked + 1 };
+    this.commit(mission, aircraft, assessment, tick, fleet, emit);
+    emit(
+      'routineTasked',
+      { missionId: mission.id, aircraftId: aircraft.id },
+      { missionType: mission.type, title: mission.title },
+    );
+  }
+
+  /**
+   * Judges active missions, expires what has run out of time, and may generate an opportunity.
+   * Given the world to plan in, it also flies the world's own routine missions (ADR 0030).
+   */
+  step(
+    tick: number,
+    fleet: FleetPort,
+    rng: (stream: string) => Rng,
+    emit: EmitEvent,
+    world: RoutineWorld | null = null,
+  ): void {
     // Missions are held in the order they were created, which is identifier order, so iterating
     // the map is deterministic. A map may be changed while it is iterated: replacing a mission
     // keeps its place, and a removed one is simply not visited.
@@ -798,6 +989,8 @@ export class Missions {
       }
       if (mission.status === 'active') {
         this.stepActive(mission, tick, fleet, emit);
+      } else if (mission.routine && mission.status === 'accepted' && world) {
+        this.stepRoutine(mission, tick, fleet, world, emit);
       } else if (mission.status === 'offered') {
         if (mission.expiresTick !== null && tick >= mission.expiresTick) {
           this.finish({ ...mission, status: 'expired', completedTick: tick });
@@ -821,13 +1014,16 @@ export class Missions {
         emit(
           'missionFailed',
           { missionId: mission.id, aircraftId: mission.aircraftId },
-          { summary: outcome.summary },
+          { summary: outcome.summary, ...endingDetail(mission) },
         );
       }
     }
 
     if (tick % GENERATION.intervalTicks === 0 && this.places.length > 0) {
       this.generate(tick, fleet, rng(GENERATION_STREAM), emit);
+    }
+    if (this.routine.enabled && world && tick % ROUTINE.intervalTicks === 0) {
+      this.taskRoutine(tick, fleet, rng(ROUTINE_STREAM), world, emit);
     }
   }
 
@@ -922,7 +1118,10 @@ export class Missions {
       outcome,
       completedTick: tick,
     });
-    emit(succeeded ? 'missionCompleted' : 'missionFailed', subject, { summary: outcome.summary });
+    emit(succeeded ? 'missionCompleted' : 'missionFailed', subject, {
+      summary: outcome.summary,
+      ...endingDetail(mission),
+    });
   }
 
   private generate(tick: number, fleet: FleetPort, rng: Rng, emit: EmitEvent): void {
@@ -1080,6 +1279,7 @@ export class Missions {
       nextNumber: this.nextNumber,
       generated: this.generated,
       areaCentre: this.areaCentre,
+      routine: this.routine,
     };
   }
 
@@ -1089,6 +1289,7 @@ export class Missions {
       operatingAreaSize: this.places.length,
       areaCentre: this.areaCentre,
       places: this.places,
+      routineEnabled: this.routine.enabled,
     };
   }
 }

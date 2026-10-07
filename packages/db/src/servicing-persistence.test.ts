@@ -431,8 +431,9 @@ describe('migration 0009 on an existing world', () => {
       aircraftBefore.map((row) => ({ ...row, service: null })),
     );
     expect(connection.prepare(`SELECT * FROM sim_flight ORDER BY id`).all()).toEqual(flightsBefore);
+    // Migration 0011 has since added one column to missions, empty for these (ADR 0030).
     expect(connection.prepare(`SELECT * FROM sim_mission ORDER BY id`).all()).toEqual(
-      missionsBefore,
+      missionsBefore.map((row) => ({ ...(row as object), routine: 0 })),
     );
     expect(connection.prepare(`SELECT * FROM sim_log ORDER BY seq`).all()).toEqual(logBefore);
 

@@ -6,6 +6,7 @@ import {
   SERVICE_REASONS,
   SERVICE_STAGES,
   simInstant,
+  type CareerDay,
   type FlightPlan,
   type FlightRevision,
   type Mission,
@@ -41,6 +42,7 @@ import {
   MISSION_STATUSES,
   MISSION_TYPES,
   simAircraft,
+  simCareerDay,
   simCheckpoint,
   simClock,
   simCounter,
@@ -75,7 +77,38 @@ const worldRow = z.object({
   nextEventNumber: z.int().positive(),
   areaCentreLat: z.number().min(-90).max(90).nullable(),
   areaCentreLon: z.number().min(-180).max(180).nullable(),
+  careerEstablishedTick: count.nullable(),
+  routineEnabled: z.boolean(),
+  routineTasked: count,
 });
+const share = z.number().min(0).max(1).nullable();
+const careerDayRow = z.object({
+  number: z.int().positive(),
+  startedTick: count,
+  endedTick: count.nullable(),
+  counters: z.string(),
+  aircraftSeconds: count,
+  readySeconds: count,
+  readinessLow: share,
+  readinessHigh: share,
+});
+const countersJson = z.record(z.string(), z.number());
+
+function toCareerDay(row: unknown): CareerDay {
+  const day = parse(careerDayRow, row, 'sim_career_day row');
+  return {
+    number: day.number,
+    startedTick: day.startedTick,
+    endedTick: day.endedTick,
+    counters: json(countersJson, day.counters, `sim_career_day ${day.number} counters`),
+    readiness: {
+      aircraftSeconds: day.aircraftSeconds,
+      readySeconds: day.readySeconds,
+      low: day.readinessLow,
+      high: day.readinessHigh,
+    },
+  };
+}
 const clockRow = z.object({
   simTimeMs: count,
   tick: count,
@@ -363,6 +396,7 @@ const missionRow = z.object({
   type: z.enum(MISSION_TYPES),
   source: z.enum(MISSION_SOURCES),
   status: z.enum(MISSION_STATUSES),
+  routine: z.boolean().default(false),
   priority: z.enum(MISSION_PRIORITIES),
   title: z.string().min(1),
   description: z.string(),
@@ -523,6 +557,8 @@ function toMission(row: unknown): Mission {
     id: m.id,
     type: m.type,
     source: m.source,
+    // Present only on a mission the world flies itself, as the simulation holds it.
+    ...(m.routine ? { routine: true as const } : {}),
     status: m.status,
     priority: m.priority,
     title: m.title,
@@ -582,6 +618,8 @@ export class SqliteWorldStore implements WorldStore {
   private loggedSeq = 0;
   /** The operating area as last written, so it is rewritten only when it changes. */
   private savedPlaces: string | null = null;
+  /** How many closed command days are known to be on disk. A closed day is written once. */
+  private savedClosedDays = 0;
 
   constructor(private readonly db: AegisDb) {}
 
@@ -601,6 +639,7 @@ export class SqliteWorldStore implements WorldStore {
       placeRows,
       openEventRows,
       finishedEventRows,
+      careerDayRows,
     ] = await this.db.batch([
       this.db.select().from(simWorld),
       this.db.select().from(simClock),
@@ -640,6 +679,8 @@ export class SqliteWorldStore implements WorldStore {
         .where(inArray(simEvent.status, ['resolved', 'cancelled']))
         .orderBy(desc(simEvent.id))
         .limit(RECENT_EVENTS),
+      // Every command day: the record is small, and its totals are sums over all of it.
+      this.db.select().from(simCareerDay).orderBy(asc(simCareerDay.number)),
     ]);
 
     if (worlds.length + clocks.length + checkpoints.length + streams.length === 0) {
@@ -669,6 +710,14 @@ export class SqliteWorldStore implements WorldStore {
 
     const places = placeRows.map(toPlace);
     this.savedPlaces = JSON.stringify(places);
+
+    const careerDays = careerDayRows.map(toCareerDay);
+    const closedDays = careerDays.filter((day) => day.endedTick !== null);
+    const openDays = careerDays.filter((day) => day.endedTick === null);
+    if (openDays.length > 1) {
+      throw new WorldStorageError('Saved career has more than one open day');
+    }
+    this.savedClosedDays = closedDays.length;
 
     const byId = <T extends { id: string }>(a: T, b: T) => a.id.localeCompare(b.id);
     return {
@@ -706,10 +755,16 @@ export class SqliteWorldStore implements WorldStore {
             world.areaCentreLat === null || world.areaCentreLon === null
               ? null
               : { lat: world.areaCentreLat, lon: world.areaCentreLon },
+          routine: { enabled: world.routineEnabled, tasked: world.routineTasked },
         },
         events: {
           events: [...openEventRows, ...finishedEventRows].map(toEvent).sort(byId),
           nextNumber: world.nextEventNumber,
+        },
+        career: {
+          establishedTick: world.careerEstablishedTick,
+          day: openDays[0] ?? null,
+          days: closedDays,
         },
         log: { nextSeq, completeFromTick: world.logCompleteFromTick, entries },
       },
@@ -718,7 +773,7 @@ export class SqliteWorldStore implements WorldStore {
 
   async save(checkpoint: Checkpoint): Promise<void> {
     const { snapshot } = checkpoint;
-    const { fleet, missions, events } = snapshot;
+    const { fleet, missions, events, career } = snapshot;
     const world = {
       seed: snapshot.seed,
       modelVersion: snapshot.modelVersion,
@@ -730,7 +785,24 @@ export class SqliteWorldStore implements WorldStore {
       nextEventNumber: events.nextNumber,
       areaCentreLat: missions.areaCentre?.lat ?? null,
       areaCentreLon: missions.areaCentre?.lon ?? null,
+      careerEstablishedTick: career.establishedTick,
+      routineEnabled: missions.routine.enabled,
+      routineTasked: missions.routine.tasked,
     };
+    // A closed day never changes, so it is written once; the open day is written each time.
+    const careerRows = [
+      ...career.days.filter((day) => day.number > this.savedClosedDays),
+      ...(career.day ? [career.day] : []),
+    ].map((day) => ({
+      number: day.number,
+      startedTick: day.startedTick,
+      endedTick: day.endedTick,
+      counters: JSON.stringify(day.counters),
+      aircraftSeconds: day.readiness.aircraftSeconds,
+      readySeconds: day.readiness.readySeconds,
+      readinessLow: day.readiness.low,
+      readinessHigh: day.readiness.high,
+    }));
     const clock = {
       simTimeMs: snapshot.clock.simTime,
       tick: snapshot.clock.tick,
@@ -781,6 +853,7 @@ export class SqliteWorldStore implements WorldStore {
       return {
         id,
         ...columns,
+        routine: mission.routine ?? false,
         brief: JSON.stringify(brief),
         plan: text(plan),
         load: text(load),
@@ -883,10 +956,41 @@ export class SqliteWorldStore implements WorldStore {
           .values({ name, value })
           .onConflictDoUpdate({ target: simCounter.name, set: { value } }),
       ),
+      ...careerRows.map(({ number, ...columns }) =>
+        this.db
+          .insert(simCareerDay)
+          .values({ number, ...columns })
+          .onConflictDoUpdate({ target: simCareerDay.number, set: columns }),
+      ),
       // Append-only: log rows are inserted, never updated or deleted.
       ...logRows.map((row) => this.db.insert(simLog).values(row).onConflictDoNothing()),
     ]);
     this.loggedSeq = Math.max(this.loggedSeq, snapshot.log.nextSeq - 1);
     this.savedPlaces = placesKey;
+    this.savedClosedDays = career.days.length;
+  }
+
+  /**
+   * Removes the simulated world, in one transaction (ADR 0031). Reference data and application
+   * records are not touched. Children go before the rows they refer to.
+   */
+  async clear(): Promise<void> {
+    await this.db.batch([
+      this.db.delete(simLog),
+      this.db.delete(simFlight),
+      this.db.delete(simMission),
+      this.db.delete(simEvent),
+      this.db.delete(simAircraft),
+      this.db.delete(simPlace),
+      this.db.delete(simCounter),
+      this.db.delete(simCareerDay),
+      this.db.delete(simRngStream),
+      this.db.delete(simCheckpoint),
+      this.db.delete(simClock),
+      this.db.delete(simWorld),
+    ]);
+    this.loggedSeq = 0;
+    this.savedPlaces = null;
+    this.savedClosedDays = 0;
   }
 }

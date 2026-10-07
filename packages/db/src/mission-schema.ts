@@ -48,6 +48,8 @@ export const simMission = sqliteTable(
     /** `manual`: created by the player. `generated`: an opportunity from the simulated world. */
     source: text('source', { enum: MISSION_SOURCES }).notNull(),
     status: text('status', { enum: MISSION_STATUSES }).notNull(),
+    /** Tasked and flown by the simulated world itself (ADR 0030), not by the commander. */
+    routine: integer('routine', { mode: 'boolean' }).notNull().default(false),
     priority: text('priority', { enum: MISSION_PRIORITIES }).notNull(),
     title: text('title').notNull(),
     description: text('description').notNull(),
