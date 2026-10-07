@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { fleetBounds } from './flight-features';
 import { labelMinZoom, labelPriority, markerMinZoom, type DensityInput } from './density';
 import {
   formatCoordinates,
@@ -386,5 +387,26 @@ describe('map style', () => {
     const text = JSON.stringify(referenceLayers);
     expect(text).toContain(PALETTE.reference);
     expect(text).not.toContain(PALETTE.simulated);
+  });
+});
+
+describe('framing the fleet', () => {
+  it('is the box round every aircraft, on the ground and in the air, with a margin', () => {
+    const bounds = fleetBounds({
+      aircraft: [
+        { location: { lat: 50.44, lon: -4.99 } },
+        { location: { lat: 55.5, lon: -4.59 } },
+        { location: null },
+      ],
+      activeFlights: [{ lat: 52.1, lon: 1.2 }],
+    });
+    expect(bounds).toEqual([-6.49, 48.94, 2.7, 57]);
+  });
+
+  it('is nothing for a world with no aircraft, and never leaves the map', () => {
+    expect(fleetBounds({ aircraft: [], activeFlights: [] })).toBeNull();
+    expect(
+      fleetBounds({ aircraft: [{ location: { lat: 84.9, lon: 179.5 } }], activeFlights: [] }),
+    ).toEqual([178, 83.4, 180, 85]);
   });
 });

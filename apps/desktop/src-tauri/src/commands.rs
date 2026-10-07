@@ -49,6 +49,29 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupResult {
+    file_name: String,
+    path: String,
+}
+
+/// Writes a copy of the database to the backups folder before a new career replaces the
+/// simulated world (ADR 0031). The folder and the name are chosen natively.
+#[tauri::command(async)]
+pub fn backup_before_new_career(state: State<'_, AppState>) -> AppResult<BackupResult> {
+    let path = state
+        .database()?
+        .backup(&state.data_dir.join(crate::BACKUP_DIR), "new-career")?;
+    Ok(BackupResult {
+        file_name: path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        path: path.to_string_lossy().into_owned(),
+    })
+}
+
 /// Writes a report the webview has built to the exports folder (ADR 0025). Gated like the data
 /// it was built from. The name is validated natively; the webview cannot choose where it goes.
 #[tauri::command(async)]

@@ -236,3 +236,30 @@ export function interpolateAircraft(pair: SamplePair, nowMs: number): AircraftSa
     headingDeg: position.headingDeg,
   };
 }
+
+/** Degrees added round the fleet, so that an aircraft is never on the edge of the view. */
+const FLEET_MARGIN_DEG = 1.5;
+
+/**
+ * The box round every aircraft, as west, south, east, north: where each is on the ground, and
+ * where each is in the air. `null` when there are none. A commander taking command is shown
+ * this, and not the whole world (ADR 0031).
+ */
+export function fleetBounds(fleet: {
+  readonly aircraft: readonly { readonly location: { lat: number; lon: number } | null }[];
+  readonly activeFlights: readonly { readonly lat: number; readonly lon: number }[];
+}): [number, number, number, number] | null {
+  const points = [
+    ...fleet.aircraft.flatMap((aircraft) => (aircraft.location ? [aircraft.location] : [])),
+    ...fleet.activeFlights,
+  ];
+  if (points.length === 0) return null;
+  const lats = points.map((point) => point.lat);
+  const lons = points.map((point) => point.lon);
+  return [
+    Math.max(-180, Math.min(...lons) - FLEET_MARGIN_DEG),
+    Math.max(-85, Math.min(...lats) - FLEET_MARGIN_DEG),
+    Math.min(180, Math.max(...lons) + FLEET_MARGIN_DEG),
+    Math.min(85, Math.max(...lats) + FLEET_MARGIN_DEG),
+  ];
+}

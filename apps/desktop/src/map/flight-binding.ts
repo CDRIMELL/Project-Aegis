@@ -9,6 +9,7 @@ import {
   activeRouteFeatures,
   aircraftFeatures,
   draftFeatures,
+  fleetBounds,
   interpolateAircraft,
   type AircraftSample,
   type SamplePair,
@@ -152,6 +153,24 @@ export function startFlightBinding(): void {
       });
     });
   });
+}
+
+/** Frames the whole fleet, in the air and on the ground, once the map is on screen. */
+export function focusFleet(): void {
+  const view = useSimStore.getState().view;
+  const bounds = view ? fleetBounds(view.fleet) : null;
+  if (!bounds) return;
+  const controller = mapController();
+  let attempts = 0;
+  const frame = (): void => {
+    if (controller.element.isConnected && controller.element.clientWidth > 0) {
+      controller.resize();
+      controller.fitBounds(...bounds);
+    } else if (attempts++ < 120) {
+      requestAnimationFrame(frame);
+    }
+  };
+  frame();
 }
 
 /** Selects an aircraft and, if it is on the ground or flying, brings it into view. */

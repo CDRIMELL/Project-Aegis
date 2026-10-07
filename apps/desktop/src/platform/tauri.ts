@@ -48,6 +48,19 @@ export interface ExportResult {
   readonly bytes: number;
 }
 
+export interface BackupResult {
+  readonly fileName: string;
+  readonly path: string;
+}
+
+/**
+ * Has the native core write a copy of the database to the backups folder, before a new career
+ * replaces the simulated world (ADR 0031).
+ */
+export function backupBeforeNewCareer(): Promise<BackupResult> {
+  return call<BackupResult>('backup_before_new_career');
+}
+
 /** Writes text to the application's exports folder (ADR 0025). The native side picks the folder. */
 export function writeExport(fileName: string, contents: string): Promise<ExportResult> {
   return call<ExportResult>('export_report', { fileName, contents });

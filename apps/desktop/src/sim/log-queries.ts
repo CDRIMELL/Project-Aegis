@@ -1,6 +1,6 @@
 import { schema, type AegisDb } from '@aegis/db';
 import type { LogEntry } from '@aegis/sim';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 
 /*
  * Reads of the command and event log (ADR 0018) for display.
@@ -46,5 +46,24 @@ export async function loadMissionLog(missionId: string): Promise<LogEntry[]> {
 /** The most recent entries of the whole log, newest first. */
 export async function loadRecentLog(limit = 50): Promise<LogEntry[]> {
   const rows = await db.select().from(simLog).orderBy(desc(simLog.seq)).limit(limit);
+  return rows.map(toEntry);
+}
+
+/**
+ * The entries of the given types between two ticks, both included, oldest first. For the summary
+ * of a command day (ADR 0031), which reads what stood out and not the whole log.
+ */
+export async function loadLogBetween(
+  fromTick: number,
+  toTick: number,
+  types: readonly string[],
+): Promise<LogEntry[]> {
+  const rows = await db
+    .select()
+    .from(simLog)
+    .where(
+      and(gte(simLog.tick, fromTick), lte(simLog.tick, toTick), inArray(simLog.type, [...types])),
+    )
+    .orderBy(simLog.seq);
   return rows.map(toEntry);
 }

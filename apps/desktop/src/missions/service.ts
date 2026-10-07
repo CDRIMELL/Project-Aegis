@@ -34,7 +34,11 @@ async function setOperatingAreaIfNeeded(): Promise<void> {
   }
   // Look again only when a home aerodrome has changed, never on every update.
   const homes = view.fleet.aircraft.map((aircraft) => aircraft.home);
-  const homesKey = homes.map((home) => home.refId ?? `${home.lat},${home.lon}`).join('|');
+  // Keyed by the world as well: a new career is a new world with the same bases (ADR 0031).
+  const homesKey = [
+    view.seed,
+    ...homes.map((home) => home.refId ?? `${home.lat},${home.lon}`),
+  ].join('|');
   const hasArea = view.missions.operatingAreaSize > 0;
   if (hasArea && homesKey === examinedHomes) return;
   examinedHomes = homesKey;

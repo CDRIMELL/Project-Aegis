@@ -6,7 +6,13 @@ import { create } from 'zustand';
  * view it published, for React to render. Nothing here may be written back into the simulation.
  */
 
-export type SimPhase = 'starting' | 'ready' | 'failed';
+/**
+ * - `starting`: the worker has not yet said what the database holds.
+ * - `empty`: there is no saved world. One is created only when the player asks (ADR 0031).
+ * - `ready`: a world is open.
+ * - `failed`: the simulation cannot continue.
+ */
+export type SimPhase = 'starting' | 'empty' | 'ready' | 'failed';
 
 interface SimState {
   readonly phase: SimPhase;
@@ -28,6 +34,20 @@ export const useSimStore = create<SimState>(() => ({
 export function simViewReceived(view: SimView): void {
   useSimStore.setState((state) =>
     state.phase === 'failed' ? { view } : { view, phase: 'ready', rejection: null },
+  );
+}
+
+/** The worker found no saved world. */
+export function simWorldAbsent(): void {
+  useSimStore.setState((state) =>
+    state.phase === 'failed' ? {} : { view: null, phase: 'empty', rejection: null },
+  );
+}
+
+/** A new world has been asked for: what is shown of the old one is put away until it arrives. */
+export function simWorldReplacing(): void {
+  useSimStore.setState((state) =>
+    state.phase === 'failed' ? {} : { view: null, phase: 'starting', rejection: null },
   );
 }
 

@@ -256,16 +256,37 @@ export const STARTER_FLEET: readonly { readonly slug: string; readonly homeIcao:
 ];
 
 /**
- * Orders for the starter fleet. An entry whose type or aerodrome is not in the reference data is
+ * The fleet a career begins with (ADR 0031): real types the United Kingdom operates, with
+ * fictional identities, in numbers chosen for the simulation. They are based at civil UK
+ * aerodromes chosen for the fictional laydown; it reproduces no real basing (ADR 0011).
+ */
+export const CAREER_FLEET: readonly { readonly slug: string; readonly homeIcao: string }[] = [
+  { slug: 'typhoon', homeIcao: 'EGPK' },
+  { slug: 'typhoon', homeIcao: 'EGPK' },
+  { slug: 'typhoon', homeIcao: 'EGNT' },
+  { slug: 'typhoon', homeIcao: 'EGNT' },
+  { slug: 'hawk-t2', homeIcao: 'EGNT' },
+  { slug: 'hawk-t2', homeIcao: 'EGNT' },
+  { slug: 'a400m', homeIcao: 'EGHQ' },
+  { slug: 'a400m', homeIcao: 'EGHQ' },
+  { slug: 'c-17', homeIcao: 'EGHQ' },
+  { slug: 'poseidon', homeIcao: 'EGPK' },
+  { slug: 'chinook', homeIcao: 'EGTE' },
+  { slug: 'chinook', homeIcao: 'EGTE' },
+];
+
+/**
+ * Orders for a starting fleet. An entry whose type or aerodrome is not in the reference data is
  * left out and reported, never replaced with something else.
  */
 export function starterOrders(
   catalogue: readonly CatalogueEntry[],
   aerodromes: readonly AerodromeRow[],
+  fleet: readonly { readonly slug: string; readonly homeIcao: string }[] = STARTER_FLEET,
 ): { orders: AircraftOrder[]; missing: string[] } {
   const orders: AircraftOrder[] = [];
   const missing: string[] = [];
-  for (const { slug, homeIcao } of STARTER_FLEET) {
+  for (const { slug, homeIcao } of fleet) {
     const entry = catalogue.find((candidate) => candidate.type.slug === slug);
     const home = aerodromes.find((candidate) => candidate.icao === homeIcao);
     if (!entry) missing.push(`aircraft type "${slug}"`);

@@ -72,6 +72,7 @@ pub fn run() {
             commands::db_batch,
             commands::app_info,
             commands::export_report,
+            commands::backup_before_new_career,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start AEGIS");

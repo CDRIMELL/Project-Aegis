@@ -23,7 +23,7 @@ if (isDesktop()) {
   simClient.start(tauriTransport);
   // First launch installs the reference data shipped in the bundle; later launches find it present.
   ensureReferenceData(tauriTransport);
-  // Reads the aircraft catalogue and gives a new world its starter fleet.
+  // Reads the aircraft catalogue and gives a new world its fleet.
   startFleetServices();
   // Gives the world its operating area, from which opportunities are generated.
   startMissionServices();

@@ -44,7 +44,11 @@ export function PriorityBadge({ priority }: { readonly priority: MissionPriority
 export function SourceBadge({ mission }: { readonly mission: Mission }) {
   return (
     <StatusBadge tone="ok">
-      {mission.source === 'generated' ? 'Simulated opportunity' : 'Simulated'}
+      {mission.routine
+        ? 'Simulated routine tasking'
+        : mission.source === 'generated'
+          ? 'Simulated opportunity'
+          : 'Simulated'}
     </StatusBadge>
   );
 }

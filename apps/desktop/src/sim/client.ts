@@ -1,7 +1,7 @@
 import type { SqlTransport } from '@aegis/db';
 import type { SimCommand } from '@aegis/sim';
 import { serveSqlRequest } from '../platform/sql-relay';
-import { simCommandRejected, simFailed, simViewReceived } from '../state/sim-store';
+import { simCommandRejected, simFailed, simViewReceived, simWorldAbsent } from '../state/sim-store';
 import type { FromWorker, ToWorker } from './protocol';
 
 /** A world seed only has to be unique, not secret. */
@@ -19,8 +19,13 @@ function newSeed(): string {
 class SimClient {
   private worker: Worker | null = null;
   private readonly flushWaiters = new Map<number, () => void>();
-  private nextFlushId = 1;
+  private readonly runs = new Map<
+    number,
+    { readonly done: () => void; readonly progress: (share: number) => void }
+  >();
+  private nextId = 1;
 
+  /** Starts the worker and has it look for a saved world. It creates none (ADR 0031). */
   start(transport: SqlTransport): void {
     if (this.worker) return;
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
@@ -33,9 +38,36 @@ class SimClient {
       simFailed(event.message || 'The simulation worker stopped unexpectedly.');
     });
 
-    this.post({
-      kind: 'init',
-      newWorld: { seed: newSeed(), epochMs: Math.floor(Date.now() / 1000) * 1000 },
+    this.post({ kind: 'open' });
+  }
+
+  /**
+   * Creates a world in place of the saved one. `epochMs` is the simulation instant of its first
+   * tick. Returns the seed, by which the new world's first view is recognised.
+   */
+  create(epochMs: number): string {
+    const seed = newSeed();
+    this.post({ kind: 'create', newWorld: { seed, epochMs } });
+    return seed;
+  }
+
+  /** The player is in the world: real time becomes simulation time. */
+  enter(): void {
+    this.post({ kind: 'enter' });
+  }
+
+  /** The player has left the world: it stops, and is persisted. */
+  leave(): void {
+    this.post({ kind: 'leave' });
+  }
+
+  /** Runs the world forward by exactly `steps`. Resolves when it has, and is on disk. */
+  run(steps: number, progress: (share: number) => void = () => undefined): Promise<void> {
+    if (!this.worker) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const id = this.nextId++;
+      this.runs.set(id, { done: resolve, progress });
+      this.post({ kind: 'run', id, steps });
     });
   }
 
@@ -50,7 +82,7 @@ class SimClient {
   flush(timeoutMs = 2000): Promise<void> {
     if (!this.worker) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      const id = this.nextFlushId++;
+      const id = this.nextId++;
       const timeout = setTimeout(() => {
         this.flushWaiters.delete(id);
         resolve();
@@ -72,11 +104,24 @@ class SimClient {
       case 'view':
         simViewReceived(message.view);
         break;
+      case 'empty':
+        simWorldAbsent();
+        break;
+      case 'progress':
+        this.runs.get(message.id)?.progress(message.of > 0 ? message.done / message.of : 1);
+        break;
+      case 'ran':
+        this.runs.get(message.id)?.done();
+        this.runs.delete(message.id);
+        break;
       case 'rejected':
         simCommandRejected(message.message);
         break;
       case 'failed':
         simFailed(message.message);
+        // Nothing more will come: whatever was waiting on the worker stops waiting.
+        for (const run of this.runs.values()) run.done();
+        this.runs.clear();
         break;
       case 'flushed':
         this.flushWaiters.get(message.id)?.();

@@ -5,7 +5,7 @@ import { simClient } from '../sim/client';
 import { useReferenceStore } from '../state/reference-store';
 import { useSimStore } from '../state/sim-store';
 import {
-  STARTER_FLEET,
+  CAREER_FLEET,
   buildCatalogue,
   orderFor,
   starterOrders,
@@ -44,24 +44,28 @@ async function loadCatalogue(): Promise<void> {
   }
 }
 
-let seedRequested = false;
+/** The world a fleet has been asked for, by seed: a new world is given its own (ADR 0031). */
+let seedRequestedFor: string | null = null;
 
-/** Gives a new world its starter fleet, once reference data and the simulation are both ready. */
+/**
+ * Gives a new world its fleet, once reference data and the simulation are both ready. Every
+ * world the application creates is a career, so it is given the career fleet.
+ */
 async function seedStarterFleetIfNeeded(): Promise<void> {
   const view = useSimStore.getState().view;
   const { entries } = useCatalogueStore.getState();
-  if (seedRequested || !view || view.fleet.starterFleetSeeded || !entries) return;
-  seedRequested = true;
+  if (!view || seedRequestedFor === view.seed || view.fleet.starterFleetSeeded || !entries) return;
+  seedRequestedFor = view.seed;
   try {
-    const codes = [...new Set(STARTER_FLEET.map((entry) => entry.homeIcao))];
+    const codes = [...new Set(CAREER_FLEET.map((entry) => entry.homeIcao))];
     const homes = (await Promise.all(codes.map((icao) => loadAerodrome({ icao })))).filter(
       (row): row is NonNullable<typeof row> => row !== null,
     );
-    const { orders, missing } = starterOrders(entries, homes);
+    const { orders, missing } = starterOrders(entries, homes, CAREER_FLEET);
     useCatalogueStore.setState({ starterMissing: missing });
     simClient.send({ type: 'seedStarterFleet', aircraft: orders });
   } catch (error) {
-    seedRequested = false;
+    seedRequestedFor = null;
     useCatalogueStore.setState({ error: describe(error) });
   }
 }
@@ -89,7 +93,7 @@ function migratePerformanceIfNeeded(): void {
         ? latest !== null
         : latest !== null && aircraft.performance.modelVersion < FLIGHT_MODEL_VERSION;
     if (!outdated) continue;
-    const request = `${aircraft.id}:${FLIGHT_MODEL_VERSION}`;
+    const request = `${view.seed}:${aircraft.id}:${FLIGHT_MODEL_VERSION}`;
     if (migrationRequested.has(request)) continue;
     migrationRequested.add(request);
     simClient.send({
@@ -125,12 +129,9 @@ export function startFleetServices(): void {
       migratePerformanceIfNeeded();
     }
   });
-  // The simulation may become ready after the catalogue.
-  const stop = useSimStore.subscribe((state) => {
-    if (state.view) {
-      if (state.view.fleet.starterFleetSeeded) stop();
-      else void seedStarterFleetIfNeeded();
-    }
+  // The simulation may become ready after the catalogue, and a new career brings a new world.
+  useSimStore.subscribe((state) => {
+    if (state.view && !state.view.fleet.starterFleetSeeded) void seedStarterFleetIfNeeded();
   });
 }
 

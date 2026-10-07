@@ -36,6 +36,11 @@ export interface LoadedReports {
 const CACHE_SIZE = 6;
 const cache = new Map<string, Promise<LoadedReports | null>>();
 
+/** Forgets every report read. A new world numbers its checkpoints from 1 again (ADR 0031). */
+export function forgetReports(): void {
+  cache.clear();
+}
+
 /**
  * The report for a period and for the period before it, from one read. `checkpointSeq` is what
  * the caller knows to be on disk: the same checkpoint and period are read once.

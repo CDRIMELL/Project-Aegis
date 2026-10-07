@@ -139,6 +139,23 @@ impl Database {
         migrations::run(&mut *self.lock()?, migrations, backup_dir)
     }
 
+    /// Writes a consistent copy of the whole database into `dir` and returns where it went.
+    ///
+    /// The name is chosen here: `aegis-before-<reason>-<time>.db`. `reason` is a fixed word
+    /// supplied by the native side, never text from the webview.
+    pub fn backup(&self, dir: &Path, reason: &'static str) -> AppResult<PathBuf> {
+        std::fs::create_dir_all(dir)?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_millis());
+        let path = dir.join(format!("aegis-before-{reason}-{stamp}.db"));
+        let target = path
+            .to_str()
+            .ok_or_else(|| AppError::Internal("backup path is not valid UTF-8".into()))?;
+        self.lock()?.execute("VACUUM INTO ?1", [target])?;
+        Ok(path)
+    }
+
     /// Runs one statement.
     pub fn query(&self, statement: &Statement) -> AppResult<QueryResult> {
         execute(&*self.lock()?, statement)
@@ -213,6 +230,42 @@ mod tests {
         let database = Database::open_in_memory().unwrap();
         database.migrate(None).unwrap();
         database
+    }
+
+    #[test]
+    fn backs_up_the_whole_database_under_a_name_it_chooses() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(OpenOptions {
+            path: dir.path().join("aegis.db"),
+            encryption: Encryption::None,
+        })
+        .unwrap();
+        db.migrate(None).unwrap();
+        db.query(&statement(
+            INSERT_CLOCK,
+            json!([5000, 5, 10, true]),
+            Method::Run,
+        ))
+        .unwrap();
+
+        let backups = dir.path().join("backups");
+        let path = db.backup(&backups, "new-career").unwrap();
+        assert_eq!(path.parent(), Some(backups.as_path()));
+        let name = path.file_name().unwrap().to_str().unwrap();
+        assert!(name.starts_with("aegis-before-new-career-") && name.ends_with(".db"));
+
+        // The copy is a database in its own right, holding what was there when it was taken.
+        db.query(&statement("DELETE FROM sim_clock", json!([]), Method::Run))
+            .unwrap();
+        let copy = Connection::open(&path).unwrap();
+        let tick: i64 = copy
+            .query_row("SELECT tick FROM sim_clock", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(tick, 5);
+        let check: String = copy
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(check, "ok");
     }
 
     const INSERT_CLOCK: &str =
