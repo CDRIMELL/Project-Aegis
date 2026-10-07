@@ -8,7 +8,8 @@ operator, fleet and everything that happens are simulated. It is not an operatio
 
 ## Status
 
-Phase 8D of 10 complete.
+Version 1 (phases 1 to 8D) is complete. Version 2, a living operational world and a persistent
+career, has its foundation.
 
 - **Foundation:** the application launches, runs a deterministic simulation clock at 1x to 100x,
   checkpoints it transactionally to SQLite and resumes the exact same world after a restart.
@@ -64,7 +65,16 @@ Phase 8D of 10 complete.
   aircraft is available when that is done. Every ground service can be exported, and each
   aerodrome has a report of its capability, what it is doing and what it has done.
 
-There is no traffic or economy yet. Fuel is reported as mass: the simulation has no prices. What
+- **A living world and a career (V2 foundation):** the application opens at a main menu. A new
+  career puts the player in operational command of United Kingdom military aviation, in a world
+  that has already been running for some hours: routine sorties are tasked, prepared and
+  launched by the simulated world itself, with a reserve of each kind of aircraft kept back for
+  the commander. A Daily Operational Brief, read from the state of the world, says what is
+  flying, what is waiting for a decision and what to watch. The clock is continuous; a command
+  day ends when the commander ends it, with a summary, and every day adds to one career record
+  that is never reset. The record counts only what the simulation logged.
+
+There is no traffic or economy yet. There are no decisions with outcomes, ranks or scores yet. Fuel is reported as mass: the simulation has no prices. What
 an aerodrome can do is a stated simulation assumption about its size class, never a statement
 about a named aerodrome.
 

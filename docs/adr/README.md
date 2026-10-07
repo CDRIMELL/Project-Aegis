@@ -34,3 +34,5 @@ ADRs are immutable once accepted. To change a decision, add a new ADR that super
 | [0027](0027-ground-servicing.md)                               | Turnaround, timed refuelling, launch fuel and one readiness rule           | Accepted |
 | [0028](0028-aerodrome-ground-resources.md)                     | Aerodrome capability, finite ground resources, payload, scheduled launch   | Accepted |
 | [0029](0029-aerodrome-data-unloading-and-service-reporting.md) | Size classes for existing worlds, timed unloading, service reporting       | Accepted |
+| [0030](0030-routine-operations.md)                             | Routine operations: the world tasks and launches its own missions          | Accepted |
+| [0031](0031-career-and-command-days.md)                        | Career, command days, the record, and a world opened on request            | Accepted |

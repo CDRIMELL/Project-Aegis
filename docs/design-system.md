@@ -95,6 +95,12 @@ through `SANS_FONT_FILES` and `MONO_FONT_FILES`: labels in the sans face, codes 
 
 `AppFrame` takes `bleed` for full-surface screens such as the map.
 
+The front of the application (menu, introduction, briefing, summary) uses the same tokens and
+components inside a plain frame of its own, `FrontFrame`, in `apps/desktop/src/features/career`.
+It has no imagery and no colour of its own: the mark, type, hairlines and the accent. A menu
+entry is a label and one line saying what it does; a briefing item is a status badge by meaning
+(now, soon, note), a title and one line of consequence.
+
 A simulated entity carries a green "Simulated" badge, the counterpart of the teal "Reference" badge.
 A value that is a simulation assumption says so in its label ("Fuel capacity (assumed)") and
 explains the assumption on hover.

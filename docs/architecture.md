@@ -31,6 +31,10 @@ user command -> worker -> engine step -> checkpoint -> SQL batch -> Rust -> SQLi
 Every later feature (traffic, an economy) adds state and rules to this path. None of them
 should need to change its shape.
 
+Version 2 turns the application from one where the player manufactures every operation into one
+where the world operates and the player commands it. Its foundation is two things on the same
+path: routine operations, and the career. See [A living world and a career](#a-living-world-and-a-career).
+
 ## Runtime layout
 
 ```
@@ -452,6 +456,60 @@ From the upgrade tick a landing begins a turnaround and a launch needs its fuel 
 mission accepted under model 6 waits for its aircraft to be prepared, which its page offers.
 Migration 0009 adds one nullable column, `sim_aircraft.service`; no table is rebuilt.
 
+## A living world and a career
+
+The decisions are in [ADR 0030](adr/0030-routine-operations.md) and
+[ADR 0031](adr/0031-career-and-command-days.md).
+
+- **A world is opened on request.** The application starts at a main menu. The worker loads the
+  saved world if there is one and creates none; the clock advances only while the player is in
+  command. `SimulationRunner.load` restores or returns nothing, `create` replaces the saved world,
+  and `fastForward` runs exact steps whatever the run state.
+- **A career is a logged state of the world.** `beginCareer` makes a world a career and turns
+  routine operations on. `takeCommand` opens Day 1. `endCommandDay` closes the open day and opens
+  the next at the same tick. A world without a career, which is every world saved before V2 and
+  every earlier test and scenario, behaves exactly as it did.
+- **Routine operations.** In a career the mission step considers, every fifteen simulated
+  minutes, tasking one free aircraft with a mission built from the existing templates. It is
+  planned, evaluated, accepted and prepared by the code a player's mission uses, and launched by
+  the world at the step the readiness rule allows. A third of each category is left untasked.
+  Tasking and launching are events (`routineTasked`, `missionLaunched`, `routineStoodDown`) drawn
+  from the stream `missions.routine`, so a replay regenerates them. The player's own missions are
+  still never launched for them.
+- **The record is a fold over the log.** Every entry the engine logs goes through one function,
+  which appends it and shows it to the career. `contributions` maps an entry to the named
+  counters it moves; a day holds its counters and its readiness; a career total is a sum over
+  days and is stored nowhere. A new system adds to the record by logging what it does and adding
+  rows to that table.
+- **Readiness** is the share of aircraft available or flying, sampled every step of a command
+  day.
+- **The hours before command.** A new career is created at midnight and run forward to between
+  06:00 and 06:44, a minute its seed picks, before the briefing is shown. They are ordinary
+  steps.
+- **The briefing is read, not written.** `dailyBrief` is a pure function of the published view:
+  the fleet by state, missions under way, the worst weather where the fleet is, open events, what
+  awaits a decision, and what to watch. `careerRecord`, `recordChanges` and `notableEntries` set
+  out the record and a day's summary the same way.
+- **Replacing a world.** A new career removes the saved world in one transaction, after the
+  native core has written a copy of the database to the backups folder. Reference data is not
+  touched.
+
+| Layer                             | Where                                                         |
+| --------------------------------- | ------------------------------------------------------------- |
+| Routine tasking                   | `packages/domain/src/mission/routine.ts`                      |
+| Tasking and launching in the step | `packages/sim/src/missions.ts` (`taskRoutine`, `stepRoutine`) |
+| Counters, totals, headlines       | `packages/domain/src/career/career.ts`                        |
+| Days, commands                    | `packages/sim/src/career.ts`                                  |
+| Persistence                       | `packages/db/src/career-schema.ts`, `world-store.ts`          |
+| Open, create, run forward         | `packages/sim/src/runner.ts`, `apps/desktop/src/sim/`         |
+| Brief and record, as data         | `apps/desktop/src/career/`                                    |
+| Starting, continuing, ending      | `apps/desktop/src/career/service.ts`                          |
+| Screens                           | `apps/desktop/src/features/career/`                           |
+
+Simulation model 10. A model-9 world loads and upgrades with nothing in it changed and is not a
+career. Migration 0011 adds `sim_career_day`, three columns on `sim_world` and one on
+`sim_mission`; no table is rebuilt.
+
 ## Reports
 
 The decisions are in [ADR 0024](adr/0024-reports.md) and [ADR 0025](adr/0025-report-export.md).
@@ -563,16 +621,18 @@ At startup the Rust core applies pending migrations, each in its own transaction
 
 ## Native core command surface
 
-| Command         | Purpose                                            | Gated |
-| --------------- | -------------------------------------------------- | ----- |
-| `db_query`      | Run one data statement                             | yes   |
-| `db_batch`      | Run statements in one all-or-nothing transaction   | yes   |
-| `app_info`      | Version, database path, SQLite version, gate state | no    |
-| `export_report` | Write report text to the exports folder            | yes   |
+| Command                    | Purpose                                            | Gated |
+| -------------------------- | -------------------------------------------------- | ----- |
+| `db_query`                 | Run one data statement                             | yes   |
+| `db_batch`                 | Run statements in one all-or-nothing transaction   | yes   |
+| `app_info`                 | Version, database path, SQLite version, gate state | no    |
+| `export_report`            | Write report text to the exports folder            | yes   |
+| `backup_before_new_career` | Copy the database to the backups folder            | yes   |
 
 Only `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `REPLACE` and `WITH` statements are accepted over IPC.
 `export_report` writes only into `exports` in the data directory, under a name it validates, and
 never overwrites; the window has no other access to the file system.
+`backup_before_new_career` takes no argument: the folder and the file name are chosen natively.
 
 ## Security posture today
 
@@ -593,8 +653,13 @@ into the simulation.
 
 ### Shell and routing
 
-Seven areas: Overview, Operations, Fleet, Missions, Reports, Data, System. All exist and have
-routes. Overview is the environment and the world's events. Reports interprets what the world has
+The application opens at the front: a main menu, the introduction to a new career, a guide,
+settings, the Daily Operational Brief and the summary of a command day. These are routes outside
+the shell. The shell and its areas are shown only to a player in command; anyone else is sent to
+the menu (ADR 0031).
+
+Eight areas: Overview, Operations, Fleet, Missions, Reports, Career, Data, System. All exist and
+have routes. Career is the record and the place a command day is ended. Overview is the environment and the world's events. Reports interprets what the world has
 recorded; Data remains the place for reference datasets and their provenance, and System for the
 technical log and diagnostics. The simulation clock stays in the top bar on
 every screen (ADR 0015).
